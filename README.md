@@ -19,18 +19,18 @@ This tool helps scenario writers create branching narratives visually without ne
 - [x] Support basic RenPy elements (labels, dialogue, menus, conditionals)
 
 ### Phase 2: Backend API Setup
-- [ ] Set up FastAPI basic structure
-- [ ] Create endpoint for script parsing (text → tree)
-- [ ] Create endpoint for script generation (tree → text)
-- [ ] Implement file upload/download functionality
-- [ ] Add basic error handling
+- [x] Set up FastAPI basic structure
+- [x] Create endpoint for script parsing (text → tree)
+- [x] Implement direct script editing (instead of tree → text conversion)
+- [x] Implement file upload/download functionality
+- [x] Add basic error handling
 
 ### Phase 3: Frontend Visual Editor
 - [ ] Set up React application with basic routing
 - [ ] Implement node-based editor using ReactFlow
 - [ ] Create node types for different RenPy elements
 - [ ] Add drag-and-drop functionality for connecting nodes
-- [ ] Implement basic editing of node properties
+- [ ] Implement direct node content editing
 
 ### Phase 4: Synchronization & Persistence
 - [ ] Add database integration for project storage
@@ -43,6 +43,14 @@ This tool helps scenario writers create branching narratives visually without ne
 - [ ] Add user presence indicators
 - [ ] Create conflict resolution mechanisms
 - [ ] Implement edit history and undo/redo functionality
+
+## Architecture Notes
+
+The editor uses a direct reference approach where visual nodes point to specific line ranges in the original script. This:
+- Preserves the original script formatting
+- Reduces conversion errors
+- Better supports collaborative editing
+- Maintains a consistent source of truth
 
 ## Tech Stack
 
