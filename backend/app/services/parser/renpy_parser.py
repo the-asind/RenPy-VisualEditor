@@ -109,14 +109,20 @@ class RenPyParser:
                 index += 1
                 label_child_node = ChoiceNode(start_line=index, node_type=ChoiceNodeType.ACTION)
                 
-                while self._parse_block(index, 1, label_child_node):
+                while True:
+                    result, index = self._parse_block(index, 1, label_child_node)
+                    if not result:
+                        break
                     label_child_node.label_name = self._get_label_name(label_child_node)
                     label_node.children.append(label_child_node)
                     index += 1
                     label_child_node = ChoiceNode(start_line=index, node_type=ChoiceNodeType.ACTION)
                 
-                label_child_node.label_name = self._get_label_name(label_child_node)
-                label_node.children.append(label_child_node)
+                # Добавляем проверку перед добавлением label_child_node
+                if label_child_node.end_line >= label_child_node.start_line:
+                    label_child_node.label_name = self._get_label_name(label_child_node)
+                    label_node.children.append(label_child_node)
+                
                 label_child_node.start_line = index
                 
                 label_node.end_line = index - 1
@@ -127,7 +133,7 @@ class RenPyParser:
         
         return root_node
     
-    def _parse_block(self, index: int, indent_level: int, current_node: ChoiceNode) -> bool:
+    def _parse_block(self, index: int, indent_level: int, current_node: ChoiceNode) -> Tuple[bool, int]:
         """
         Parses a block of lines with a given indentation level and updates the current node.
         
@@ -150,7 +156,7 @@ class RenPyParser:
             if current_indent < indent_level:
                 index -= 1
                 current_node.end_line = index
-                return False
+                return False, index
             
             if not self._is_a_statement(current_line.strip()):
                 index += 1
@@ -159,27 +165,28 @@ class RenPyParser:
             if current_node.start_line != index:
                 index -= 1
                 current_node.end_line = index
-                return True
+                return True, index
             
             trimmed_line = current_line.strip()
             
             if self._is_if_statement(trimmed_line):
-                self._parse_statement(index, current_node, current_indent, ChoiceNodeType.IF_BLOCK)
-                return True
+                index = self._parse_statement(index, current_node, current_indent, ChoiceNodeType.IF_BLOCK)
+                return True, index
             
             if self._is_menu_statement(trimmed_line):
-                self._parse_menu_block(index, current_node, current_indent)
-                return True
+                # Use the returned index to skip re-parsing menu lines
+                index = self._parse_menu_block(index, current_node, current_indent)
+                return True, index
             
             # Other statements can be handled here
             index += 1
-        
+
         index -= 1
         current_node.end_line = index
-        return False
+        return False, index
     
     def _parse_statement(self, index: int, current_node: ChoiceNode, 
-                         current_indent: int, node_type: ChoiceNodeType) -> None:
+                         current_indent: int, node_type: ChoiceNodeType) -> int:
         """
         Parses a statement block and updates the current node.
         
@@ -188,6 +195,9 @@ class RenPyParser:
             current_node: The current choice node being parsed.
             current_indent: The current indentation level.
             node_type: The type of the node being parsed.
+            
+        Returns:
+            The updated index.
         """
         current_node.node_type = node_type
         current_node.end_line = index
@@ -196,7 +206,7 @@ class RenPyParser:
         
         # Parse the 'true' branch
         while True:
-            temp = self._parse_block(index, current_indent + 1, statement_node)
+            temp, index = self._parse_block(index, current_indent + 1, statement_node)
             
             statement_node.label_name = self._get_label_name(statement_node)
             current_node.children.append(statement_node)
@@ -226,63 +236,59 @@ class RenPyParser:
             if self._is_elif_statement(next_line_trimmed):
                 # Parse 'elif' as FalseBranch
                 false_branch_node = ChoiceNode(start_line=index)
-                self._parse_statement(index, false_branch_node, current_indent, ChoiceNodeType.IF_BLOCK)
+                index = self._parse_statement(index, false_branch_node, current_indent, ChoiceNodeType.IF_BLOCK)
                 false_branch_node.label_name = self._get_label_name(false_branch_node)
                 current_node.false_branch = false_branch_node
-                return
+                return index
             
             if self._is_else_statement(next_line_trimmed):
                 # Parse 'else' as FalseBranch
                 false_branch_node = ChoiceNode(start_line=index)
-                self._parse_statement(index, false_branch_node, current_indent, ChoiceNodeType.ELSE_BLOCK)
+                index = self._parse_statement(index, false_branch_node, current_indent, ChoiceNodeType.ELSE_BLOCK)
                 false_branch_node.label_name = self._get_label_name(false_branch_node)
                 current_node.false_branch = false_branch_node
-                return
+                return index
             
             index -= 1
             break
+        
+        return index
     
-    def _parse_menu_block(self, index: int, menu_node: ChoiceNode, indent_level: int) -> None:
+    def _parse_menu_block(self, index: int, menu_node: ChoiceNode, indent_level: int) -> int:
         """
         Parses a menu block and updates the menu node.
-        
-        Args:
-            index: The current index in the lines array.
-            menu_node: The menu choice node being parsed.
-            indent_level: The expected indentation level.
+        Returns the updated index to avoid re-parsing the same lines.
         """
-        # First, we encounter the "menu:" line
         menu_node.start_line = index
         menu_node.end_line = index
         menu_node.node_type = ChoiceNodeType.MENU_BLOCK
         index += 1
-        
+
         while index < len(self.lines):
             line = self.lines[index]
             current_indent = self._get_indent_level(line)
-            
+
             if not line.strip():
                 index += 1
                 continue
-            
-            # If we meet a line with less indentation, exit
+
             if current_indent <= indent_level:
                 index -= 1
-                return
-            
+                return index
+
             line = line.strip()
-            
-            # Then we should assume indentation +1 and find all choice options
             if line.startswith('"') and line.endswith(':'):
                 choice_node = ChoiceNode(
                     label_name=line.rstrip(':').strip(),
                     start_line=index,
                     node_type=ChoiceNodeType.MENU_OPTION
                 )
-                self._parse_statement(index, choice_node, current_indent, ChoiceNodeType.ACTION)
+                index = self._parse_statement(index, choice_node, current_indent, ChoiceNodeType.MENU_OPTION)
                 menu_node.children.append(choice_node)
             else:
                 index += 1
+
+        return index
     
     def _is_label(self, line: str) -> Tuple[bool, Optional[str]]:
         """

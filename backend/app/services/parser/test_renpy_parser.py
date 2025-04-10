@@ -76,16 +76,14 @@ async def test_parse_menu_structure(sample_renpy_script):
 
     menu_node = None
     for action_node in start_label.children:
-        for child in action_node.children:
-            if child.node_type == ChoiceNodeType.MENU_BLOCK:
-                menu_node = child
-                break
-        if menu_node:
+        if action_node.node_type == ChoiceNodeType.MENU_BLOCK:
+            menu_node = action_node
             break
 
     assert menu_node is not None
     assert menu_node.node_type == ChoiceNodeType.MENU_BLOCK
     assert len(menu_node.children) == 2  # Two options
+    assert all(child.label_name for child in menu_node.children), "Меню содержит опцию без имени"
     menu_options = [child.label_name.strip('"') for child in menu_node.children]
     assert "Выбрать первый путь" in menu_options
     assert "Выбрать второй путь" in menu_options
@@ -102,11 +100,8 @@ async def test_parse_if_else_structure(sample_renpy_script):
 
     if_node = None
     for action_node in path_one_label.children:
-        for child in action_node.children:
-            if child.node_type == ChoiceNodeType.IF_BLOCK:
-                if_node = child
-                break
-        if if_node:
+        if action_node.node_type == ChoiceNodeType.IF_BLOCK:
+            if_node = action_node
             break
 
     assert if_node is not None
