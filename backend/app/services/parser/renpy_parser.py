@@ -403,6 +403,30 @@ class RenPyParser:
         character_part = parts[0].strip()
         return character_part.endswith(' ')
     
+    def _remove_bracketed_content(self, text: str) -> str:
+        """
+        Removes all content enclosed in brackets, including the brackets themselves.
+        For example, "1{brackets}23" becomes "123".
+        
+        Args:
+            text: The input text to process
+            
+        Returns:
+            Text with all bracketed content removed
+        """
+        result = ""
+        bracket_level = 0
+        
+        for char in text:
+            if char == '{':
+                bracket_level += 1
+            elif char == '}':
+                bracket_level = max(0, bracket_level - 1)  # Ensure we don't go negative
+            elif bracket_level == 0:
+                result += char
+                
+        return result
+
     def _get_label_name(self, node: ChoiceNode) -> str:
         """
         Gets a descriptive label name for a node based on its content.
@@ -498,6 +522,10 @@ class RenPyParser:
         
         label_text = "\n".join(label_parts)
         
+        # Remove content within brackets (including the brackets)
+        if not node.node_type == ChoiceNodeType.IF_BLOCK and not node.node_type == ChoiceNodeType.MENU_OPTION:
+            label_text = self._remove_bracketed_content(label_text)
+
         # If the label is less than 20 characters, try to add more lines until we reach 80
         if len(label_text) < 20:
             label_text = ""
