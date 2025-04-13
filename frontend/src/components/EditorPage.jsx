@@ -5,15 +5,15 @@ import ReactFlow, {
   addEdge,
   Background,
   Controls,
-  ReactFlowProvider // Import Provider
+  ReactFlowProvider
 } from 'reactflow';
-import 'reactflow/dist/style.css'; // Import React Flow styles
+import 'reactflow/dist/style.css';
 
 import { parseScript, createNewScript } from '../services/api';
-import { transformTreeToFlow } from '../utils/flowTransformer'; // We will create this utility
+import { transformTreeToFlow } from '../utils/flowTransformer'; 
 import './EditorPage.css';
 
-const EditorPageInternal = () => { // Renamed to avoid conflict with export
+const EditorPageInternal = () => {
   const [scriptId, setScriptId] = useState(null);
   const [fileName, setFileName] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -153,24 +153,24 @@ const EditorPageInternal = () => { // Renamed to avoid conflict with export
       {scriptId && (
         <div className="editor-area">
           <h2>Editing: {fileName} (ID: {scriptId})</h2>
-          {/* React Flow component will go here */}
           <div style={{ height: '80vh', width: '100%', border: '1px solid #ccc' }}>
              <ReactFlow
                nodes={nodes}
                edges={edges}
                onNodesChange={onNodesChange}
                onEdgesChange={onEdgesChange}
-               onConnect={onConnect} // Add onConnect handler
-               onNodeClick={onNodeClick} // Add onNodeClick handler
-               fitView // Automatically fit the view to the nodes
-               className="flow-canvas" // Add a class for potential specific styling
+               // onConnect={onConnect} // Keep if needed for programmatic connections later, but disable manual ones
+               onNodeClick={onNodeClick}
+               fitView
+               className="flow-canvas"
+               edgesConnectable={false} // Disable manual edge creation by dragging
+               nodesDraggable={true} // Keep nodes draggable (as per requirement 13)
+               nodesConnectable={false} // Also disable connecting by clicking nodes if desired
              >
                <Background />
                <Controls />
              </ReactFlow>
           </div>
-          {/* Temporary display removed or commented out */}
-          {/* <pre>{JSON.stringify(parsedData, null, 2)}</pre> */}
         </div>
       )}
     </div>

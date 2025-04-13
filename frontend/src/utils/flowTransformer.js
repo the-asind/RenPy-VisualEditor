@@ -12,9 +12,9 @@ const nodeColors = {
   LabelBlock: '#f0e68c', // yellow (khaki)
   Action: '#f5f5f5',     // pale or off-white (whitesmoke)
   IfBlock: '#90ee90',    // green (lightgreen)
-  MenuBlock: '#800000',  // maroon (burgundy)
+  MenuBlock: '#966666',  // maroon (burgundy)
   MenuOption: '#ffa500', // orange
-  EndBlock: '#808080',   // gray
+  EndBlock: '#eeeeee',   // gray (updated color)
   Default: '#ffffff',    // white (fallback)
 };
 
@@ -52,16 +52,22 @@ const createFlowNode = (id, type, data, position, style = {}) => ({
 /**
  * Creates a standard React Flow edge object.
  */
-const createFlowEdge = (id, source, target, label = '', type = 'default', animated = false, markerEnd = { type: MarkerType.ArrowClosed }) => ({
-  id,
-  source,
-  target,
-  label,
-  type, // e.g., 'step', 'smoothstep', 'straight'
-  animated,
-  markerEnd,
-  style: { strokeWidth: 2 },
-});
+const createFlowEdge = (id, source, target, label = '', type = 'default', animated = false, markerEnd = { type: MarkerType.ArrowClosed }) => {
+  const isEndBlockEdge = target.startsWith('end-'); // Check if target is an EndBlock
+  return {
+    id,
+    source,
+    target,
+    label,
+    type, // e.g., 'step', 'smoothstep', 'straight'
+    animated,
+    markerEnd,
+    style: {
+      strokeWidth: 2,
+      stroke: isEndBlockEdge ? '#eeeeee' : '#b1b1b7', // Light gray for EndBlock edges, default otherwise
+    },
+  };
+};
 
 /**
  * Recursive function to process the tree and generate nodes and edges.
@@ -86,7 +92,7 @@ function processNodeRecursive(apiNode, parentNodeId = null, startX = 0, startY =
   if (parentNodeId && nodeType !== 'LabelBlock') {
     // Add edge from parent, handling specific labels for If/Menu branches later
     if (apiNode.meta?.branchType !== 'true' && apiNode.meta?.branchType !== 'false') { // Avoid duplicate edges for If branches
-        currentEdges.push(createFlowEdge(createEdgeId(parentNodeId, nodeId), parentNodeId, nodeId));
+      currentEdges.push(createFlowEdge(createEdgeId(parentNodeId, nodeId), parentNodeId, nodeId));
     }
   }
 
@@ -117,9 +123,9 @@ function processNodeRecursive(apiNode, parentNodeId = null, startX = 0, startY =
       trueBranchMinX = trueBranchResult.horizontalBounds.minX;
       trueBranchMaxX = trueBranchResult.horizontalBounds.maxX;
     } else if (nextSequentialNodeId) {
-        // No True children, but there's a next node: connect IfBlock directly to it
-        currentEdges.push(createFlowEdge(createEdgeId(nodeId, nextSequentialNodeId, 'true'), nodeId, nextSequentialNodeId, 'True'));
-        trueBranchY = currentY; // Y doesn't advance
+      // No True children, but there's a next node: connect IfBlock directly to it
+      currentEdges.push(createFlowEdge(createEdgeId(nodeId, nextSequentialNodeId, 'true'), nodeId, nextSequentialNodeId, 'True'));
+      trueBranchY = currentY; // Y doesn't advance
     }
 
     // 2. False Branch (false_branch)
@@ -139,9 +145,9 @@ function processNodeRecursive(apiNode, parentNodeId = null, startX = 0, startY =
       falseBranchMinX = falseBranchResult.horizontalBounds.minX;
       falseBranchMaxX = falseBranchResult.horizontalBounds.maxX;
     } else if (nextSequentialNodeId) {
-        // No False branch, but there's a next node: connect IfBlock directly to it
-        currentEdges.push(createFlowEdge(createEdgeId(nodeId, nextSequentialNodeId, 'false'), nodeId, nextSequentialNodeId, 'False'));
-        falseBranchY = currentY; // Y doesn't advance
+      // No False branch, but there's a next node: connect IfBlock directly to it
+      currentEdges.push(createFlowEdge(createEdgeId(nodeId, nextSequentialNodeId, 'false'), nodeId, nextSequentialNodeId, 'False'));
+      falseBranchY = currentY; // Y doesn't advance
     }
 
     // Determine next Y and horizontal bounds
@@ -152,7 +158,7 @@ function processNodeRecursive(apiNode, parentNodeId = null, startX = 0, startY =
     // NOTE: The recursive calls now handle connecting the *end* of their branches to nextSequentialNodeId if applicable.
 
   } else if (nodeType === 'MenuBlock') {
-    let menuOptionX = startX - ( (apiNode.children.length - 1) * (NODE_WIDTH + HORIZONTAL_SPACING_MENU) ) / 2; // Center options
+    let menuOptionX = startX - ((apiNode.children.length - 1) * (NODE_WIDTH + HORIZONTAL_SPACING_MENU)) / 2; // Center options
     let maxOptionY = currentY;
     let firstOptionX = Infinity;
     let lastOptionX = -Infinity;
@@ -177,22 +183,22 @@ function processNodeRecursive(apiNode, parentNodeId = null, startX = 0, startY =
     let childMaxX = startX + NODE_WIDTH;
 
     for (let i = 0; i < apiNode.children.length; i++) {
-        const childNode = apiNode.children[i];
-        const nextChildId = (i + 1 < apiNode.children.length) ? apiNode.children[i+1].id : nextSequentialNodeId;
-        const parentIdForChild = lastChildNodeId;
-        const childResult = processNodeRecursive(childNode, parentIdForChild, startX, currentY, level, nextChildId);
-        currentNodes = currentNodes.concat(childResult.nodes);
-        currentEdges = currentEdges.concat(childResult.edges);
-        currentY = childResult.nextY;
-        lastChildNodeId = childNode.id;
-        childMinX = Math.min(childMinX, childResult.horizontalBounds.minX);
-        childMaxX = Math.max(childMaxX, childResult.horizontalBounds.maxX);
+      const childNode = apiNode.children[i];
+      const nextChildId = (i + 1 < apiNode.children.length) ? apiNode.children[i + 1].id : nextSequentialNodeId;
+      const parentIdForChild = lastChildNodeId;
+      const childResult = processNodeRecursive(childNode, parentIdForChild, startX, currentY, level, nextChildId);
+      currentNodes = currentNodes.concat(childResult.nodes);
+      currentEdges = currentEdges.concat(childResult.edges);
+      currentY = childResult.nextY;
+      lastChildNodeId = childNode.id;
+      childMinX = Math.min(childMinX, childResult.horizontalBounds.minX);
+      childMaxX = Math.max(childMaxX, childResult.horizontalBounds.maxX);
     }
-     childrenMinX = childMinX;
-     childrenMaxX = childMaxX;
+    childrenMinX = childMinX;
+    childrenMaxX = childMaxX;
   } else {
     if (nextSequentialNodeId) {
-        currentEdges.push(createFlowEdge(createEdgeId(nodeId, nextSequentialNodeId), nodeId, nextSequentialNodeId));
+      currentEdges.push(createFlowEdge(createEdgeId(nodeId, nextSequentialNodeId), nodeId, nextSequentialNodeId));
     }
   }
 
@@ -201,8 +207,8 @@ function processNodeRecursive(apiNode, parentNodeId = null, startX = 0, startY =
     edges: currentEdges,
     nextY: currentY,
     horizontalBounds: {
-        minX: Math.min(startX, childrenMinX),
-        maxX: Math.max(startX + NODE_WIDTH, childrenMaxX)
+      minX: Math.min(startX, childrenMinX),
+      maxX: Math.max(startX + NODE_WIDTH, childrenMaxX)
     }
   };
 }
@@ -213,9 +219,10 @@ function processNodeRecursive(apiNode, parentNodeId = null, startX = 0, startY =
  */
 export function transformTreeToFlow(rootApiNode) {
   let allNodes = [];
-  let allEdges = [];
-  let currentY = 50; // Initial Y position for the first LabelBlock
-  const initialX = 100; // Initial X
+  let endBlockEdges = []; // Edges leading to EndBlocks
+  let otherEdges = []; // All other edges
+  let currentY = 50;
+  const initialX = 100;
 
   if (!rootApiNode || !rootApiNode.children || rootApiNode.children.length === 0) {
     console.warn("Root node has no children (LabelBlocks).");
@@ -230,11 +237,19 @@ export function transformTreeToFlow(rootApiNode) {
       const endNodeId = `end-${labelBlockNode.id}`;
       const endNodeY = labelBlockResult.nextY;
       const endNodeX = labelBlockResult.horizontalBounds.minX + (labelBlockResult.horizontalBounds.maxX - labelBlockResult.horizontalBounds.minX - NODE_WIDTH) / 2;
-      const endNode = createFlowNode(endNodeId, 'EndBlock', { label_name: 'Конец', node_type: 'EndBlock' }, { x: endNodeX, y: endNodeY });
+      const endNode = createFlowNode(endNodeId, 'EndBlock', { label_name: 'Возврат', node_type: 'EndBlock' }, { x: endNodeX, y: endNodeY });
 
       allNodes = allNodes.concat(labelBlockResult.nodes);
       allNodes.push(endNode);
-      allEdges = allEdges.concat(labelBlockResult.edges);
+
+      // Separate edges from the recursive result
+      labelBlockResult.edges.forEach(edge => {
+          if (edge.target.startsWith('end-')) {
+              endBlockEdges.push(edge);
+          } else {
+              otherEdges.push(edge);
+          }
+      });
 
       const nodesWithOutgoingEdges = new Set(labelBlockResult.edges.map(e => e.source));
 
@@ -245,7 +260,8 @@ export function transformTreeToFlow(rootApiNode) {
                                           labelBlockResult.edges.some(e => e.source === node.id && e.label === 'False');
 
               if (!alreadyConnectedFalse) {
-                 allEdges.push(createFlowEdge(createEdgeId(node.id, endNodeId, 'leaf'), node.id, endNodeId));
+                 // Add leaf-to-end edges to the endBlockEdges array
+                 endBlockEdges.push(createFlowEdge(createEdgeId(node.id, endNodeId, 'leaf'), node.id, endNodeId));
               }
           }
       });
@@ -254,5 +270,8 @@ export function transformTreeToFlow(rootApiNode) {
     }
   });
 
-  return { initialNodes: allNodes, initialEdges: allEdges };
+  // Concatenate arrays, putting endBlockEdges first
+  const finalEdges = endBlockEdges.concat(otherEdges);
+
+  return { initialNodes: allNodes, initialEdges: finalEdges };
 }
