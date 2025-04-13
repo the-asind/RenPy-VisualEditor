@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args: # Pass the HOST-ACCESSIBLE URL as a build argument
+        VITE_API_URL: http://localhost:8000/api # Use localhost for browser access
+    ports:
+      - "3000:80"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+    environment:
+      - ENVIRONMENT=prod
+      - CORS_ORIGINS=http://localhost:3000,http://frontend:80

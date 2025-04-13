@@ -1,0 +1,97 @@
+/* Basic Styling for EditorPage */
+.editor-page {
+  font-family: sans-serif;
+  padding: 20px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.loading {
+  padding: 15px;
+  background-color: #e0e0e0;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  margin-bottom: 15px;
+  text-align: center;
+}
+
+.error-message {
+  padding: 15px;
+  background-color: #f8d7da;
+  color: #721c24;
+  border: 1px solid #f5c6cb;
+  border-radius: 4px;
+  margin-bottom: 15px;
+}
+
+.file-options {
+  border: 1px solid #ddd;
+  padding: 20px;
+  border-radius: 5px;
+  background-color: #f9f9f9;
+  text-align: center;
+}
+
+.file-options h2 {
+  margin-top: 0;
+}
+
+.button-group {
+    margin-top: 20px;
+    display: flex;
+    justify-content: center;
+    gap: 15px; /* Spacing between buttons */
+}
+
+.button {
+  padding: 10px 20px;
+  font-size: 1em;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.button-open {
+  background-color: #007bff;
+  color: white;
+  display: inline-block; /* To style the label like a button */
+  text-align: center;
+}
+
+.button-open:hover {
+  background-color: #0056b3;
+}
+
+.button-create {
+  background-color: #28a745;
+  color: white;
+}
+
+.button-create:hover {
+  background-color: #218838;
+}
+
+
+.editor-area {
+  margin-top: 20px;
+  border: 1px solid #ccc;
+  padding: 15px;
+  border-radius: 4px;
+}
+
+.editor-area h2 {
+    margin-top: 0;
+}
+
+/* Style for the temporary JSON output */
+.editor-area pre {
+    background-color: #f4f4f4;
+    border: 1px solid #ddd;
+    padding: 10px;
+    border-radius: 4px;
+    max-height: 400px;
+    overflow: auto;
+    white-space: pre-wrap; /* Wrap long lines */
+    word-wrap: break-word;
+}

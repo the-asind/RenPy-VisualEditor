@@ -9,7 +9,6 @@ class ChoiceNodeType(Enum):
     ACTION = "Action"
     LABEL_BLOCK = "LabelBlock"
     IF_BLOCK = "IfBlock"
-    ELSE_BLOCK = "ElseBlock"
     MENU_BLOCK = "MenuBlock"
     MENU_OPTION = "MenuOption"
 
@@ -68,38 +67,19 @@ class RenPyParser:
     
     def _parse_labels(self) -> ChoiceNode:
         """
-        Parses the labels in the script lines and builds the choice tree.
+        Parses the labels in the RenPy script and builds a choice tree.
         
         Returns:
-            The root choice node.
+            root_node: The root choice node of the parsed script.
         """
         root_node = ChoiceNode(label_name="root", start_line=0)
-        is_first_label_appear = False
         index = 0
         
         while index < len(self.lines):
             line = self.lines[index]
             
             label_info = self._is_label(line)
-            if label_info[0]:
-                if not is_first_label_appear:
-                    is_first_label_appear = True
-                    temp = ChoiceNode(
-                        label_name="INIT",
-                        start_line=0,
-                        end_line=index - 1,
-                        node_type=ChoiceNodeType.LABEL_BLOCK
-                    )
-                    temp.children.append(
-                        ChoiceNode(
-                            label_name=self._get_label_name(temp),
-                            start_line=0,
-                            end_line=index - 1,
-                            node_type=ChoiceNodeType.ACTION
-                        )
-                    )
-                    root_node.children.append(temp)
-                
+            if label_info[0]:                
                 label_node = ChoiceNode(
                     label_name=label_info[1],
                     start_line=index,
@@ -118,7 +98,7 @@ class RenPyParser:
                     index += 1
                     label_child_node = ChoiceNode(start_line=index, node_type=ChoiceNodeType.ACTION)
                 
-                # Добавляем проверку перед добавлением label_child_node
+                # add check before label_child_node
                 if label_child_node.end_line >= label_child_node.start_line:
                     label_child_node.label_name = self._get_label_name(label_child_node)
                     label_node.children.append(label_child_node)
@@ -128,7 +108,7 @@ class RenPyParser:
                 label_node.end_line = index - 1
                 root_node.children.append(label_node)
             else:
-                # Collect lines before the first label
+                # skip lines before the next label
                 index += 1
         
         return root_node
@@ -219,7 +199,7 @@ class RenPyParser:
         
         statement_node.end_line = index
         
-        # Check for 'elif' or 'else' at the same indentation level
+        # Check for 'elif' at the same indentation level
         while index + 1 < len(self.lines):
             index += 1
             next_line = self.lines[index]
@@ -237,14 +217,6 @@ class RenPyParser:
                 # Parse 'elif' as FalseBranch
                 false_branch_node = ChoiceNode(start_line=index)
                 index = self._parse_statement(index, false_branch_node, current_indent, ChoiceNodeType.IF_BLOCK)
-                false_branch_node.label_name = self._get_label_name(false_branch_node)
-                current_node.false_branch = false_branch_node
-                return index
-            
-            if self._is_else_statement(next_line_trimmed):
-                # Parse 'else' as FalseBranch
-                false_branch_node = ChoiceNode(start_line=index)
-                index = self._parse_statement(index, false_branch_node, current_indent, ChoiceNodeType.ELSE_BLOCK)
                 false_branch_node.label_name = self._get_label_name(false_branch_node)
                 current_node.false_branch = false_branch_node
                 return index
@@ -359,7 +331,6 @@ class RenPyParser:
         trimmed_line = line.lstrip()
         return (trimmed_line.startswith("if ") or 
                 trimmed_line.startswith("elif ") or 
-                trimmed_line.startswith("else") or
                 trimmed_line.startswith("menu"))
     
     @staticmethod
@@ -404,9 +375,40 @@ class RenPyParser:
                 
         return indent
     
+    def _is_dialog_line(self, line: str) -> bool:
+        """
+        Checks if a line matches the RenPy dialog pattern:
+        - Optional character name/expression followed by space
+        - Text in quotes
+        - Optional space at the end
+        """
+        line = line.strip()
+        
+        # Check if the line has quotes
+        if '"' not in line:
+            return False
+        
+        # Check if the line ends with a quote (ignoring trailing spaces)
+        if not line.rstrip().endswith('"'):
+            return False
+        
+        # Split at the first quote
+        parts = line.split('"', 1)
+        
+        # If it starts with a quote, it's a dialog line without character name
+        if line.startswith('"'):
+            return True
+        
+        # There should be a space between character name and the opening quote
+        character_part = parts[0].strip()
+        return character_part.endswith(' ')
+    
     def _get_label_name(self, node: ChoiceNode) -> str:
         """
         Gets a descriptive label name for a node based on its content.
+        
+        For nodes with more than 4 lines, attempts to find dialog lines in RenPy format
+        (character name followed by quoted text).
         
         Args:
             node: The node to get a label name for.
@@ -423,33 +425,94 @@ class RenPyParser:
         label_parts = []
         total_lines = node.end_line - node.start_line + 1
         
-        if total_lines > 14:
-            # Append first 6 non-empty lines
-            appended_lines = 0
+        if total_lines > 4:
+            # Try to find dialog lines
+            first_dialog_lines = []
+            last_dialog_lines = []
+            
+            # Find first two dialog lines
             for i in range(node.start_line, min(node.end_line + 1, len(self.lines))):
-                if not self.lines[i].strip():
+                line = self.lines[i].strip()
+                if not line:
                     continue
-                label_parts.append(self.lines[i].strip())
-                appended_lines += 1
-                if appended_lines >= 6:
-                    break
+                
+                if self._is_dialog_line(line):
+                    first_dialog_lines.append(line)
+                    if len(first_dialog_lines) >= 2:
+                        break
             
-            # Append the placeholder line
-            label_parts.append("<...>")
-            
-            # Append last 6 non-empty lines
-            appended_lines = 0
+            # Find last two dialog lines (in correct order)
             for i in range(node.end_line, node.start_line - 1, -1):
-                if i >= len(self.lines) or not self.lines[i].strip():
+                if i >= len(self.lines):
                     continue
-                label_parts.append(self.lines[i].strip())
-                appended_lines += 1
-                if appended_lines >= 6:
-                    break
+                    
+                line = self.lines[i].strip()
+                if not line:
+                    continue
+                
+                if self._is_dialog_line(line):
+                    last_dialog_lines.insert(0, line)  # Insert at beginning to maintain order
+                    if len(last_dialog_lines) >= 2:
+                        break
+            
+            # Use dialog lines if we found any
+            if first_dialog_lines or last_dialog_lines:
+                label_parts.extend(first_dialog_lines)
+                
+                # Only add separator if we have both first and last sections
+                if first_dialog_lines and last_dialog_lines and first_dialog_lines[-1] != last_dialog_lines[0]:
+                    label_parts.append("<...>")
+                    
+                # Avoid duplicating lines
+                for line in last_dialog_lines:
+                    if not first_dialog_lines or line not in first_dialog_lines:
+                        label_parts.append(line)
+            else:
+                # Fall back to using first/last 3 lines
+                appended_lines = 0
+                for i in range(node.start_line, min(node.end_line + 1, len(self.lines))):
+                    if not self.lines[i].strip():
+                        continue
+                    label_parts.append(self.lines[i].strip())
+                    appended_lines += 1
+                    if appended_lines >= 3:
+                        break
+                
+                label_parts.append("<...>")
+                
+                last_lines = []
+                for i in range(node.end_line, node.start_line - 1, -1):
+                    if i >= len(self.lines) or not self.lines[i].strip():
+                        continue
+                    last_lines.insert(0, self.lines[i].strip())
+                    if len(last_lines) >= 3:
+                        break
+                
+                label_parts.extend(last_lines)
         else:
+            # For nodes with 4 or fewer lines, include all non-empty lines
             for i in range(node.start_line, min(node.end_line + 1, len(self.lines))):
                 if not self.lines[i].strip():
                     continue
                 label_parts.append(self.lines[i].strip())
         
-        return "\n".join(label_parts)
+        label_text = "\n".join(label_parts)
+        
+        # If the label is less than 20 characters, try to add more lines until we reach 80
+        if len(label_text) < 20:
+            label_text = ""
+            extra_lines = []
+            current_index = node.start_line
+            
+            while len(label_text) < 80 and current_index <= node.end_line and current_index < len(self.lines):
+                line = self.lines[current_index].strip()
+                if line and line not in label_parts and line not in extra_lines:
+                    extra_lines.append(line)
+                    label_text = "\n".join(label_parts + extra_lines)
+                current_index += 1
+        
+        # Truncate to 100 characters if text is too long
+        if len(label_text) > 100:
+            label_text = label_text[:97] + "..."
+            
+        return label_text

@@ -9,3 +9,8 @@ build/
 *.egg
 .vscode/
 .idea/
+reactflow-DOCS/
+.pytest_cache/
+node_modules/
+*.log
+backend/uploads/
