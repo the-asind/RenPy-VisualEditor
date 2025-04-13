@@ -164,7 +164,10 @@ function processNodeRecursive(apiNode, parentNodeId = null, startX = 0, startY =
     let lastOptionX = -Infinity;
 
     apiNode.children.forEach((optionNode) => {
-      const optionResult = processNodeRecursive(optionNode, nodeId, menuOptionX, currentY, level + 1, null);
+      // Pass the nextSequentialNodeId (node after the *entire* menu) down to the option's processing.
+      // If the option itself ends with a jump/return, that logic isn't handled yet,
+      // but if it falls through, it should connect to the node after the menu.
+      const optionResult = processNodeRecursive(optionNode, nodeId, menuOptionX, currentY, level + 1, nextSequentialNodeId); // Pass nextSequentialNodeId
       currentNodes = currentNodes.concat(optionResult.nodes);
       currentEdges = currentEdges.concat(optionResult.edges); // Includes edge from MenuBlock to Option
       maxOptionY = Math.max(maxOptionY, optionResult.nextY);
