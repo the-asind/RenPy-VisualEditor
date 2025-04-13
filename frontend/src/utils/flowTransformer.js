@@ -66,10 +66,11 @@ const createFlowEdge = (id, source, target, label = '', type = 'default', animat
 /**
  * Recursive function to process the tree and generate nodes and edges.
  * Tracks layout information (current Y position, horizontal offsets).
+ * Connects branches/sequences to the next sequential node if provided.
  *
  * Returns: { nodes: [], edges: [], nextY: number, horizontalBounds: { minX: number, maxX: number } }
  */
-function processNodeRecursive(apiNode, parentNodeId = null, startX = 0, startY = 0, level = 0) {
+function processNodeRecursive(apiNode, parentNodeId = null, startX = 0, startY = 0, level = 0, nextSequentialNodeId = null) {
   if (!apiNode) {
     return { nodes: [], edges: [], nextY: startY, horizontalBounds: { minX: startX, maxX: startX + NODE_WIDTH } };
   }
@@ -82,11 +83,11 @@ function processNodeRecursive(apiNode, parentNodeId = null, startX = 0, startY =
   let currentNodes = [flowNode];
   let currentEdges = [];
 
-  if (parentNodeId) {
-    // Add edge from parent, unless it's the root node's direct child (LabelBlock)
-     if (nodeType !== 'LabelBlock') {
+  if (parentNodeId && nodeType !== 'LabelBlock') {
+    // Add edge from parent, handling specific labels for If/Menu branches later
+    if (apiNode.meta?.branchType !== 'true' && apiNode.meta?.branchType !== 'false') { // Avoid duplicate edges for If branches
         currentEdges.push(createFlowEdge(createEdgeId(parentNodeId, nodeId), parentNodeId, nodeId));
-     }
+    }
   }
 
   let currentY = startY + NODE_HEIGHT_BASE + VERTICAL_SPACING;
@@ -96,49 +97,51 @@ function processNodeRecursive(apiNode, parentNodeId = null, startX = 0, startY =
   // --- Handle Children based on Node Type ---
 
   if (nodeType === 'IfBlock') {
-    const horizontalShift = HORIZONTAL_SPACING_BASE * (level + 1); // Increase shift with nesting
+    const horizontalShift = HORIZONTAL_SPACING_BASE * (level + 1);
 
-    // 1. True Branch (children) - Shifted Right
+    // 1. True Branch (children)
     let trueBranchY = currentY;
     let trueBranchMinX = startX + horizontalShift / 2;
     let trueBranchMaxX = startX + horizontalShift / 2 + NODE_WIDTH;
-    let lastTrueNodeId = nodeId; // Start connection from the IfBlock itself
 
     if (apiNode.children && apiNode.children.length > 0) {
-      const trueBranchResult = processNodeRecursive(apiNode.children[0], nodeId, startX + horizontalShift / 2, currentY, level + 1);
+      // Pass the overall nextSequentialNodeId down to the branch
+      // Mark the child node's meta for edge labeling
+      apiNode.children[0].meta = { ...(apiNode.children[0].meta || {}), branchType: 'true' };
+      const trueBranchResult = processNodeRecursive(apiNode.children[0], nodeId, startX + horizontalShift / 2, currentY, level + 1, nextSequentialNodeId);
       currentNodes = currentNodes.concat(trueBranchResult.nodes);
-      // Add edge with "True" label
+      // Add edge from IfBlock to the *first* node of the true branch
       currentEdges.push(createFlowEdge(createEdgeId(nodeId, apiNode.children[0].id, 'true'), nodeId, apiNode.children[0].id, 'True'));
       currentEdges = currentEdges.concat(trueBranchResult.edges);
       trueBranchY = trueBranchResult.nextY;
       trueBranchMinX = trueBranchResult.horizontalBounds.minX;
       trueBranchMaxX = trueBranchResult.horizontalBounds.maxX;
-      lastTrueNodeId = trueBranchResult.nodes[trueBranchResult.nodes.length - 1]?.id || nodeId;
-    } else {
-        // If no true children, the 'True' path effectively ends here for layout purposes
-        trueBranchY = currentY; // Keep Y the same
+    } else if (nextSequentialNodeId) {
+        // No True children, but there's a next node: connect IfBlock directly to it
+        currentEdges.push(createFlowEdge(createEdgeId(nodeId, nextSequentialNodeId, 'true'), nodeId, nextSequentialNodeId, 'True'));
+        trueBranchY = currentY; // Y doesn't advance
     }
 
-
-    // 2. False Branch (false_branch) - Shifted Left
+    // 2. False Branch (false_branch)
     let falseBranchY = currentY;
     let falseBranchMinX = startX - horizontalShift / 2;
     let falseBranchMaxX = startX - horizontalShift / 2 + NODE_WIDTH;
-    let lastFalseNodeId = nodeId; // Start connection from the IfBlock itself
 
     if (apiNode.false_branch) {
-      const falseBranchResult = processNodeRecursive(apiNode.false_branch, nodeId, startX - horizontalShift / 2, currentY, level + 1);
+      // Pass the overall nextSequentialNodeId down to the branch
+      apiNode.false_branch.meta = { ...(apiNode.false_branch.meta || {}), branchType: 'false' };
+      const falseBranchResult = processNodeRecursive(apiNode.false_branch, nodeId, startX - horizontalShift / 2, currentY, level + 1, nextSequentialNodeId);
       currentNodes = currentNodes.concat(falseBranchResult.nodes);
-       // Add edge with "False" label
+      // Add edge from IfBlock to the *first* node of the false branch
       currentEdges.push(createFlowEdge(createEdgeId(nodeId, apiNode.false_branch.id, 'false'), nodeId, apiNode.false_branch.id, 'False'));
       currentEdges = currentEdges.concat(falseBranchResult.edges);
       falseBranchY = falseBranchResult.nextY;
       falseBranchMinX = falseBranchResult.horizontalBounds.minX;
       falseBranchMaxX = falseBranchResult.horizontalBounds.maxX;
-      lastFalseNodeId = falseBranchResult.nodes[falseBranchResult.nodes.length - 1]?.id || nodeId;
-    } else {
-        // If no false branch, the 'False' path effectively ends here for layout purposes
-        falseBranchY = currentY; // Keep Y the same
+    } else if (nextSequentialNodeId) {
+        // No False branch, but there's a next node: connect IfBlock directly to it
+        currentEdges.push(createFlowEdge(createEdgeId(nodeId, nextSequentialNodeId, 'false'), nodeId, nextSequentialNodeId, 'False'));
+        falseBranchY = currentY; // Y doesn't advance
     }
 
     // Determine next Y and horizontal bounds
@@ -146,10 +149,7 @@ function processNodeRecursive(apiNode, parentNodeId = null, startX = 0, startY =
     childrenMinX = Math.min(trueBranchMinX, falseBranchMinX);
     childrenMaxX = Math.max(trueBranchMaxX, falseBranchMaxX);
 
-    // TODO: Connect dangling True/False branches to the next node or EndBlock
-    // This requires knowing the 'next' node after the IfBlock, which is complex recursively.
-    // For MVP, dangling ends might be acceptable, or connect to a placeholder EndBlock.
-
+    // NOTE: The recursive calls now handle connecting the *end* of their branches to nextSequentialNodeId if applicable.
 
   } else if (nodeType === 'MenuBlock') {
     let menuOptionX = startX - ( (apiNode.children.length - 1) * (NODE_WIDTH + HORIZONTAL_SPACING_MENU) ) / 2; // Center options
@@ -158,7 +158,7 @@ function processNodeRecursive(apiNode, parentNodeId = null, startX = 0, startY =
     let lastOptionX = -Infinity;
 
     apiNode.children.forEach((optionNode) => {
-      const optionResult = processNodeRecursive(optionNode, nodeId, menuOptionX, currentY, level + 1);
+      const optionResult = processNodeRecursive(optionNode, nodeId, menuOptionX, currentY, level + 1, null);
       currentNodes = currentNodes.concat(optionResult.nodes);
       currentEdges = currentEdges.concat(optionResult.edges); // Includes edge from MenuBlock to Option
       maxOptionY = Math.max(maxOptionY, optionResult.nextY);
@@ -172,28 +172,30 @@ function processNodeRecursive(apiNode, parentNodeId = null, startX = 0, startY =
     childrenMaxX = lastOptionX;
 
   } else if (apiNode.children && apiNode.children.length > 0) {
-    // Default: Process children vertically (Action, LabelBlock, MenuOption)
     let lastChildNodeId = nodeId;
     let childMinX = startX;
     let childMaxX = startX + NODE_WIDTH;
 
     for (let i = 0; i < apiNode.children.length; i++) {
         const childNode = apiNode.children[i];
-        // For Action nodes, connect sequentially if parent isn't If/Menu
-        const parentIdForChild = (nodeType === 'Action' || nodeType === 'LabelBlock' || nodeType === 'MenuOption') ? lastChildNodeId : nodeId;
-        const childResult = processNodeRecursive(childNode, parentIdForChild, startX, currentY, level); // Keep same X for vertical stack
+        const nextChildId = (i + 1 < apiNode.children.length) ? apiNode.children[i+1].id : nextSequentialNodeId;
+        const parentIdForChild = lastChildNodeId;
+        const childResult = processNodeRecursive(childNode, parentIdForChild, startX, currentY, level, nextChildId);
         currentNodes = currentNodes.concat(childResult.nodes);
         currentEdges = currentEdges.concat(childResult.edges);
         currentY = childResult.nextY;
-        lastChildNodeId = childNode.id; // Update last node ID for sequential connection
+        lastChildNodeId = childNode.id;
         childMinX = Math.min(childMinX, childResult.horizontalBounds.minX);
         childMaxX = Math.max(childMaxX, childResult.horizontalBounds.maxX);
     }
      childrenMinX = childMinX;
      childrenMaxX = childMaxX;
+  } else {
+    if (nextSequentialNodeId) {
+        currentEdges.push(createFlowEdge(createEdgeId(nodeId, nextSequentialNodeId), nodeId, nextSequentialNodeId));
+    }
   }
 
-  // --- Return Results ---
   return {
     nodes: currentNodes,
     edges: currentEdges,
@@ -204,7 +206,6 @@ function processNodeRecursive(apiNode, parentNodeId = null, startX = 0, startY =
     }
   };
 }
-
 
 /**
  * Main transformation function.
@@ -221,58 +222,37 @@ export function transformTreeToFlow(rootApiNode) {
     return { initialNodes: [], initialEdges: [] };
   }
 
-  // Process each LabelBlock
-  let lastLabelBlockEndNodeId = null;
   rootApiNode.children.forEach((labelBlockNode, index) => {
     if (labelBlockNode.node_type === 'LabelBlock') {
-      const labelBlockResult = processNodeRecursive(labelBlockNode, null, initialX, currentY, 0); // No parent for LabelBlock
+      const nextLabelBlockId = null;
+      const labelBlockResult = processNodeRecursive(labelBlockNode, null, initialX, currentY, 0, nextLabelBlockId);
 
-      // Add an "End" node for this LabelBlock
       const endNodeId = `end-${labelBlockNode.id}`;
-      const endNodeY = labelBlockResult.nextY; // Position after the last node in the block
-      // Center the End node based on the horizontal bounds of the block
+      const endNodeY = labelBlockResult.nextY;
       const endNodeX = labelBlockResult.horizontalBounds.minX + (labelBlockResult.horizontalBounds.maxX - labelBlockResult.horizontalBounds.minX - NODE_WIDTH) / 2;
-
       const endNode = createFlowNode(endNodeId, 'EndBlock', { label_name: 'Конец', node_type: 'EndBlock' }, { x: endNodeX, y: endNodeY });
 
       allNodes = allNodes.concat(labelBlockResult.nodes);
       allNodes.push(endNode);
       allEdges = allEdges.concat(labelBlockResult.edges);
 
-      // Connect the last node(s) of the LabelBlock tree to the End node
-      // Find leaf nodes within this LabelBlock's result that don't have outgoing edges *within this block*
-      const blockNodeIds = new Set(labelBlockResult.nodes.map(n => n.id));
       const nodesWithOutgoingEdges = new Set(labelBlockResult.edges.map(e => e.source));
 
       labelBlockResult.nodes.forEach(node => {
           if (!nodesWithOutgoingEdges.has(node.id)) {
-              // Check if it's truly a leaf within this block's processing
-              const isLeaf = !labelBlockResult.edges.some(edge => edge.source === node.id);
-              // Also check it's not an If block waiting for connection logic
-              if (isLeaf && node.meta.node_type !== 'IfBlock') {
-                 allEdges.push(createFlowEdge(createEdgeId(node.id, endNodeId), node.id, endNodeId));
-              }
-              // Basic connection for IfBlock leaves for now
-              if (node.meta.node_type === 'IfBlock') {
-                  // If no children, connect If itself
-                  if (!node.meta.children || node.meta.children.length === 0) {
-                     allEdges.push(createFlowEdge(createEdgeId(node.id, endNodeId, 'true'), node.id, endNodeId, 'True'));
-                  }
-                   // If no false branch, connect If itself
-                  if (!node.meta.false_branch) {
-                     allEdges.push(createFlowEdge(createEdgeId(node.id, endNodeId, 'false'), node.id, endNodeId, 'False'));
-                  }
+              const alreadyConnectedFalse = node.meta.node_type === 'IfBlock' &&
+                                          !node.meta.false_branch &&
+                                          labelBlockResult.edges.some(e => e.source === node.id && e.label === 'False');
+
+              if (!alreadyConnectedFalse) {
+                 allEdges.push(createFlowEdge(createEdgeId(node.id, endNodeId, 'leaf'), node.id, endNodeId));
               }
           }
       });
 
-
-      // Update currentY for the next LabelBlock, considering the End node height
-      currentY = endNodeY + NODE_HEIGHT_BASE + VERTICAL_SPACING * 2; // Add extra spacing between LabelBlocks
-      lastLabelBlockEndNodeId = endNodeId; // Keep track if needed later
+      currentY = endNodeY + NODE_HEIGHT_BASE + VERTICAL_SPACING * 2;
     }
   });
-
 
   return { initialNodes: allNodes, initialEdges: allEdges };
 }
