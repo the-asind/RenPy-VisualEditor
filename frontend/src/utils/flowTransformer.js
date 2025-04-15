@@ -98,7 +98,9 @@ function processNodeRecursive(apiNode, parentInfo = null, startX = 0, startY = 0
 
   // --- Default Edge Creation ---
   // Create a standard edge from the parent if one exists. Specific logic below might modify it.
-  if (parentInfo && nodeType !== 'LabelBlock') { // LabelBlocks don't connect from a parent
+  // Do not create a default edge if the parent was an IfBlock or MenuBlock,
+  // as connections originate from their branches/options instead.
+  if (parentInfo && nodeType !== 'LabelBlock' && parentInfo.type !== 'IfBlock' && parentInfo.type !== 'MenuBlock') {
     currentEdges.push(createFlowEdge(createEdgeId(parentInfo.id, nodeId), parentInfo.id, nodeId));
   }
 
@@ -173,7 +175,10 @@ function processNodeRecursive(apiNode, parentInfo = null, startX = 0, startY = 0
     apiNode.children.forEach((optionNode) => {
       // Pass nextSequentialNodeId for fall-through logic after the menu option's branch
       const optionResult = processNodeRecursive(optionNode, nextParentInfo, menuOptionX, currentY, level + 1, nextSequentialNodeId);
-      // The default edge from MenuBlock to MenuOption is created by the recursive call
+      // Explicitly create the edge from MenuBlock to this MenuOption
+      // This was previously (incorrectly) handled by the default edge creation logic
+      currentEdges.push(createFlowEdge(createEdgeId(nodeId, optionNode.id, 'option'), nodeId, optionNode.id));
+      
       currentNodes = currentNodes.concat(optionResult.nodes);
       currentEdges = currentEdges.concat(optionResult.edges);
       maxOptionY = Math.max(maxOptionY, optionResult.nextY);
