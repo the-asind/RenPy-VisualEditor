@@ -82,7 +82,7 @@ async def test_parse_menu_structure(sample_renpy_script):
 
     assert menu_node is not None
     assert menu_node.node_type == ChoiceNodeType.MENU_BLOCK
-    assert len(menu_node.children) == 2  # Two options
+    assert len(menu_node.children) == 2
     assert all(child.label_name for child in menu_node.children), "Меню содержит опцию без имени"
     menu_options = [child.label_name.strip('"') for child in menu_node.children]
     assert "Выбрать первый путь" in menu_options

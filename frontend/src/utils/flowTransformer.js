@@ -134,8 +134,6 @@ function processNodeRecursive(apiNode, parentInfo = null, startX = 0, startY = 0
       trueBranchMinX = trueBranchResult.horizontalBounds.minX;
       trueBranchMaxX = trueBranchResult.horizontalBounds.maxX;
     } else if (nextSequentialNodeId) {
-        // No True children, but there's a next node: add edge directly
-        currentEdges.push(createFlowEdge(createEdgeId(nodeId, nextSequentialNodeId, 'true'), nodeId, nextSequentialNodeId, 'True'));
         trueBranchY = currentY;
     }
 
@@ -159,8 +157,6 @@ function processNodeRecursive(apiNode, parentInfo = null, startX = 0, startY = 0
       falseBranchMinX = falseBranchResult.horizontalBounds.minX;
       falseBranchMaxX = falseBranchResult.horizontalBounds.maxX;
     } else if (nextSequentialNodeId) {
-        // No False branch, but there's a next node: add edge directly
-        currentEdges.push(createFlowEdge(createEdgeId(nodeId, nextSequentialNodeId, 'false'), nodeId, nextSequentialNodeId, 'False'));
         falseBranchY = currentY;
     }
 
