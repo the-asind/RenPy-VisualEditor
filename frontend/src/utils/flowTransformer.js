@@ -159,7 +159,10 @@ function processNodeRecursive(apiNode, parentInfo = null, startX = 0, startY = 0
       falseBranchMinX = falseBranchResult.horizontalBounds.minX;
       falseBranchMaxX = falseBranchResult.horizontalBounds.maxX;
     } else if (nextSequentialNodeId) {
-        falseBranchY = currentY;
+        // If there's no explicit false branch, but there is a node to go to next,
+        // create a "False" edge directly from the IfBlock to that next node.
+        currentEdges.push(createFlowEdge(createEdgeId(nodeId, nextSequentialNodeId, 'false'), nodeId, nextSequentialNodeId, 'False'));
+        falseBranchY = currentY; // Keep Y coordinate calculation consistent
     }
 
     currentY = Math.max(trueBranchY, falseBranchY);
