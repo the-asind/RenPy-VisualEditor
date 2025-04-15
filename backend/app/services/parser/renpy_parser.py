@@ -452,6 +452,10 @@ class RenPyParser:
         Returns:
             A descriptive label name.
         """
+        # Check if start_line or end_line is out of range
+        if node.start_line >= len(self.lines) or node.end_line >= len(self.lines) or node.start_line < 0 or node.end_line < 0:
+            return ""
+        
         # If the first line ends with ":", it's a statement declaration
         if (node.start_line < len(self.lines) and 
             self._is_a_statement(self.lines[node.start_line]) and 
@@ -461,7 +465,13 @@ class RenPyParser:
         label_parts = []
         total_lines = node.end_line - node.start_line + 1
         
-        if total_lines > 4:
+        # For small blocks (4 or fewer lines), include all non-empty lines
+        if total_lines <= 4:
+            for i in range(node.start_line, min(node.end_line + 1, len(self.lines))):
+                if not self.lines[i].strip():
+                    continue
+                label_parts.append(self.lines[i].strip())
+        else:
             # Try to find dialog lines
             first_dialog_lines = []
             last_dialog_lines = []
@@ -525,12 +535,20 @@ class RenPyParser:
                         break
                 
                 label_parts.extend(last_lines)
-        else:
-            # For nodes with 4 or fewer lines, include all non-empty lines
+        
+        # If we still have no label parts, just get all lines in the range to be safe
+        if not label_parts:
             for i in range(node.start_line, min(node.end_line + 1, len(self.lines))):
-                if not self.lines[i].strip():
-                    continue
-                label_parts.append(self.lines[i].strip())
+                line = self.lines[i].strip()
+                if line:
+                    label_parts.append(line)
+        
+        # Handle special commands like return/jump
+        if not label_parts and node.start_line < len(self.lines):
+            # Last attempt - use the single line directly
+            line = self.lines[node.start_line].strip()
+            if line:
+                label_parts.append(line)
         
         label_text = "\n".join(label_parts)
         
@@ -538,18 +556,19 @@ class RenPyParser:
         if not node.node_type == ChoiceNodeType.IF_BLOCK and not node.node_type == ChoiceNodeType.MENU_OPTION:
             label_text = self._remove_bracketed_content(label_text)
 
-        # If the label is less than 20 characters, try to add more lines until we reach 80
+        # If the label is still empty or very short, try every line in the range
         if len(label_text) < 20:
-            label_text = ""
-            extra_lines = []
-            current_index = node.start_line
+            combined_text = []
             
-            while len(label_text) < 80 and current_index <= node.end_line and current_index < len(self.lines):
-                line = self.lines[current_index].strip()
-                if line and line not in label_parts and line not in extra_lines:
-                    extra_lines.append(line)
-                    label_text = "\n".join(label_parts + extra_lines)
-                current_index += 1
+            # Important: Include ALL lines in the node's range
+            for i in range(node.start_line, min(node.end_line + 1, len(self.lines))):
+                if i < len(self.lines):  # Double-check index
+                    line = self.lines[i].strip()
+                    if line:
+                        combined_text.append(line)
+            
+            if combined_text:
+                label_text = "\n".join(combined_text)
         
         # Truncate to 100 characters if text is too long
         if len(label_text) > 100:
