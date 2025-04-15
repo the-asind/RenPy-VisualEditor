@@ -52,7 +52,7 @@ async def test_parse_async_basic(sample_renpy_script):
     labels = [child.label_name for child in root_node.children
               if child.node_type == ChoiceNodeType.LABEL_BLOCK]
 
-    assert len(root_node.children) > 1  # Should have INIT and other labels
+    assert len(root_node.children) > 1  # Should have start
     assert "start" in labels
     assert "path_one" in labels
     assert "path_two" in labels
@@ -109,4 +109,5 @@ async def test_parse_if_else_structure(sample_renpy_script):
 
     # Check if else branch exists
     assert if_node.false_branch is not None
-    assert if_node.false_branch.node_type == ChoiceNodeType.ELSE_BLOCK
+    assert if_node.false_branch.node_type == ChoiceNodeType.ACTION
+    assert "Что-то происходит, если условие не выполнено" in if_node.false_branch.label_name

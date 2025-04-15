@@ -199,7 +199,7 @@ class RenPyParser:
         
         statement_node.end_line = index
         
-        # Check for 'elif' at the same indentation level
+        # Check for 'elif' or 'else' at the same indentation level
         while index + 1 < len(self.lines):
             index += 1
             next_line = self.lines[index]
@@ -218,6 +218,18 @@ class RenPyParser:
                 false_branch_node = ChoiceNode(start_line=index)
                 index = self._parse_statement(index, false_branch_node, current_indent, ChoiceNodeType.IF_BLOCK)
                 false_branch_node.label_name = self._get_label_name(false_branch_node)
+                current_node.false_branch = false_branch_node
+                return index
+            
+            # Handle 'else' statement
+            if self._is_else_statement(next_line_trimmed):
+                # Create ACTION node for else branch directly
+                false_branch_node = ChoiceNode(start_line=index+1, node_type=ChoiceNodeType.ACTION)
+                
+                # Parse contents of the else branch
+                temp, index = self._parse_block(index+1, current_indent + 1, false_branch_node)
+                false_branch_node.label_name = self._get_label_name(false_branch_node)
+                
                 current_node.false_branch = false_branch_node
                 return index
             
