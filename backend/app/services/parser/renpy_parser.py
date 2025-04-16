@@ -23,7 +23,7 @@ class ChoiceNode:
         end_line (int): The ending line number in the script.
         node_type (ChoiceNodeType): The type of the node.
         children (List[ChoiceNode]): Child nodes.
-        false_branch (Optional[ChoiceNode]): The false branch for if/elif/else statements.
+        false_branch (List[ChoiceNode]): The false branch children for if/elif/else statements.
     """
     def __init__(self, 
                  label_name: str = "", 
@@ -35,7 +35,7 @@ class ChoiceNode:
         self.end_line = end_line
         self.node_type = node_type
         self.children = []
-        self.false_branch = None
+        self.false_branch = []
 
 
 class RenPyParser:
@@ -183,21 +183,21 @@ class RenPyParser:
         current_node.end_line = index
         index += 1
         statement_node = ChoiceNode(start_line=index, node_type=ChoiceNodeType.ACTION)
-        
-        # Parse the 'true' branch
+          # Parse the 'true' branch
         while True:
             temp, index = self._parse_block(index, current_indent + 1, statement_node)
             
             statement_node.label_name = self._get_label_name(statement_node)
-            current_node.children.append(statement_node)
+            
+            # Only append nodes with valid content
+            if statement_node.start_line <= statement_node.end_line:
+                current_node.children.append(statement_node)
             
             if not temp:
                 break
                 
             index += 1
             statement_node = ChoiceNode(start_line=index, node_type=ChoiceNodeType.ACTION)
-        
-        statement_node.end_line = index
         
         # Check for 'elif' or 'else' at the same indentation level
         while index + 1 < len(self.lines):
@@ -218,19 +218,25 @@ class RenPyParser:
                 false_branch_node = ChoiceNode(start_line=index)
                 index = self._parse_statement(index, false_branch_node, current_indent, ChoiceNodeType.IF_BLOCK)
                 false_branch_node.label_name = self._get_label_name(false_branch_node)
-                current_node.false_branch = false_branch_node
-                return index
-            
-            # Handle 'else' statement
+                # Append to false_branch list instead of direct assignment
+                current_node.false_branch.append(false_branch_node)
+                return index              # Handle 'else' statement
             if self._is_else_statement(next_line_trimmed):
-                # Create ACTION node for else branch directly
-                false_branch_node = ChoiceNode(start_line=index+1, node_type=ChoiceNodeType.ACTION)
-                
-                # Parse contents of the else branch
-                temp, index = self._parse_block(index+1, current_indent + 1, false_branch_node)
-                false_branch_node.label_name = self._get_label_name(false_branch_node)
-                
-                current_node.false_branch = false_branch_node
+                # Process all nodes in else branch
+                index += 1
+                while True:
+                    false_branch_node = ChoiceNode(start_line=index, node_type=ChoiceNodeType.ACTION)
+                    result, index = self._parse_block(index, current_indent + 1, false_branch_node)
+                    
+                    if false_branch_node.end_line >= false_branch_node.start_line:
+                        false_branch_node.label_name = self._get_label_name(false_branch_node)
+                        current_node.false_branch.append(false_branch_node)
+                    
+                    if not result:
+                        break
+                        
+                    index += 1
+                    
                 return index
             
             index -= 1

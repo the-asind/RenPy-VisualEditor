@@ -1,17 +1,27 @@
-version: '3.8'
-
 services:
   frontend:
-    build: 
+    build:
       context: ./frontend
-      dockerfile: Dockerfile.dev
-    command: npm run dev -- --host 0.0.0.0
+      dockerfile: Dockerfile 
+      target: build 
+    command: npm run dev -- --host 0.0.0.0 
     ports:
-      - "3000:3000"
+      - "3001:3000" 
+    volumes:
+      - ./frontend:/app 
+      - /app/node_modules 
     environment:
       - NODE_ENV=development
+      - VITE_API_URL=http://localhost:8000/api 
 
   backend:
-    command: uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+    
+    command: uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 
+    volumes:
+      - ./backend:/app 
+    ports: 
+      - "8000:8000" 
     environment:
-      - ENVIRONMENT=dev
+      - ENVIRONMENT=dev 
+      
+      - CORS_ORIGINS=http://localhost:3001 

@@ -33,7 +33,7 @@ def node_to_dict(node: ChoiceNode) -> Dict[str, Any]:
     }
     
     if node.false_branch:
-        result["false_branch"] = node_to_dict(node.false_branch)
+        result["false_branch"] = [node_to_dict(child) for child in node.false_branch]
         
     return result
 

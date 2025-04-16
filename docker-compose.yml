@@ -5,8 +5,8 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-      args: # Pass the HOST-ACCESSIBLE URL as a build argument
-        VITE_API_URL: http://localhost:8000/api # Use localhost for browser access
+      args: 
+        VITE_API_URL: http://localhost:8000/api 
     ports:
       - "3000:80"
     volumes:
