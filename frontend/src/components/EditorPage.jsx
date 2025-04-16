@@ -153,8 +153,7 @@ const EditorPageInternal = () => {
       {scriptId && (
         <div className="editor-area">
           <h2>Editing: {fileName} (ID: {scriptId})</h2>
-          <div style={{ height: '80vh', width: '100%', border: '1px solid #ccc' }}>
-             <ReactFlow
+          <div style={{ height: '80vh', width: '100%', border: '1px solid #ccc' }}>             <ReactFlow
                nodes={nodes}
                edges={edges}
                onNodesChange={onNodesChange}
@@ -166,6 +165,8 @@ const EditorPageInternal = () => {
                edgesConnectable={false} // Disable manual edge creation by dragging
                nodesDraggable={true} // Keep nodes draggable (as per requirement 13)
                nodesConnectable={false} // Also disable connecting by clicking nodes if desired
+               maxZoom={8} // Increased from default (2) to allow deeper zooming
+               minZoom={0.1} // Slightly smaller than default (0.5) to allow more zooming out
              >
                <Background />
                <Controls />

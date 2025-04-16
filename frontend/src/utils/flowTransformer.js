@@ -4,8 +4,7 @@ import { MarkerType } from 'reactflow';
 const NODE_WIDTH = 250;
 const NODE_HEIGHT_BASE = 50; // Base height, can increase with content
 const VERTICAL_SPACING = 80;
-const HORIZONTAL_SPACING_BASE = 120; // Adjusted horizontal spacing for branches/menus
-const HORIZONTAL_SPACING_MENU = 100; // Adjusted spacing for menu options
+const HORIZONTAL_SPACING_BASE = 20; // Unified horizontal spacing for all branches (if/else and menu options)
 
 // --- Node Styling ---
 const nodeColors = {
@@ -274,34 +273,68 @@ function processNodeRecursive(apiNode, parentInfo = null, startX = 0, startY = 0
     // Ensure bounds are valid even if one or both branches were empty
      if (!isFinite(childrenMinX)) childrenMinX = startX;
      if (!isFinite(childrenMaxX)) childrenMaxX = startX + NODE_WIDTH;
-
-
   } else if (nodeType === 'MenuBlock') {
-    // Layout MenuOptions horizontally, centered under the MenuBlock
-    let menuOptionX = startX - ((apiNode.children.length - 1) * (NODE_WIDTH + HORIZONTAL_SPACING_MENU)) / 2;
+    // --- Layout Algorithm for MenuBlock (similar to IfBlock approach) ---
+    // First, process all options to get their dimensions, then position them with proper spacing
+    
+    // 1. Process each menu option to determine its structure and bounds
+    const optionResults = [];
     let maxOptionY = currentY;
+    let tempX = startX; // Temporary X for initial processing
+    
+    // Process each option to get its structure
+    apiNode.children.forEach((optionNode) => {
+      const optionResult = processNodeRecursive(optionNode, nextParentInfo, tempX, currentY, level + 1, nextSequentialNodeId);
+      optionResults.push({
+        node: optionNode,
+        result: optionResult,
+        width: optionResult.horizontalBounds.maxX - optionResult.horizontalBounds.minX
+      });
+      
+      maxOptionY = Math.max(maxOptionY, optionResult.nextY);
+    });
+    
+    // 2. Calculate total width and spacing
+    const totalWidth = optionResults.reduce((sum, option) => sum + option.width, 0) 
+                    + (optionResults.length - 1) * HORIZONTAL_SPACING_BASE;
+    
+    // 3. Calculate starting X to center the combined structure under the parent MenuBlock
+    const startingX = startX + NODE_WIDTH / 2 - totalWidth / 2;
+    
+    // 4. Position each option with proper spacing and create connections
+    let currentX = startingX;
     let firstOptionX = Infinity;
     let lastOptionX = -Infinity;
-
-    apiNode.children.forEach((optionNode) => {
-      // Pass nextSequentialNodeId so each menu option branch eventually connects back to the main flow
-      const optionResult = processNodeRecursive(optionNode, nextParentInfo, menuOptionX, currentY, level + 1, nextSequentialNodeId);
-
-      // Explicitly create the edge from MenuBlock to this MenuOption *after* processing the option branch
+    
+    optionResults.forEach((optionData) => {
+      const { node: optionNode, result: optionResult, width } = optionData;
+      
+      // Calculate shift needed to position this option
+      const deltaX = currentX - optionResult.horizontalBounds.minX;
+      
+      // Apply shift to all nodes in this option
+      optionResult.nodes.forEach(node => { node.position.x += deltaX; });
+      
+      // Create edge from MenuBlock to this MenuOption
       const optionStartNodeId = optionNode.id;
       currentEdges.push(createFlowEdge(createEdgeId(nodeId, optionStartNodeId, 'option'), nodeId, optionStartNodeId));
+      
       // Remove the default edge possibly created by the child's recursive call
       optionResult.edges = optionResult.edges.filter(edge => !(edge.source === nodeId && edge.target === optionStartNodeId));
-
+      
+      // Add nodes and edges to the main collection
       currentNodes = currentNodes.concat(optionResult.nodes);
       currentEdges = currentEdges.concat(optionResult.edges);
-      maxOptionY = Math.max(maxOptionY, optionResult.nextY); // Track the lowest Y point among all options
-      firstOptionX = Math.min(firstOptionX, optionResult.horizontalBounds.minX); // Track overall horizontal bounds
-      lastOptionX = Math.max(lastOptionX, optionResult.horizontalBounds.maxX);
-      menuOptionX += NODE_WIDTH + HORIZONTAL_SPACING_MENU; // Move X for the next option
+      
+      // Track horizontal bounds
+      firstOptionX = Math.min(firstOptionX, currentX);
+      lastOptionX = Math.max(lastOptionX, currentX + width);
+      
+      // Move X for next option
+      currentX += width + HORIZONTAL_SPACING_BASE;
     });
 
-    currentY = maxOptionY; // Set current Y below the lowest menu option branch
+    currentY = maxOptionY; // Set current Y below the lowest menu option
     childrenMinX = firstOptionX;
     childrenMaxX = lastOptionX;
 
