@@ -5,6 +5,8 @@ import ReactFlow, {
   addEdge,
   Background,
   Controls,
+  MiniMap,
+  Panel,
   ReactFlowProvider
 } from 'reactflow';
 import 'reactflow/dist/style.css';
@@ -12,6 +14,7 @@ import 'reactflow/dist/style.css';
 import { parseScript, createNewScript } from '../services/api';
 import { transformTreeToFlow } from '../utils/flowTransformer'; 
 import './EditorPage.css';
+import logo from '../assets/logo.svg'; // Add a logo to your assets folder
 
 const EditorPageInternal = () => {
   const [scriptId, setScriptId] = useState(null);
@@ -19,7 +22,8 @@ const EditorPageInternal = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [parsedData, setParsedData] = useState(null);
-
+  const [showLeftPanel, setShowLeftPanel] = useState(true);
+  
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
 
@@ -121,59 +125,122 @@ const EditorPageInternal = () => {
    );
 
   return (
-    <div className="editor-page">
-      <h1>Ren'Py Visual Editor</h1>
-
-      {isLoading && <div className="loading">Loading...</div>}
-      {error && <div className="error-message">Error: {error}</div>}
-
-      {!scriptId && !isLoading && (
-        // ... existing file options div ...
-        <div className="file-options">
-          <h2>Get Started</h2>
-          <p>Open an existing Ren'Py script (.rpy) or create a new one.</p>
-          <div className="button-group">
-             <label htmlFor="file-upload" className="button button-open">
-                Open .rpy File
-             </label>
-             <input
-                id="file-upload"
-                type="file"
-                accept=".rpy"
-                onChange={handleFileChange}
-                style={{ display: 'none' }} // Hide the default input
-             />
-            <button onClick={handleCreateNew} className="button button-create">
-              Create New Script
-            </button>
+    <div className="editor-container">
+      {/* Header Bar */}
+      <header className="editor-header">
+        <div className="header-left">
+          <div className="logo">
+            <img src={logo} alt="Ren'Py Visual Editor" />
+            <span>Ren'Py Visual Editor</span>
           </div>
+          {scriptId && <div className="file-info">{fileName}</div>}
         </div>
-      )}
-
-      {scriptId && (
-        <div className="editor-area">
-          <h2>Editing: {fileName} (ID: {scriptId})</h2>
-          <div style={{ height: '80vh', width: '100%', border: '1px solid #ccc' }}>             <ReactFlow
-               nodes={nodes}
-               edges={edges}
-               onNodesChange={onNodesChange}
-               onEdgesChange={onEdgesChange}
-               // onConnect={onConnect} // Keep if needed for programmatic connections later, but disable manual ones
-               onNodeClick={onNodeClick}
-               fitView
-               className="flow-canvas"
-               edgesConnectable={false} // Disable manual edge creation by dragging
-               nodesDraggable={true} // Keep nodes draggable (as per requirement 13)
-               nodesConnectable={false} // Also disable connecting by clicking nodes if desired
-               maxZoom={8} // Increased from default (2) to allow deeper zooming
-               minZoom={0.1} // Slightly smaller than default (0.5) to allow more zooming out
-             >
-               <Background />
-               <Controls />
-             </ReactFlow>
+        
+        <div className="header-center">
+          {scriptId && (
+            <div className="editor-tools">
+              <button className="tool-button">Select</button>
+              <button className="tool-button">Connect</button>
+              <button className="tool-button">Add Node</button>
+            </div>
+          )}
+        </div>
+        
+        <div className="header-right">
+          {scriptId && (
+            <>
+              <button className="action-button">Save</button>
+              <button className="action-button">Export</button>
+            </>
+          )}
+          <button className="action-button">Help</button>
+        </div>
+      </header>
+      
+      {/* Main Content Area */}
+      <div className="main-content">
+        {isLoading && <div className="loading-overlay"><div className="spinner"></div>Loading...</div>}
+        {error && <div className="error-toast">Error: {error}</div>}
+        
+        {/* Welcome Screen */}
+        {!scriptId && !isLoading && (
+          <div className="welcome-screen">
+            <div className="welcome-content">
+              <h1>Welcome to Ren'Py Visual Editor</h1>
+              <p>Open an existing Ren'Py script (.rpy) or create a new one to get started.</p>
+              <div className="welcome-actions">
+                <label htmlFor="file-upload" className="button primary-button">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16"><path fill="none" d="M0 0h24v24H0z"/><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zM6 20V4h7v5h5v11H6z" fill="currentColor"/></svg>
+                  Open .rpy File
+                </label>
+                <input
+                  id="file-upload"
+                  type="file"
+                  accept=".rpy"
+                  onChange={handleFileChange}
+                  style={{ display: 'none' }}
+                />
+                <button onClick={handleCreateNew} className="button secondary-button">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16"><path fill="none" d="M0 0h24v24H0z"/><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm-1 9h-2v3H8v2h3v3h2v-3h3v-2h-3v-3zm-6 9h12V9h-5V4H7v16z" fill="currentColor"/></svg>
+                  Create New Script
+                </button>
+              </div>
+            </div>
           </div>
-        </div>
-      )}
+        )}
+        
+        {/* Editor Canvas */}
+        {scriptId && (
+          <div className="editor-workspace">
+            {/* Left Tools Panel */}
+            <div className={`left-panel ${showLeftPanel ? 'expanded' : 'collapsed'}`}>
+              <div className="panel-toggle" onClick={() => setShowLeftPanel(!showLeftPanel)}>
+                {showLeftPanel ? '◀' : '▶'}
+              </div>
+              <div className="tool-group">
+                <button className="tool-item">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path d="M5,20H19V18H5M19,9H15V3H9V9H5L12,16L19,9Z" /></svg>
+                  <span>Import</span>
+                </button>
+                <button className="tool-item">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path d="M14,12H19.5L14,6.5V12M8,5H15L21,11V21A2,2 0 0,1 19,23H8C6.89,23 6,22.1 6,21V18H4V6C4,4.89 4.89,4 6,4H8V5M8,18V21H19V13H13V7H8V18Z" /></svg>
+                  <span>Scripts</span>
+                </button>
+                <button className="tool-item">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path d="M12,18.17L8.83,15L7.42,16.41L12,21L16.59,16.41L15.17,15M12,5.83L15.17,9L16.58,7.59L12,3L7.41,7.59L8.83,9L12,5.83Z" /></svg>
+                  <span>Node Types</span>
+                </button>
+              </div>
+            </div>
+            
+            {/* Main Flow Canvas */}
+            <div className="flow-container">
+              <ReactFlow
+                nodes={nodes}
+                edges={edges}
+                onNodesChange={onNodesChange}
+                onEdgesChange={onEdgesChange}
+                onNodeClick={onNodeClick}
+                fitView
+                edgesConnectable={false}
+                nodesDraggable={true}
+                nodesConnectable={false}
+                maxZoom={8}
+                minZoom={0.1}
+              >
+                <Background />
+                <Controls className="flow-controls" />
+                <MiniMap className="flow-minimap" />
+                <Panel position="top-right" className="flow-panel">
+                  <div className="file-details">
+                    <span>ID: {scriptId}</span>
+                  </div>
+                </Panel>
+              </ReactFlow>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 };
@@ -185,6 +252,4 @@ const EditorPage = () => (
   </ReactFlowProvider>
 );
 
-
 export default EditorPage;
-
