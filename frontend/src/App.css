@@ -5,8 +5,18 @@
   padding: 0;
 }
 
+:root {
+  --background-color: #f5f5f5;
+  --text-color: #333;
+}
+
+[data-theme='dark'] {
+  --background-color: #1e1e1e;
+  --text-color: #f0f0f0;
+}
+
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen,
+  font-family: "Nunito", -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen,
     Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
   color: #333;
   background-color: #f5f5f5;
@@ -304,6 +314,31 @@ body {
   background-color: #f9f9f9;
 }
 
+.react-flow__controls {
+  box-shadow: 0 0 2px 1px rgba(0, 0, 0, 0.08);
+  border-radius: 3px;
+  overflow: hidden; /* Prevent lines from extending beyond container */
+}
+
+.react-flow__controls button {
+  background: #fff;
+  border: none;
+  border-bottom: 1px solid #eee;
+  box-sizing: content-box;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  user-select: none;
+  padding: 5px;
+}
+
+.react-flow__controls button:hover {
+  background: #f4f4f4;
+}
+
 .flow-controls {
   bottom: 20px;
   right: 20px;
@@ -329,4 +364,65 @@ body {
   height: 100%;
   padding: 0;
   overflow: hidden;
+}
+
+/* Enhanced Node Styling */
+.react-flow__node {
+  transition: box-shadow 0.2s, background-color 0.2s;
+}
+
+.react-flow__node:hover {
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
+  transform: translateY(-2px);
+}
+
+/* Node type-specific styling */
+.react-flow__node.type-LabelBlock {
+  background: linear-gradient(135deg, #f0e68c, #ffd700);
+  border-left: 4px solid #d4af37;
+}
+
+.react-flow__node.type-Action {
+  background: linear-gradient(135deg, #f5f5f5, #e9e9e9);
+  border-left: 4px solid #bbb;
+}
+
+.react-flow__node.type-IfBlock {
+  background: linear-gradient(135deg, #90ee90, #7ccd7c);
+  border-left: 4px solid #3cb371;
+}
+
+.react-flow__node.type-MenuBlock {
+  background: linear-gradient(135deg, #d8bfbf, #966666);
+  border-left: 4px solid #7a5050;
+}
+
+.react-flow__node.type-MenuOption {
+  background: linear-gradient(135deg, #ffa500, #ff8c00);
+  border-left: 4px solid #d2691e;
+}
+
+.react-flow__node.type-EndBlock {
+  background: linear-gradient(135deg, #eeeeee, #dddddd);
+  border-left: 4px solid #aaa;
+}
+
+/* Edge styling improvements */
+.react-flow__edge-path {
+  stroke-width: 1.5px;
+  transition: stroke 0.2s;
+}
+
+.react-flow__edge.selected .react-flow__edge-path,
+.react-flow__edge:hover .react-flow__edge-path {
+  stroke-width: 2px;
+}
+
+/* Edge type styling */
+.react-flow__edge-path-true {
+  stroke: #3cb371;
+}
+
+.react-flow__edge-path-false {
+  stroke: #dc3545;
 }

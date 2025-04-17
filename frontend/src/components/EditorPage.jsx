@@ -7,14 +7,33 @@ import ReactFlow, {
   Controls,
   MiniMap,
   Panel,
-  ReactFlowProvider
+  ReactFlowProvider,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
+
+import { 
+  LabelBlockNode, 
+  ActionNode, 
+  IfBlockNode, 
+  MenuBlockNode, 
+  MenuOptionNode, 
+  EndBlockNode 
+} from './nodes/CustomNodes';
 
 import { parseScript, createNewScript } from '../services/api';
 import { transformTreeToFlow } from '../utils/flowTransformer'; 
 import './EditorPage.css';
-import logo from '../assets/logo.svg'; // Add a logo to your assets folder
+import logo from '../assets/logo.svg';
+
+const nodeTypes = {
+  labelBlock: LabelBlockNode,
+  action: ActionNode,
+  ifBlock: IfBlockNode,
+  menuBlock: MenuBlockNode,
+  menuOption: MenuOptionNode,
+  endBlock: EndBlockNode
+};
+
 
 const EditorPageInternal = () => {
   const [scriptId, setScriptId] = useState(null);
@@ -38,9 +57,28 @@ const EditorPageInternal = () => {
     if (parsedData) {
       try {
         const { initialNodes, initialEdges } = transformTreeToFlow(parsedData);
-        console.log("Generated Nodes:", initialNodes);
-        console.log("Generated Edges:", initialEdges);
-        setNodes(initialNodes);
+        
+        // Map node types to custom components
+        const mappedNodes = initialNodes.map(node => {
+          const type = node.meta?.node_type || 'action';
+          let nodeType = 'action'; // default
+          
+          switch(type) {
+            case 'LabelBlock': nodeType = 'labelBlock'; break;
+            case 'IfBlock': nodeType = 'ifBlock'; break;
+            case 'MenuBlock': nodeType = 'menuBlock'; break;
+            case 'MenuOption': nodeType = 'menuOption'; break;
+            case 'EndBlock': nodeType = 'endBlock'; break;
+            default: nodeType = 'action';
+          }
+          
+          return {
+            ...node,
+            type: nodeType
+          };
+        });
+        
+        setNodes(mappedNodes);
         setEdges(initialEdges);
       } catch (transformError) {
         console.error("Error transforming tree to flow:", transformError);
@@ -52,7 +90,7 @@ const EditorPageInternal = () => {
       setNodes([]);
       setEdges([]);
     }
-  }, [parsedData, setNodes, setEdges]); // Add setNodes, setEdges as dependencies
+  }, [parsedData, setNodes, setEdges]);
 
 
   const handleFileChange = useCallback(async (event) => {
@@ -227,8 +265,15 @@ const EditorPageInternal = () => {
                 nodesConnectable={false}
                 maxZoom={8}
                 minZoom={0.1}
+                nodeTypes={nodeTypes}
               >
-                <Background />
+                <Background
+                  variant="dots"
+                  gap={12}
+                  size={1}
+                  color="#e0e0e0"
+                  style={{ backgroundColor: '#f8f8f8' }}
+                />
                 <Controls className="flow-controls" />
                 <MiniMap className="flow-minimap" />
                 <Panel position="top-right" className="flow-panel">
