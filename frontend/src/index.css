@@ -1,14 +1,72 @@
-/* Global styles can be added here */
+/* Import Inter font from Google Fonts */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+/* Global styles following Frontend Visual Guidelines */
+:root {
+  /* Set base font-size to 62.5% so 1rem = 10px */
+  font-size: 62.5%;
+  
+  /* Default transition values */
+  --transition-fast: 200ms ease-out;
+  --transition-normal: 300ms ease-out;
+  --transition-slow: 400ms ease-out;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+  /* Primary font is Inter with system font fallbacks */
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
     'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  
+  /* Typography settings */
+  font-size: 1.6rem; /* Standard text size */
+  line-height: 1.4; /* Global line-height as specified */
+  background-color: var(--color-background);
+  color: var(--color-text);
+  transition: background-color var(--transition-normal), color var(--transition-normal);
+}
+
+/* Heading scale as specified in guidelines */
+h1 {
+  font-size: 3.2rem;
+  font-weight: 600;
+}
+
+h2 {
+  font-size: 2.4rem;
+  font-weight: 600;
+}
+
+h3 {
+  font-size: 1.8rem;
+  font-weight: 500;
 }
 
 code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
     monospace;
+}
+
+/* ReactFlow specific global styles */
+.react-flow__handle {
+  width: 8px;
+  height: 8px;
+  background-color: var(--color-primary);
+}
+
+.react-flow__edge-path {
+  stroke-width: 2px;
+}
+
+/* Accessibility focus style */
+:focus {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
 }

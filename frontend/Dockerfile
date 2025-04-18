@@ -1,11 +1,12 @@
 
-FROM node:18-alpine AS build
+FROM node:slim AS build
 
 WORKDIR /app
 
 COPY package*.json ./
 
 RUN npm install
+RUN npm rebuild esbuild --platform=linux --arch=x64
 
 COPY . .
 
