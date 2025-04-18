@@ -1,0 +1,679 @@
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
+import ReactFlow, {
+  ReactFlowProvider,
+  Controls,
+  Background,
+  MiniMap,
+  useNodesState,
+  useEdgesState,
+  addEdge,
+  Connection,
+  Node,
+  Edge,
+  MarkerType,
+} from 'reactflow';
+import {
+  Box,
+  Drawer,
+  Typography,
+  IconButton,
+  List,
+  ListItem,
+  ButtonGroup,
+  Button,
+  Avatar,
+  Chip,
+  AppBar,
+  Toolbar,
+  Tooltip,
+  useTheme,
+  alpha,
+  Divider,
+  Paper,
+  Tabs,
+  Tab
+} from '@mui/material';
+import { styled } from '@mui/material/styles';
+import MenuIcon from '@mui/icons-material/Menu';
+import ZoomInIcon from '@mui/icons-material/ZoomIn';
+import ZoomOutIcon from '@mui/icons-material/ZoomOut';
+import PanToolIcon from '@mui/icons-material/PanTool';
+import ViewComfyIcon from '@mui/icons-material/ViewComfy';
+import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+import 'reactflow/dist/style.css';
+import { motion } from 'framer-motion';
+
+// Import services from TypeScript files
+import { parseScript, createNewScript, ParsedScriptResponse } from '../services/api';
+import { transformTreeToFlow } from '../utils/flowTransformer'; 
+import './EditorPage.css';
+
+// Width for the editor toolbar drawer
+const drawerWidth = 60;
+const expandedDrawerWidth = 240;
+
+// Interface for user with status
+interface ActiveUser {
+  id: number;
+  name: string;
+  status: string;
+}
+
+// Interface for node data
+interface NodeData {
+  id?: string;
+  node_type?: string;
+  label_name?: string;
+  content?: string;
+  next_id?: string;
+  condition?: string;
+  branches?: { [key: string]: any };
+  options?: { id?: string; text?: string; next_id?: string; [key: string]: any }[];
+}
+
+// Mock active users data with statuses
+const activeUsers: ActiveUser[] = [
+  { id: 1, name: 'Alice', status: 'editing' },
+  { id: 2, name: 'Bob', status: 'online' },
+  { id: 3, name: 'Charlie', status: 'afk' },
+  { id: 4, name: 'Dave', status: 'away' }
+];
+
+// Status color mapping - Now uses theme directly
+const getStatusColor = (status: string, theme: any) => {
+  switch (status) {
+    case 'editing':
+      return { color: theme.palette.success.main, label: 'Editing' };
+    case 'online':
+      return { color: theme.palette.info.main, label: 'Online' };
+    case 'afk':
+      return { color: theme.palette.warning.main, label: 'AFK' };
+    case 'away':
+      return { color: theme.palette.error.main, label: 'Away' };
+    default:
+      return { color: theme.palette.grey[500], label: 'Unknown' };
+  }
+};
+
+// Styled components using theme.custom.glass
+const GlassAppBar = styled(AppBar)(({ theme }) => ({
+  backdropFilter: 'blur(12px)',
+  backgroundColor: theme.custom.glass.background,
+  boxShadow: theme.custom.glass.shadow,
+  borderBottom: `1px solid ${theme.custom.glass.border}`,
+  zIndex: 1200, 
+}));
+
+const EditorContainer = styled(Box)(({ theme }) => ({
+  position: 'absolute',
+  top: 0,
+  left: 0,
+  right: 0,
+  bottom: 0,
+  overflow: 'hidden',
+  backgroundColor: theme.palette.background.default,
+  zIndex: 1,
+}));
+
+const EditorPageInternal: React.FC = () => {
+  const theme = useTheme();
+  const [scriptId, setScriptId] = useState<string | null>(null);
+  const [projectName, setProjectName] = useState<string>('test project');
+  const [fileName, setFileName] = useState<string>('');
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
+  
+  // State for raw parsed data
+  const [allNodesData, setAllNodesData] = useState<Record<string, NodeData> | null>(null);
+  // State for identified label blocks (tabs)
+  const [labelBlocks, setLabelBlocks] = useState<Array<{ id: string, name: string }>>([]);
+  // State for the active tab ID
+  const [activeTabId, setActiveTabId] = useState<string | null>(null);
+
+  const [drawerOpen, setDrawerOpen] = useState<boolean>(true);
+  const [expandedDrawer, setExpandedDrawer] = useState<boolean>(false);
+  const [sideMenuVisible, setSideMenuVisible] = useState<boolean>(true);
+  
+  // React Flow state for the CURRENTLY DISPLAYED tab
+  const [currentNodes, setCurrentNodes, onCurrentNodesChange] = useNodesState([]);
+  const [currentEdges, setCurrentEdges, onCurrentEdgesChange] = useEdgesState([]);
+  
+  const [zoom, setZoom] = useState<number>(1);
+  const [isPanMode, setIsPanMode] = useState<boolean>(false);
+  const [showMinimap, setShowMinimap] = useState<boolean>(true);
+
+  // Function to toggle the editor toolbar drawer
+  const toggleDrawer = () => {
+    setDrawerOpen(!drawerOpen);
+  };
+
+  const toggleSideMenu = () => {
+    setSideMenuVisible(!sideMenuVisible);
+  };
+
+  const toggleDrawerExpansion = () => {
+    setExpandedDrawer(!expandedDrawer);
+  };
+
+  // Function to handle node clicks
+  const onNodeClick = useCallback((event: React.MouseEvent, node: Node) => {
+    console.log('Clicked node:', node);
+    // Later: Open CodeMirror popup slice editor
+  }, []);
+
+  // --- Data Loading and Tab Generation ---
+  useEffect(() => {
+    if (allNodesData) {
+      try {
+        // Find all LabelBlocks to create tabs
+        const foundLabels = Object.values(allNodesData)
+          .filter(node => node.node_type === 'LabelBlock' && node.id)
+          .map(node => ({ id: node.id!, name: node.label_name || node.id! }))
+          .sort((a, b) => a.name.localeCompare(b.name)); // Sort tabs alphabetically
+
+        setLabelBlocks(foundLabels);
+
+        // Set the first label as the active tab if not already set or invalid
+        if (foundLabels.length > 0 && (!activeTabId || !allNodesData[activeTabId])) {
+          setActiveTabId(foundLabels[0].id);
+        } else if (foundLabels.length === 0) {
+          setActiveTabId(null); // No labels found
+        }
+      } catch (e) {
+        console.error("Error processing node data for labels:", e);
+        setError("Failed to identify script labels.");
+        setLabelBlocks([]);
+        setActiveTabId(null);
+      }
+    } else {
+      // Reset tabs when data is cleared
+      setLabelBlocks([]);
+      setActiveTabId(null);
+    }
+  }, [allNodesData, activeTabId]); // Re-check activeTabId validity if allNodesData changes
+
+  // --- Flow Generation for Active Tab ---
+  useEffect(() => {
+    if (activeTabId && allNodesData) {
+      console.log(`Active tab changed to: ${activeTabId}. Regenerating flow...`);
+      try {
+        // Generate flow for the active tab
+        const { initialNodes, initialEdges } = transformTreeToFlow(allNodesData, theme, activeTabId);
+        setCurrentNodes(initialNodes);
+        setCurrentEdges(initialEdges);
+      } catch (transformError: any) {
+        console.error(`Error transforming flow for tab ${activeTabId}:`, transformError);
+        setError(`Failed to display tab ${activeTabId}: ${transformError.message}`);
+        setCurrentNodes([]);
+        setCurrentEdges([]);
+      }
+    } else {
+      // Clear flow if no active tab or no data
+      setCurrentNodes([]);
+      setCurrentEdges([]);
+    }
+  }, [activeTabId, allNodesData, theme, setCurrentNodes, setCurrentEdges]);
+
+  // --- API Call Handlers ---
+  const handleFileChange = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setIsLoading(true);
+    setError(null);
+    setAllNodesData(null); // Clear previous data
+    setActiveTabId(null); // Reset active tab
+    setLabelBlocks([]); // Clear tabs
+
+    try {
+      const response: ParsedScriptResponse = await parseScript(file);
+      console.log("API Response:", response);
+      if (response && response.nodes && response.script_id) {
+        setScriptId(response.script_id);
+        setFileName(file.name);
+        setAllNodesData(response.nodes); // Store raw data
+        setError(null);
+      } else {
+        throw new Error("Invalid API response structure");
+      }
+    } catch (err: any) {
+      console.error("Error parsing script:", err);
+      setError(err.message || 'Failed to parse script.');
+      setAllNodesData(null);
+      setScriptId(null);
+    } finally {
+      setIsLoading(false);
+      // Clear the file input value to allow re-uploading the same file
+      event.target.value = '';
+    }
+  }, []);
+
+  const handleCreateNew = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    setAllNodesData(null); // Clear previous data
+    setActiveTabId(null); // Reset active tab
+    setLabelBlocks([]); // Clear tabs
+
+    try {
+      const response: ParsedScriptResponse = await createNewScript();
+      console.log("API Response (New Script):", response);
+      if (response && response.nodes && response.script_id) {
+        setScriptId(response.script_id);
+        setFileName('new_script.rpy'); // Or use filename from response if available
+        setAllNodesData(response.nodes); // Store raw data
+        setError(null);
+      } else {
+        throw new Error("Invalid API response structure for new script");
+      }
+    } catch (err: any) {
+      console.error("Error creating new script:", err);
+      setError(err.message || 'Failed to create new script.');
+      setAllNodesData(null);
+      setScriptId(null);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  // --- Tab Change Handler ---
+  const handleTabChange = (event: React.SyntheticEvent, newTabId: string) => {
+    setActiveTabId(newTabId);
+  };
+
+  // --- React Flow Event Handlers ---
+  const onConnect = useCallback(
+    (params: Connection) => {
+      // For now, disable connections between tabs
+      console.warn("Connect event - connection creation disabled in multi-tab view:", params);
+    },
+    []
+  );
+
+  // Handle zoom in/out
+  const handleZoomIn = () => {
+    setZoom(prev => Math.min(prev + 0.2, 2));
+  };
+
+  const handleZoomOut = () => {
+    setZoom(prev => Math.max(prev - 0.2, 0.5));
+  };
+
+  // Toggle pan mode
+  const togglePanMode = () => {
+    setIsPanMode(!isPanMode);
+  };
+
+  // Toggle minimap visibility
+  const toggleMinimap = () => {
+    setShowMinimap(!showMinimap);
+  };
+
+  // Memoize MiniMap node color function
+  const miniMapNodeColor = useCallback((node: Node): string => {
+      const nodeType = node.data?.originalData?.node_type;
+      switch (nodeType) {
+          case 'LabelBlock': return theme.custom.nodeColors.label;
+          case 'Action': return theme.custom.nodeColors.action;
+          case 'IfBlock': return theme.custom.nodeColors.if;
+          case 'MenuBlock': return theme.custom.nodeColors.menu;
+          case 'MenuOption': return theme.custom.nodeColors.menuOption;
+          case 'EndBlock': return theme.custom.nodeColors.end;
+          default: return theme.palette.mode === 'dark' ? theme.palette.grey[700] : theme.palette.grey[400];
+      }
+  }, [theme]);
+
+  // Calculate dynamic top offset for positioning elements
+  const topOffset = 64 + (labelBlocks.length > 0 ? 48 : 0); // AppBar height + Tab height (if tabs exist)
+
+  return (
+    <Box sx={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
+      {/* Glass-effect top bar */}
+      <GlassAppBar position="fixed">
+        <Toolbar>
+          <Typography variant="h6" component="div" sx={{ flexGrow: 1, color: theme.palette.text.primary, textAlign: 'center' }}>
+            {projectName} {fileName && `- ${fileName}`}
+          </Typography>
+        </Toolbar>
+      </GlassAppBar>
+
+      {/* Tabs below AppBar */}
+      {labelBlocks.length > 0 && (
+         <Paper
+            square
+            elevation={1}
+            sx={{
+              position: 'fixed',
+              top: 64, // Height of AppBar
+              left: 0,
+              right: 0,
+              zIndex: 1150,
+              backgroundColor: alpha(theme.palette.background.paper, 0.8),
+              backdropFilter: 'blur(8px)',
+              borderBottom: `1px solid ${theme.palette.divider}`,
+            }}
+          >
+            <Tabs
+              value={activeTabId}
+              onChange={handleTabChange}
+              variant="scrollable"
+              scrollButtons="auto"
+              aria-label="Script label tabs"
+              sx={{ minHeight: 48 }}
+            >
+              {labelBlocks.map((label) => (
+                <Tab
+                  key={label.id}
+                  label={label.name}
+                  value={label.id}
+                  sx={{ minHeight: 48, textTransform: 'none' }}
+                />
+              ))}
+            </Tabs>
+         </Paper>
+      )}
+
+      {/* Toggle button for side menu */}
+      <Box 
+        className="toggle-menu-button"
+        onClick={toggleSideMenu}
+        sx={{
+          opacity: sideMenuVisible ? 0 : 1,
+          transition: 'opacity 0.3s ease, background-color 0.2s ease, transform 0.2s ease',
+          backgroundColor: theme.custom.glass.background,
+          border: `1px solid ${theme.custom.glass.border}`,
+          boxShadow: theme.custom.glass.shadow,
+          color: theme.palette.text.primary,
+          top: `${topOffset + 10}px`, // Position below tabs + 10px margin
+          left: '10px',
+          '&:hover': {
+             backgroundColor: alpha(theme.palette.background.paper, 0.15),
+             transform: 'scale(1.05)',
+          }
+        }}
+      >
+        <ChevronRightIcon />
+      </Box>
+
+      {/* Side Drawer */}
+      <Drawer
+        variant="persistent"
+        anchor="left"
+        open={drawerOpen && sideMenuVisible}
+        sx={{
+          width: expandedDrawer ? expandedDrawerWidth : drawerWidth,
+          flexShrink: 0,
+          position: 'absolute',
+          zIndex: 1100,
+          transition: 'all 0.3s ease',
+          '& .MuiDrawer-paper': {
+            width: expandedDrawer ? expandedDrawerWidth : drawerWidth,
+            boxSizing: 'border-box',
+            top: `${topOffset}px`, // Position below AppBar and Tabs
+            height: `calc(100% - ${topOffset}px)`,
+            backgroundColor: theme.custom.glass.background,
+            backdropFilter: 'blur(12px)',
+            borderRight: `1px solid ${theme.custom.glass.border}`,
+            boxShadow: theme.custom.glass.shadow,
+            transform: sideMenuVisible ? 'translateX(0)' : 'translateX(-100%)',
+            transition: 'transform 0.3s ease, width 0.3s ease, top 0.3s ease, height 0.3s ease',
+            overflowX: 'hidden',
+          },
+        }}
+      >
+        <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', overflowY: 'auto', overflowX: 'hidden' }}>
+          {/* Toolbar buttons */}
+          <List sx={{ py: 1 }}>
+            <ButtonGroup
+              orientation="vertical"
+              aria-label="vertical outlined button group"
+              variant="text"
+              sx={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                width: '100%',
+                '& .MuiButtonGroup-grouped': {
+                  minWidth: 40,
+                  justifyContent: 'center',
+                  border: 'none',
+                  '&:not(:last-of-type)': {
+                    borderBottom: 'none',
+                  },
+                },
+              }}
+            >
+              {/* Example buttons */}
+              <Tooltip title="Zoom In" placement="right">
+                <Button onClick={handleZoomIn} sx={{ color: theme.palette.text.secondary }}>
+                  {expandedDrawer ? 'Zoom In' : <ZoomInIcon />}
+                </Button>
+              </Tooltip>
+              <Tooltip title="Zoom Out" placement="right">
+                <Button onClick={handleZoomOut} sx={{ color: theme.palette.text.secondary }}>
+                  {expandedDrawer ? 'Zoom Out' : <ZoomOutIcon />}
+                </Button>
+              </Tooltip>
+              <Tooltip title={isPanMode ? 'Exit Pan Mode' : 'Pan Mode'} placement="right">
+                <Button 
+                  onClick={togglePanMode}
+                  sx={{ 
+                    color: isPanMode ? theme.palette.primary.main : theme.palette.text.secondary 
+                  }}
+                >
+                  {expandedDrawer ? (isPanMode ? 'Exit Pan Mode' : 'Pan Mode') : <PanToolIcon />}
+                </Button>
+              </Tooltip>
+              <Tooltip title={showMinimap ? 'Hide Minimap' : 'Show Minimap'} placement="right">
+                <Button 
+                  onClick={toggleMinimap}
+                  sx={{ 
+                    color: showMinimap ? theme.palette.primary.main : theme.palette.text.secondary 
+                  }}
+                >
+                  {expandedDrawer ? (showMinimap ? 'Hide Minimap' : 'Show Minimap') : <ViewComfyIcon />}
+                </Button>
+              </Tooltip>
+            </ButtonGroup>
+
+            <Divider sx={{ my: 1, borderColor: theme.palette.divider }} />
+          </List>
+
+          {/* Active Users section */}
+          <Typography variant="caption" sx={{ 
+              px: expandedDrawer ? 2 : 0, 
+              textAlign: expandedDrawer ? 'left' : 'center', 
+              color: theme.palette.text.secondary 
+          }}>
+            Active Users
+          </Typography>
+          <List sx={{ py: 0, flexGrow: 1, overflowY: 'auto' }}>
+            {activeUsers.map((user) => {
+              const statusInfo = getStatusColor(user.status, theme);
+              return (
+                <ListItem
+                  key={user.id}
+                  disablePadding
+                  sx={{ 
+                    display: 'flex', 
+                    justifyContent: expandedDrawer ? 'flex-start' : 'center', 
+                    px: expandedDrawer ? 2 : 0, 
+                    py: 0.5 
+                  }}
+                >
+                  <Box sx={{ position: 'relative', mb: expandedDrawer ? 0 : 1 }}>
+                    <Avatar 
+                      sx={{ 
+                        width: 36, 
+                        height: 36, 
+                        fontSize: 16,
+                        bgcolor: user.status === 'editing' ? theme.palette.success.main : theme.palette.primary.main,
+                      }}
+                    >
+                      {user.name.charAt(0)}
+                    </Avatar>
+                    <Box 
+                      sx={{
+                        position: 'absolute',
+                        bottom: 0,
+                        right: 0,
+                        width: 12,
+                        height: 12,
+                        borderRadius: 6,
+                        backgroundColor: statusInfo.color,
+                        border: `2px solid ${theme.palette.background.paper}`,
+                      }}
+                    />
+                  </Box>
+                  
+                  {expandedDrawer && (
+                    <Box sx={{ ml: 1.5, display: 'flex', flexDirection: 'column' }}>
+                      <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                        {user.name}
+                      </Typography>
+                      <Chip 
+                        label={statusInfo.label}
+                        size="small"
+                        sx={{ 
+                          height: 20, 
+                          fontSize: '0.7rem',
+                          backgroundColor: alpha(statusInfo.color, theme.custom.statusChipAlpha),
+                          color: statusInfo.color,
+                          fontWeight: 500,
+                        }} 
+                      />
+                    </Box>
+                  )}
+                </ListItem>
+              );
+            })}
+          </List>
+        </Box>
+      </Drawer>
+
+      {/* Main editor content */}
+      <Box
+        component="main"
+        sx={{
+            flexGrow: 1,
+            pt: `${topOffset}px`, // Padding top below AppBar and Tabs
+            height: '100vh',
+            overflow: 'hidden',
+            boxSizing: 'border-box',
+            position: 'relative',
+        }}
+      >
+        <EditorContainer>
+          {/* Initial state: File selection */}
+          {!scriptId && !isLoading && (
+             <Box
+               sx={{
+                 position: 'absolute',
+                 top: '50%',
+                 left: '50%',
+                 transform: 'translate(-50%, -50%)',
+                 backgroundColor: theme.custom.fileOptions.background,
+                 border: `1px solid ${theme.custom.fileOptions.border}`,
+                 borderRadius: '8px',
+                 backdropFilter: 'blur(8px)',
+                 p: 4,
+                 maxWidth: 600,
+                 zIndex: 5,
+                 textAlign: 'center',
+               }}
+             >
+               <Typography variant="h5" gutterBottom>Select or Create a Script</Typography>
+               <Box sx={{ mt: 3, display: 'flex', justifyContent: 'center', gap: 2 }}>
+                 <Button variant="contained" component="label">
+                   Upload File
+                   <input type="file" hidden onChange={handleFileChange} accept=".rpy" />
+                 </Button>
+                 <Button variant="outlined" onClick={handleCreateNew}>
+                   Create New
+                 </Button>
+               </Box>
+             </Box>
+          )}
+
+          {/* Loading state */}
+          {isLoading && (
+            <Box 
+              sx={{
+                backgroundColor: theme.custom.loading.background,
+                border: `1px solid ${theme.custom.loading.border}`,
+                borderRadius: '4px',
+                p: 3,
+                backdropFilter: 'blur(8px)',
+                display: 'inline-block',
+                position: 'absolute',
+                top: '50%',
+                left: '50%',
+                transform: 'translate(-50%, -50%)',
+                zIndex: 5,
+              }}
+            >
+              <Typography variant="h6">Loading...</Typography>
+            </Box>
+          )}
+
+          {/* Error state */}
+          {error && (
+            <Box 
+              sx={{
+                backgroundColor: theme.custom.error.background,
+                border: `1px solid ${theme.custom.error.border}`,
+                color: theme.custom.error.color,
+                borderRadius: '4px',
+                p: 3,
+                backdropFilter: 'blur(8px)',
+                display: 'inline-block',
+                position: 'absolute',
+                top: '50%',
+                left: '50%',
+                transform: 'translate(-50%, -50%)',
+                zIndex: 5,
+              }}
+            >
+              <Typography variant="h6">Error: {error}</Typography>
+            </Box>
+          )}
+
+          {/* React Flow canvas */}
+          {scriptId && activeTabId && !isLoading && !error && (
+            <Box sx={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 1 }} className="flow-canvas-container">
+              <ReactFlow
+                nodes={currentNodes}
+                edges={currentEdges}
+                onNodesChange={onCurrentNodesChange}
+                onEdgesChange={onCurrentEdgesChange}
+                onConnect={onConnect}
+                onNodeClick={onNodeClick}
+                fitView
+                nodesDraggable={true}
+                panOnDrag={true}
+                selectionOnDrag={false}
+                className="flow-canvas"
+              >
+                <Background color={theme.palette.divider} gap={16} />
+                <Controls />
+                {showMinimap && <MiniMap nodeColor={miniMapNodeColor} position="bottom-right" />}
+              </ReactFlow>
+            </Box>
+          )}
+        </EditorContainer>
+      </Box>
+    </Box>
+  );
+};
+
+// Wrapped component with ReactFlowProvider
+const EditorPage: React.FC = () => {
+  return (
+    <ReactFlowProvider>
+      <EditorPageInternal />
+    </ReactFlowProvider>
+  );
+};
+
+export default EditorPage;
