@@ -11,7 +11,8 @@ import ReactFlow, {
   Edge,
   NodeChange,
   EdgeChange,
-  Connection
+  Connection,
+  useReactFlow // Add this import
 } from 'reactflow';
 import {
   Box,
@@ -126,6 +127,7 @@ const EditorPageInternal: React.FC = () => {
   const [zoom, setZoom] = useState<number>(1);
   const [isPanMode, setIsPanMode] = useState<boolean>(false);
   const [showMinimap, setShowMinimap] = useState<boolean>(true);
+  const reactFlowInstance = useReactFlow(); // Add ReactFlow instance ref
 
   // Function to toggle the editor toolbar drawer
   const toggleDrawer = () => {
@@ -232,6 +234,29 @@ const EditorPageInternal: React.FC = () => {
         console.log("Generated Edges for tab:", activeTabId, initialEdges);
         setNodes(initialNodes);
         setEdges(initialEdges);
+        
+        // Center view on the new nodes when they're loaded
+        setTimeout(() => {
+          if (reactFlowInstance && initialNodes.length > 0) {
+            // Find the label block node to center on
+            const labelNode = initialNodes.find(
+              node => node.id === activeTabId || 
+                    (node.data?.originalData?.node_type === 'LabelBlock')
+            );
+            
+            if (labelNode) {
+              // Center on the label node position
+              reactFlowInstance.setCenter(
+                labelNode.position.x + 250 / 2,
+                labelNode.position.y + 50 / 2,
+                { zoom: 1, duration: 800 }
+              );
+            } else {
+              // If no label node found, fit the view to all nodes
+              reactFlowInstance.fitView({ padding: 0.2, duration: 800 });
+            }
+          }
+        }, 100); // Small delay to ensure nodes are rendered
       } catch (transformError: any) {
         console.error("Error transforming tree to flow:", transformError);
         setError(`Failed to visualize script: ${transformError.message}`);
@@ -242,7 +267,7 @@ const EditorPageInternal: React.FC = () => {
       setNodes([]);
       setEdges([]);
     }
-  }, [parsedData, activeTabId, setNodes, setEdges, theme]);
+  }, [parsedData, activeTabId, setNodes, setEdges, theme, reactFlowInstance]);
 
   const handleFileChange = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -315,10 +340,16 @@ const EditorPageInternal: React.FC = () => {
   // Helper functions for zoom and pan controls
   const handleZoomIn = () => {
     setZoom((prevZoom) => Math.min(prevZoom * 1.2, 8));
+    if (reactFlowInstance) {
+      reactFlowInstance.zoomTo(Math.min(zoom * 1.2, 8));
+    }
   };
 
   const handleZoomOut = () => {
-    setZoom((prevZoom) => Math.max(prevZoom * 0.8, 0.1));
+    setZoom((prevZoom) => Math.max(prevZoom * 0.8, 0.05)); // Lower minimum zoom to 0.05
+    if (reactFlowInstance) {
+      reactFlowInstance.zoomTo(Math.max(zoom * 0.8, 0.05));
+    }
   };
 
   const togglePanMode = () => {
@@ -327,6 +358,11 @@ const EditorPageInternal: React.FC = () => {
 
   const toggleMinimap = () => {
     setShowMinimap(!showMinimap);
+  };
+
+  // Handle tab change with smooth centering
+  const handleTabChange = (event: React.SyntheticEvent, newTabId: string) => {
+    setActiveTabId(newTabId);
   };
 
   return (
@@ -392,7 +428,7 @@ const EditorPageInternal: React.FC = () => {
           >
             <Tabs 
               value={activeTabId} 
-              onChange={(e, newTabId) => setActiveTabId(newTabId)}
+              onChange={handleTabChange} // Use the new handler
               variant="scrollable"
               scrollButtons="auto"
               aria-label="labelblock tabs"
@@ -770,9 +806,11 @@ const EditorPageInternal: React.FC = () => {
                 nodesConnectable={false}
                 nodesDraggable={true} 
                 defaultViewport={{ x: 0, y: 0, zoom: zoom }}
+                minZoom={0.05} // Set minimum zoom to 0.05 (much more zoomed out)
+                maxZoom={10}   // Allow a bit more zoom in too
                 panOnScroll={true}
-                panOnDrag={true} // Always enable panning
-                selectionOnDrag={false} // Disable selection by default to fix dragging issue
+                panOnDrag={true}
+                selectionOnDrag={false}
                 zoomOnScroll={true}
                 zoomOnPinch={true}
                 preventScrolling={true}
