@@ -15,8 +15,27 @@ interface NodeData {
   content?: string;
   next_id?: string;
   condition?: string;
-  branches?: { [key: string]: any };
-  options?: { [key: string]: any }[];
+  children?: any[];
+  false_branch?: any[];
+  [key: string]: any; // Allow for additional properties
+}
+
+// Process result interface
+interface NodeProcessResult {
+  nodes: Node[];
+  edges: Edge[];
+  nextY: number;
+  horizontalBounds: {
+    minX: number;
+    maxX: number;
+  };
+}
+
+// Add this interface to properly type optionResults
+interface MenuOptionProcessResult {
+  node: NodeData;
+  result: NodeProcessResult;
+  width: number;
 }
 
 // --- Configuration ---
@@ -41,7 +60,7 @@ const createFlowNode = (
   type: string, 
   data: NodeData, 
   position: { x: number, y: number }, 
-  theme: Theme, // Add theme parameter
+  theme: Theme,
   style: Record<string, any> = {}
 ): Node => {
   // Determine node color from theme based on node_type
@@ -68,8 +87,8 @@ const createFlowNode = (
     id,
     type: 'default', 
     data: { 
-      label: data.label_name || data.content || `Node ${id}`, // Use content if label_name is missing
-      originalData: { ...data }
+      label: data.label_name || data.content || `Node ${id}`, 
+      originalData: { ...data }  // Store original data for reference
     },
     position,
     style: {
@@ -79,473 +98,567 @@ const createFlowNode = (
       borderRadius: '4px',
       padding: '10px',
       textAlign: 'center',
-      color: theme.palette.getContrastText(backgroundColor), // Ensure text is readable
+      color: theme.palette.getContrastText(backgroundColor),
       ...style,
     }
   };
 };
 
 /**
- * Creates a standard React Flow edge object using theme colors.
+ * Creates a standard React Flow edge object.
  */
 const createFlowEdge = (
-  sourceId: string, 
-  targetId: string, 
+  id: string,
+  source: string,
+  target: string,
   theme: Theme,
-  label?: string, 
-  animated = false
-): Edge => ({
-  id: createEdgeId(sourceId, targetId, label),
-  source: sourceId,
-  target: targetId,
-  label,
-  animated,
-  style: { stroke: theme.palette.divider, strokeWidth: 1.5 },
-  markerEnd: {
-    type: MarkerType.ArrowClosed,
-    width: 15,
-    height: 15,
-    color: theme.palette.divider,
-  },
-});
-
-/**
- * Positions a node and its descendants recursively.
- */
-const positionNodes = (
-  nodeId: string, 
-  nodes: Record<string, NodeData>, 
-  theme: Theme, 
-  startX = 0, 
-  startY = 0, 
-  processed = new Set<string>()
-): {
-  flowNodes: Node[];
-  flowEdges: Edge[];
-  width: number;
-  endY: number;
-} => {
-  if (!nodeId || processed.has(nodeId)) {
-    return { flowNodes: [], flowEdges: [], width: 0, endY: startY };
-  }
-
-  processed.add(nodeId);
-  const node = nodes[nodeId];
-  
-  if (!node) {
-    console.warn(`Node with ID ${nodeId} not found in nodes map`);
-    return { flowNodes: [], flowEdges: [], width: 0, endY: startY };
-  }
-
-  const flowNodes: Node[] = [];
-  const flowEdges: Edge[] = [];
-  let totalWidth = NODE_WIDTH;
-  let currentY = startY;
-
-  // Create the current node using theme
-  const currentNode = createFlowNode(
-    nodeId,
-    node.node_type || 'Default',
-    node,
-    { x: startX, y: startY },
-    theme // Pass theme
-  );
-  flowNodes.push(currentNode);
-  // Handle different node types
-  if (node.node_type === 'IfBlock' && node.branches) {
-    // Process if/else branches
-    const ifBranch = node.branches.true;
-    const elseBranch = node.branches.false;
-    
-    let ifWidth = 0;
-    let elseWidth = 0;
-    let maxBranchY = startY;
-    
-    if (ifBranch) {
-      // Убедимся, что у нас есть ID ветки, если нет, используем строковую версию
-      const branchId = ifBranch.id || (typeof ifBranch === 'string' ? ifBranch : null);
-      
-      if (branchId) {
-        const ifResult = positionNodes(
-          branchId,
-          nodes,
-          theme, // Pass theme
-          startX - HORIZONTAL_SPACING_BASE, // Adjust positioning slightly
-          startY + VERTICAL_SPACING,
-          processed
-        );
-        
-        flowNodes.push(...ifResult.flowNodes);
-        flowEdges.push(...ifResult.flowEdges);
-        flowEdges.push(createFlowEdge(nodeId, branchId, theme, 'true', true)); // Pass theme
-        
-        ifWidth = ifResult.width;
-        maxBranchY = Math.max(maxBranchY, ifResult.endY);
-      }
-    }
-      if (elseBranch) {
-      // Аналогично для else ветки, убедимся что у нас есть ID
-      const branchId = elseBranch.id || (typeof elseBranch === 'string' ? elseBranch : null);
-      
-      if (branchId) {
-        const elseResult = positionNodes(
-          branchId,
-          nodes,
-          theme, // Pass theme
-          startX + NODE_WIDTH + HORIZONTAL_SPACING_BASE, // Adjust positioning slightly
-          startY + VERTICAL_SPACING,
-          processed
-        );
-        
-        flowNodes.push(...elseResult.flowNodes);
-        flowEdges.push(...elseResult.flowEdges);
-        flowEdges.push(createFlowEdge(nodeId, branchId, theme, 'false', true)); // Pass theme
-        
-        elseWidth = elseResult.width;
-        maxBranchY = Math.max(maxBranchY, elseResult.endY);
-      }
-    }
-    
-    totalWidth = Math.max(NODE_WIDTH, ifWidth + elseWidth + HORIZONTAL_SPACING_BASE * 2);
-    currentY = maxBranchY + VERTICAL_SPACING;
-  } else if (node.node_type === 'MenuBlock' && node.options && node.options.length > 0) {
-    // Process menu options
-    let maxOptionWidth = 0;
-    let maxOptionY = startY;
-    
-    // Safe access to options array with type guard to satisfy TypeScript
-    const options = node.options || [];
-      options.forEach((option: any, index: number) => {
-      // Проверяем наличие и тип ID опции, поддерживая разные форматы данных
-      const optionId = option.id || 
-                      (option.target_id) || 
-                      (typeof option === 'string' ? option : null);
-      
-      if (!optionId) {
-        console.warn('Menu option without ID found, skipping:', option);
-        return;
-      }
-      
-      const optionX = startX + (index - options.length / 2 + 0.5) * 
-                     (NODE_WIDTH + HORIZONTAL_SPACING_BASE);
-      
-      // Если узел для этой опции не существует, создаем временный
-      if (!nodes[optionId] && typeof option !== 'string') {
-        nodes[optionId] = {
-          id: optionId,
-          node_type: 'MenuOption',
-          label_name: option.text || `Option ${index+1}`,
-          content: option.text || `Option content ${index+1}`,
-          // Сохраняем ссылки на следующие узлы, если они есть
-          next_id: option.next_id || option.target_id || null
-        };
-      }
-      
-      const optionResult = positionNodes(
-        optionId,
-        nodes,
-        theme, // Pass theme
-        optionX,
-        startY + VERTICAL_SPACING,
-        processed
-      );
-      
-      flowNodes.push(...optionResult.flowNodes);
-      flowEdges.push(...optionResult.flowEdges);
-      flowEdges.push(createFlowEdge(nodeId, optionId, theme, option.text || `Option ${index+1}`)); // Pass theme
-      
-      maxOptionWidth = Math.max(maxOptionWidth, optionResult.width);
-      maxOptionY = Math.max(maxOptionY, optionResult.endY);
-    });
-    
-    totalWidth = Math.max(NODE_WIDTH, maxOptionWidth * node.options.length);
-    currentY = maxOptionY + VERTICAL_SPACING;
-      } else if (node.next_id) {
-    // Process linear node with next_id
-    const nextId = node.next_id;
-    
-    // Проверяем, существует ли следующий узел
-    if (!nodes[nextId]) {
-      console.warn(`Next node ID ${nextId} referenced by ${nodeId} not found in nodes map`);
-      
-      // Если узла нет, создаем временный заполнитель
-      nodes[nextId] = {
-        id: nextId,
-        node_type: 'Action',
-        label_name: `Node ${nextId}`,
-        content: `Generated node referenced by ${nodeId}`
-      };
-    }
-    
-    const nextResult = positionNodes(
-      nextId,
-      nodes,
-      theme, // Pass theme
-      startX,
-      startY + VERTICAL_SPACING,
-      processed
-    );
-    
-    flowNodes.push(...nextResult.flowNodes);
-    flowEdges.push(...nextResult.flowEdges);
-    flowEdges.push(createFlowEdge(nodeId, nextId, theme)); // Pass theme
-    
-    totalWidth = Math.max(NODE_WIDTH, nextResult.width);
-    currentY = nextResult.endY;
-  }
+  label: string = '',
+  type: string = 'default',
+  animated: boolean = false
+): Edge => {
+  const isEndBlockEdge = target.startsWith('end-');
 
   return {
-    flowNodes,
-    flowEdges,
-    width: totalWidth,
-    endY: currentY
+    id,
+    source,
+    target,
+    label,
+    type,
+    animated,
+    style: {
+      strokeWidth: 2,
+      stroke: isEndBlockEdge ? theme.custom.nodeColors.end : theme.palette.divider,
+    },
+    markerEnd: {
+      type: MarkerType.ArrowClosed,
+      width: 15,
+      height: 15,
+      color: isEndBlockEdge ? theme.custom.nodeColors.end : theme.palette.divider,
+    },
   };
 };
 
 /**
- * Transforms the parsed tree data into React Flow nodes and edges.
- * @param parsedData The data returned from the API
- * @param theme The current MUI theme
- * @param activeTabId Optional ID of the active tab/LabelBlock to filter nodes
+ * Recursively processes the API node tree to generate React Flow nodes and edges.
  */
-export const transformTreeToFlow = (parsedData: any, theme: Theme, activeTabId?: string | null): FlowTransformerResult => {
-  try {
-    // Handle different possible data structures more robustly
-    console.log('TransformTreeToFlow received data:', parsedData, 'activeTabId:', activeTabId);
-    
-    // Safe access to nodes by handling different possible structures
-    let nodes: Record<string, any> = {};
-    let startNode: string | null = null;
-    let selectedLabelBlockData: any = null;
+function processNodeRecursive(
+  apiNode: NodeData,
+  theme: Theme,
+  parentInfo: { id: string, type: string } | null = null,
+  startX: number = 0,
+  startY: number = 0,
+  level: number = 0,
+  nextSequentialNodeId: string | null = null
+): NodeProcessResult {
+  if (!apiNode) {
+    return {
+      nodes: [],
+      edges: [],
+      nextY: startY,
+      horizontalBounds: { minX: startX, maxX: startX + NODE_WIDTH }
+    };
+  }
 
-    // Look for children first (since that's where the RenPy labelblocks appear to be)
-    if (parsedData && parsedData.children && typeof parsedData.children === 'object') {
-      console.log('Found children property with labels:', Object.keys(parsedData.children));
-        // If activeTabId is specified and exists in children, use that specific child
-      if (activeTabId && parsedData.children[activeTabId]) {
-        console.log('Processing specific label block from children:', activeTabId);
-        selectedLabelBlockData = parsedData.children[activeTabId];
-        
-        // Создаем полную структуру узлов для этого лейбла
-        // Сначала добавляем сам лейбл-блок в качестве начального узла
-        const labelId = activeTabId;
-        
-        // Строим полную карту узлов для этого лейбла, включая сам лейбл и все его дочерние элементы
-        // Начинаем с копирования всех узлов из основного дерева
-        nodes = {...parsedData.nodes}; // Копируем все узлы для сохранения связей
-        
-        // Для обеспечения работы с полной цепочкой зависимостей
-        // проверяем, есть ли у selectedLabelBlockData свои узлы
-        if (selectedLabelBlockData.nodes) {
-          // Если у лейблока есть свои узлы, добавляем их
-          Object.entries(selectedLabelBlockData.nodes).forEach(([nodeId, nodeData]: [string, any]) => {
-            nodes[nodeId] = nodeData;
-          });
-          startNode = selectedLabelBlockData.start_node || activeTabId;
-        } else if (selectedLabelBlockData.next_id) {
-          // Если у лейбла есть прямая ссылка на следующий узел, используем ее
-          startNode = activeTabId; // Начинаем с самого лейбла
-        } else {
-          // Если это простой узел без явных связей
-          startNode = activeTabId;
-        }
-        
-        // Убеждаемся, что сам лейбл-блок присутствует в нодах
-        if (!nodes[activeTabId]) {
-          // Добавляем лейбл-блок как узел, если его еще нет
-          nodes[activeTabId] = selectedLabelBlockData;
-        }
-        
-        console.log('Built complete node tree for label block:', Object.keys(nodes).length, 'nodes, starting with', startNode);
-      } 
-      // If no specific tab selected or it doesn't exist, use the first child or default
-      else {
-        // No specific tab selected, use the default structure
-        nodes = parsedData;
-        startNode = null;
-      }
-    }
-    // Case 1: parsedData has nodes and start_node properties (standard structure)
-    else if (parsedData && parsedData.nodes && typeof parsedData.nodes === 'object') {
-      nodes = parsedData.nodes;
-      startNode = parsedData.start_node || null;
-    } 
-    // Case 2: parsedData itself is a nodes object
-    else if (parsedData && typeof parsedData === 'object' && !Array.isArray(parsedData)) {
-      nodes = parsedData;
-      // Try to find a key that might be a start node
-      const possibleStartNodeKeys = Object.keys(parsedData).filter(
-        key => key.toLowerCase().includes('start') || 
-              key.toLowerCase().includes('main') || 
-              key.toLowerCase().includes('label')
-      );
-      if (possibleStartNodeKeys.length > 0) {
-        startNode = possibleStartNodeKeys[0];
-      }
-    }
-    
-    // If we still don't have valid nodes, create an empty structure
-    if (Object.keys(nodes).length === 0) {
-      console.warn('No valid nodes found in parsedData, using default structure');
-      nodes = {
-        'default-node': {
-          node_type: 'LabelBlock',
-          label_name: 'Default Node',
-          children: []
-        }
-      };
-      startNode = 'default-node';
-    }// Find all LabelBlocks in the parsed data
-    const labelBlocks: Record<string, any> = {};
-      // Special handling for the RenPy script structure with real label blocks
-    const findRealLabelBlocks = () => {
-      // Check for child nodes that might be the actual label blocks
-      if (parsedData.children && typeof parsedData.children === 'object') {
-        Object.entries(parsedData.children).forEach(([nodeId, nodeData]: [string, any]) => {
-          if (nodeData && nodeData.node_type === 'LabelBlock' && nodeData.label_name) {
-            labelBlocks[nodeId] = nodeData;
-            console.log('Found real LabelBlock in transformer:', nodeId, nodeData.label_name);
-          }
-        });
-      }
-      
-      // Also check in nodes
-      if (nodes) {
-        Object.entries(nodes).forEach(([nodeId, nodeData]: [string, any]) => {
-          if (nodeData && nodeData.node_type === 'LabelBlock' && nodeData.label_name) {
-            labelBlocks[nodeId] = nodeData;
-            console.log('Found real LabelBlock in nodes:', nodeId, nodeData.label_name);
-          }
-        });
-      }
+  const nodeId = apiNode.id || `node-${Math.random().toString(16).slice(2)}`;
+  const nodeType = apiNode.node_type || 'Default';
+  const nodePosition = { x: startX, y: startY };
+
+  const flowNode = createFlowNode(nodeId, nodeType, apiNode, nodePosition, theme);
+  let currentNodes: Node[] = [flowNode];
+  let currentEdges: Edge[] = [];
+
+  // Create edge from parent unless it's a special branching node or the root
+  if (parentInfo && nodeType !== 'LabelBlock' && parentInfo.type !== 'IfBlock' && parentInfo.type !== 'MenuBlock') {
+    currentEdges.push(createFlowEdge(
+      createEdgeId(parentInfo.id, nodeId),
+      parentInfo.id,
+      nodeId,
+      theme
+    ));
+  }
+
+  let currentY = startY + NODE_HEIGHT_BASE + VERTICAL_SPACING;
+  let childrenMinX = startX;
+  let childrenMaxX = startX + NODE_WIDTH;
+  const nextParentInfo = { id: nodeId, type: nodeType };
+
+  // --- Child Processing based on Node Type ---
+  if (nodeType === 'IfBlock') {
+    // --- Layout Algorithm for IfBlock ---
+    // Process true branch (children)
+    let trueBranchResult: NodeProcessResult = { 
+      nodes: [], edges: [], nextY: currentY, 
+      horizontalBounds: { minX: startX, maxX: startX + NODE_WIDTH } 
     };
     
-    findRealLabelBlocks();
-    
-    console.log('LabelBlocks found in transformer:', Object.keys(labelBlocks));
-    console.log('Active Tab ID:', activeTabId);
-    
-    // If we already have a startNode from the selected label block's data structure, use that
-    if (selectedLabelBlockData && startNode) {
-      console.log('Using startNode from selected labelblock data:', startNode);
-    }
-    // If we have an activeTabId but didn't find it in the children structure yet
-    else if (activeTabId) {
-      // For numeric IDs or string IDs that match a label block
-      if (labelBlocks[activeTabId]) {
-        console.log('Using activeTabId as startNode (valid LabelBlock):', activeTabId);
-        // We need to create nodes for this label block if they don't exist already
-        if (!nodes[activeTabId]) {
-          console.log('Creating node for labelblock that was missing in nodes map');
-          const labelData = labelBlocks[activeTabId];
-          nodes[activeTabId] = labelData;
-        }
-        startNode = activeTabId;
-      } 
-      // When activeTabId is a custom ID like 'label_name'
-      else if (activeTabId === 'label_name' && parsedData.label_name) {
-        // Create a simple node for the main scriptId
-        const mainNodeId = 'main-script-node';
-        nodes[mainNodeId] = {
-          id: mainNodeId,
-          node_type: 'Action',
-          label_name: parsedData.label_name,
-          content: 'Main script'
-        };
-        startNode = mainNodeId;
-        console.log('Created node for label_name tab:', mainNodeId);
-      }
-      // For the default tab
-      else if (activeTabId === 'default-label') {
-        if (Object.keys(nodes).length > 0) {
-          // Use the first node for default tab
-          startNode = Object.keys(nodes)[0];
-          console.log('Using first available node for default tab:', startNode);
-        } else {
-          // Create a default node
-          const defaultNodeId = 'default-script-node';
-          nodes[defaultNodeId] = {
-            id: defaultNodeId,
-            node_type: 'Action',
-            label_name: 'Default Script',
-            content: 'No content available'
-          };
-          startNode = defaultNodeId;
-          console.log('Created default node:', defaultNodeId);
-        }
-      }
-    }
-    
-    // If we still don't have a startNode, try various fallbacks
-    if (!startNode) {
-      // If there are actual LabelBlocks, use the first one
-      if (Object.keys(labelBlocks).length > 0) {
-        const firstLabelId = Object.keys(labelBlocks)[0];
-        startNode = firstLabelId;
-        
-        // Make sure this node exists in the nodes collection
-        if (!nodes[firstLabelId]) {
-          nodes[firstLabelId] = labelBlocks[firstLabelId];
-        }
-        
-        console.log('Using first real LabelBlock as startNode:', startNode);
-      }
-      // As a last resort, use the start_node if specified
-      else if (parsedData.start_node) {
-        startNode = parsedData.start_node;
-        console.log('Using specified start_node:', startNode);
-      } else if (Object.keys(nodes).length > 0) {
-        // Just use the first available node
-        startNode = Object.keys(nodes)[0];
-        console.log('Using first available node as fallback:', startNode);
-      } else {
-        console.error('No valid nodes found for rendering');
-        // Create a default node as last resort
-        const fallbackNodeId = 'fallback-node';
-        nodes[fallbackNodeId] = {
-          id: fallbackNodeId,
-          node_type: 'Action',
-          label_name: 'Fallback Node',
-          content: 'No valid content could be found for this tab'
-        };
-        startNode = fallbackNodeId;
-      }
-    }
-    
-    console.log('Final startNode selected:', startNode);
-    console.log('Nodes available:', Object.keys(nodes));
-
-    // Ensure startNode is not null before proceeding
-    if (startNode === null) {
-        console.error("Could not determine a valid start node. Returning empty flow.");
-        return { initialNodes: [], initialEdges: [] };
-    }
-
-      // Check if startNode actually exists in nodes before positioning
-    if (!nodes[startNode]) {
-      console.error(`StartNode "${startNode}" doesn't exist in nodes map. Available nodes:`, Object.keys(nodes));
+    if (apiNode.children && apiNode.children.length > 0) {
+      let lastTrueNodeId = nodeId;
+      let lastTrueNodeType = nodeType;
+      let currentTrueY = currentY;
       
-      // Create a simple placeholder node if the selected start node doesn't exist
-      // Ensure startNode is not null here, although the check above should cover it
-      nodes[startNode] = {
-        node_type: 'Action',
-        label_name: startNode, // Use the non-null startNode
-        content: `Node for ${startNode}` // Use the non-null startNode
-      };
+      for (let i = 0; i < apiNode.children.length; i++) {
+        const trueNode = apiNode.children[i];
+        const nextTrueNodeId = (i + 1 < apiNode.children.length) ? 
+          apiNode.children[i+1].id : nextSequentialNodeId;
+        const parentInfoForTrue = { id: lastTrueNodeId, type: lastTrueNodeType };
+        
+        const trueNodeResult = processNodeRecursive(
+          trueNode, theme, parentInfoForTrue, startX, currentTrueY, 
+          level + 1, nextTrueNodeId
+        );
+        
+        trueBranchResult.nodes = trueBranchResult.nodes.concat(trueNodeResult.nodes);
+        trueBranchResult.edges = trueBranchResult.edges.concat(trueNodeResult.edges);
+        
+        currentTrueY = trueNodeResult.nextY;
+        lastTrueNodeId = trueNode.id as string;
+        lastTrueNodeType = trueNode.node_type as string;
+        
+        trueBranchResult.horizontalBounds.minX = Math.min(
+          trueBranchResult.horizontalBounds.minX, 
+          trueNodeResult.horizontalBounds.minX
+        );
+        trueBranchResult.horizontalBounds.maxX = Math.max(
+          trueBranchResult.horizontalBounds.maxX, 
+          trueNodeResult.horizontalBounds.maxX
+        );
+      }
+      
+      trueBranchResult.nextY = currentTrueY;
+    }
+
+    // Process false branch
+    let falseBranchResult: NodeProcessResult = { 
+      nodes: [], edges: [], nextY: currentY, 
+      horizontalBounds: { minX: startX, maxX: startX + NODE_WIDTH } 
+    };
+    
+    if (apiNode.false_branch && apiNode.false_branch.length > 0) {
+      let lastFalseNodeId = nodeId;
+      let lastFalseNodeType = nodeType;
+      let currentFalseY = currentY;
+      
+      for (let i = 0; i < apiNode.false_branch.length; i++) {
+        const falseNode = apiNode.false_branch[i];
+        const nextFalseNodeId = (i + 1 < apiNode.false_branch.length) ? 
+          apiNode.false_branch[i+1].id : nextSequentialNodeId;
+        const parentInfoForFalse = { id: lastFalseNodeId, type: lastFalseNodeType };
+        
+        const falseNodeResult = processNodeRecursive(
+          falseNode, theme, parentInfoForFalse, startX, currentFalseY, 
+          level + 1, nextFalseNodeId
+        );
+        
+        falseBranchResult.nodes = falseBranchResult.nodes.concat(falseNodeResult.nodes);
+        falseBranchResult.edges = falseBranchResult.edges.concat(falseNodeResult.edges);
+        
+        currentFalseY = falseNodeResult.nextY;
+        lastFalseNodeId = falseNode.id as string;
+        lastFalseNodeType = falseNode.node_type as string;
+        
+        falseBranchResult.horizontalBounds.minX = Math.min(
+          falseBranchResult.horizontalBounds.minX, 
+          falseNodeResult.horizontalBounds.minX
+        );
+        falseBranchResult.horizontalBounds.maxX = Math.max(
+          falseBranchResult.horizontalBounds.maxX, 
+          falseNodeResult.horizontalBounds.maxX
+        );
+      }
+      
+      falseBranchResult.nextY = currentFalseY;
+    }
+
+    // Calculate widths and required horizontal shifts for centering
+    const trueBranchExists = trueBranchResult.nodes.length > 0;
+    const falseBranchExists = falseBranchResult.nodes.length > 0;
+
+    const trueWidth = trueBranchExists ? 
+      trueBranchResult.horizontalBounds.maxX - trueBranchResult.horizontalBounds.minX : 0;
+    const falseWidth = falseBranchExists ? 
+      falseBranchResult.horizontalBounds.maxX - falseBranchResult.horizontalBounds.minX : 0;
+
+    let deltaX_true = 0;
+    let deltaX_false = 0;
+    let targetTrueBranchMinX = startX;
+    let targetFalseBranchMinX = startX;
+
+    if (trueBranchExists && falseBranchExists) {
+      const gap = HORIZONTAL_SPACING_BASE;
+      const totalChildWidth = falseWidth + trueWidth + gap;
+      const combinedStartX = startX + NODE_WIDTH / 2 - totalChildWidth / 2;
+
+      targetFalseBranchMinX = combinedStartX;
+      targetTrueBranchMinX = combinedStartX + falseWidth + gap;
+
+      deltaX_false = targetFalseBranchMinX - falseBranchResult.horizontalBounds.minX;
+      deltaX_true = targetTrueBranchMinX - trueBranchResult.horizontalBounds.minX;
+    } else if (trueBranchExists) {
+      targetTrueBranchMinX = startX + NODE_WIDTH / 2 - trueWidth / 2;
+      deltaX_true = targetTrueBranchMinX - trueBranchResult.horizontalBounds.minX;
+    } else if (falseBranchExists) {
+      targetFalseBranchMinX = startX + NODE_WIDTH / 2 - falseWidth / 2;
+      deltaX_false = targetFalseBranchMinX - falseBranchResult.horizontalBounds.minX;
+    }
+
+    // Adjust node positions
+    if (trueBranchExists) {
+      trueBranchResult.nodes.forEach(node => { node.position.x += deltaX_true; });
+      trueBranchResult.horizontalBounds.minX += deltaX_true;
+      trueBranchResult.horizontalBounds.maxX += deltaX_true;
+    }
+    if (falseBranchExists) {
+      falseBranchResult.nodes.forEach(node => { node.position.x += deltaX_false; });
+      falseBranchResult.horizontalBounds.minX += deltaX_false;
+      falseBranchResult.horizontalBounds.maxX += deltaX_false;
+    }
+
+    // Create edges to branches
+    if (trueBranchExists) {
+      const firstTrueNodeId = apiNode.children![0].id;
+      currentEdges.push(createFlowEdge(
+        createEdgeId(nodeId, firstTrueNodeId as string, 'true'),
+        nodeId,
+        firstTrueNodeId as string,
+        theme,
+        'True'
+      ));
+      
+      trueBranchResult.edges = trueBranchResult.edges.filter(
+        edge => !(edge.source === nodeId && edge.target === firstTrueNodeId)
+      );
+    } else if (nextSequentialNodeId) {
+      currentEdges.push(createFlowEdge(
+        createEdgeId(nodeId, nextSequentialNodeId, 'true'),
+        nodeId,
+        nextSequentialNodeId,
+        theme,
+        'True'
+      ));
+    }
+
+    if (falseBranchExists) {
+      const firstFalseNodeId = apiNode.false_branch![0].id;
+      currentEdges.push(createFlowEdge(
+        createEdgeId(nodeId, firstFalseNodeId as string, 'false'),
+        nodeId,
+        firstFalseNodeId as string,
+        theme,
+        'False'
+      ));
+      
+      falseBranchResult.edges = falseBranchResult.edges.filter(
+        edge => !(edge.source === nodeId && edge.target === firstFalseNodeId)
+      );
+    } else if (nextSequentialNodeId) {
+      currentEdges.push(createFlowEdge(
+        createEdgeId(nodeId, nextSequentialNodeId, 'false'),
+        nodeId,
+        nextSequentialNodeId,
+        theme,
+        'False'
+      ));
+    }
+
+    // Combine nodes and edges
+    currentNodes = currentNodes.concat(trueBranchResult.nodes, falseBranchResult.nodes);
+    currentEdges = currentEdges.concat(trueBranchResult.edges, falseBranchResult.edges);
+
+    // Calculate final Y position and overall horizontal bounds
+    currentY = Math.max(trueBranchResult.nextY, falseBranchResult.nextY);
+    childrenMinX = Math.min(
+      trueBranchExists ? trueBranchResult.horizontalBounds.minX : Infinity,
+      falseBranchExists ? falseBranchResult.horizontalBounds.minX : Infinity
+    );
+    childrenMaxX = Math.max(
+      trueBranchExists ? trueBranchResult.horizontalBounds.maxX : -Infinity,
+      falseBranchExists ? falseBranchResult.horizontalBounds.maxX : -Infinity
+    );
+    
+    // Ensure bounds are valid even if branches were empty
+    if (!isFinite(childrenMinX)) childrenMinX = startX;
+    if (!isFinite(childrenMaxX)) childrenMaxX = startX + NODE_WIDTH;
+
+  } else if (nodeType === 'MenuBlock') {
+    // --- Layout Algorithm for MenuBlock ---
+    // Process each option to determine its structure and bounds
+    const optionResults: MenuOptionProcessResult[] = [];
+    let maxOptionY = currentY;
+    let tempX = startX;
+    
+    if (apiNode.children && apiNode.children.length > 0) {
+      // Process each option
+      for (const optionNode of apiNode.children) {
+        const optionResult = processNodeRecursive(
+          optionNode, theme, nextParentInfo, tempX, currentY, level + 1, nextSequentialNodeId
+        );
+        
+        optionResults.push({
+          node: optionNode,
+          result: optionResult,
+          width: optionResult.horizontalBounds.maxX - optionResult.horizontalBounds.minX
+        });
+        
+        maxOptionY = Math.max(maxOptionY, optionResult.nextY);
+      }
+      
+      // Calculate total width and spacing
+      const totalWidth = optionResults.reduce((sum, option) => sum + option.width, 0) 
+        + (optionResults.length - 1) * HORIZONTAL_SPACING_BASE;
+      
+      // Calculate starting X to center options
+      const startingX = startX + NODE_WIDTH / 2 - totalWidth / 2;
+      
+      // Position each option
+      let currentX = startingX;
+      let firstOptionX = Infinity;
+      let lastOptionX = -Infinity;
+      
+      for (const optionData of optionResults) {
+        const { node: optionNode, result: optionResult, width } = optionData;
+        
+        // Calculate shift needed to position this option
+        const deltaX = currentX - optionResult.horizontalBounds.minX;
+        
+        // Apply shift to nodes
+        optionResult.nodes.forEach(node => { node.position.x += deltaX; });
+        
+        // Create edge from MenuBlock to this option
+        const optionStartNodeId = optionNode.id as string;
+        currentEdges.push(createFlowEdge(
+          createEdgeId(nodeId, optionStartNodeId, 'option'),
+          nodeId,
+          optionStartNodeId,
+          theme,
+          optionNode.label_name || `Option ${optionNode.id}`
+        ));
+        
+        // Remove default edge possibly created by the child's recursive call
+        optionResult.edges = optionResult.edges.filter(
+          edge => !(edge.source === nodeId && edge.target === optionStartNodeId)
+        );
+        
+        // Add nodes and edges to collection
+        currentNodes = currentNodes.concat(optionResult.nodes);
+        currentEdges = currentEdges.concat(optionResult.edges);
+        
+        // Track horizontal bounds
+        firstOptionX = Math.min(firstOptionX, currentX);
+        lastOptionX = Math.max(lastOptionX, currentX + width);
+        
+        // Move X for next option
+        currentX += width + HORIZONTAL_SPACING_BASE;
+      }
+
+      currentY = maxOptionY;
+      childrenMinX = firstOptionX;
+      childrenMaxX = lastOptionX;
+      
+      // Ensure bounds are valid
+      if (!isFinite(childrenMinX)) childrenMinX = startX;
+      if (!isFinite(childrenMaxX)) childrenMaxX = startX + NODE_WIDTH;
+    }
+
+  } else if (apiNode.children && apiNode.children.length > 0) {
+    // Process standard sequence of child nodes vertically
+    let lastChildNodeId = nodeId;
+    let lastChildNodeType = nodeType;
+    let childMinX = startX;
+    let childMaxX = startX + NODE_WIDTH;
+
+    for (let i = 0; i < apiNode.children.length; i++) {
+      const childNode = apiNode.children[i];
+      const nextChildId = (i + 1 < apiNode.children.length) ? 
+        apiNode.children[i+1].id as string : nextSequentialNodeId;
+      const parentInfoForChild = { id: lastChildNodeId, type: lastChildNodeType };
+
+      const childResult = processNodeRecursive(
+        childNode, theme, parentInfoForChild, startX, currentY, level, nextChildId
+      );
+      
+      currentNodes = currentNodes.concat(childResult.nodes);
+      currentEdges = currentEdges.concat(childResult.edges);
+      currentY = childResult.nextY;
+      lastChildNodeId = childNode.id as string;
+      lastChildNodeType = childNode.node_type as string;
+      
+      childMinX = Math.min(childMinX, childResult.horizontalBounds.minX);
+      childMaxX = Math.max(childMaxX, childResult.horizontalBounds.maxX);
     }
     
-    // Position nodes starting from the selected LabelBlock
-    // At this point, startNode is guaranteed to be a string due to the check above
-    const { flowNodes, flowEdges } = positionNodes(startNode, nodes, theme, 0, 0); // Pass theme
+    childrenMinX = childMinX;
+    childrenMaxX = childMaxX;
+  } else {
+    // Leaf node in the current branch/sequence
+    if (nextSequentialNodeId) {
+      // If there's a next node, create an edge to it
+      currentEdges.push(createFlowEdge(
+        createEdgeId(nodeId, nextSequentialNodeId),
+        nodeId,
+        nextSequentialNodeId,
+        theme
+      ));
+    }
+  }
+
+  // Return the collected nodes, edges, next Y position, and horizontal bounds
+  return {
+    nodes: currentNodes,
+    edges: currentEdges,
+    nextY: currentY,
+    horizontalBounds: {
+      minX: Math.min(startX, childrenMinX), 
+      maxX: Math.max(startX + NODE_WIDTH, childrenMaxX)
+    }
+  };
+}
+
+/**
+ * Main transformation function.
+ * Processes the API tree and returns React Flow compatible nodes and edges.
+ */
+export const transformTreeToFlow = (
+  parsedData: any, 
+  theme: Theme, 
+  activeTabId?: string | null
+): FlowTransformerResult => {
+  try {
+    console.log('TransformTreeToFlow input:', parsedData, 'activeTabId:', activeTabId);
     
-    console.log('[Transformer] Generated nodes and edges:', { nodes: flowNodes, edges: flowEdges });
+    let rootNode = parsedData;
+    let labelBlocks: NodeData[] = [];
+    
+    // Find all LabelBlocks in the data structure
+    if (rootNode.children && Array.isArray(rootNode.children)) {
+      labelBlocks = rootNode.children.filter(
+        (child: NodeData) => child.node_type === 'LabelBlock'
+      );
+      console.log('Found LabelBlocks:', labelBlocks.map((lb: NodeData) => lb.id || lb.label_name));
+    }
+    
+    // If no label blocks found but children exists as an object (not array)
+    if (labelBlocks.length === 0 && rootNode.children && typeof rootNode.children === 'object') {
+      // Try to extract label blocks from object structure
+      Object.entries(rootNode.children).forEach(([key, value]: [string, any]) => {
+        if (value && value.node_type === 'LabelBlock') {
+          labelBlocks.push(value);
+        }
+      });
+    }
+    
+    // If no label blocks found in children, look for them at the root level
+    if (labelBlocks.length === 0 && typeof rootNode === 'object') {
+      // Check if root itself might be a label block
+      if (rootNode.node_type === 'LabelBlock') {
+        labelBlocks = [rootNode];
+      } 
+      // Or if it's an object containing multiple nodes
+      else if (!Array.isArray(rootNode)) {
+        Object.entries(rootNode).forEach(([key, value]: [string, any]) => {
+          if (value && value.node_type === 'LabelBlock') {
+            labelBlocks.push(value);
+          }
+        });
+      }
+    }
+    
+    let allNodes: Node[] = [];
+    let allEdges: Edge[] = [];
+    
+    // If we have no label blocks, return empty result
+    if (labelBlocks.length === 0) {
+      console.error('No LabelBlocks found in the data');
+      return { initialNodes: [], initialEdges: [] };
+    }
+    
+    // Filter to just the active tab if specified
+    if (activeTabId) {
+      const activeBlock = labelBlocks.find(
+        (lb: NodeData) => lb.id === activeTabId || lb.label_name === activeTabId
+      );
+      
+      if (activeBlock) {
+        labelBlocks = [activeBlock];
+      }
+    }
+    
+    // Process all label blocks (or just the active one if filtered)
+    let currentY = 50; // Initial Y position
+    const initialX = 100; // Initial X position
+    
+    for (const labelBlock of labelBlocks) {
+      // Process this label block
+      const blockResult = processNodeRecursive(labelBlock, theme, null, initialX, currentY, 0, null);
+      
+      // Create a dedicated EndBlock for this label
+      const endNodeId = `end-${labelBlock.id || `label-${labelBlocks.indexOf(labelBlock)}`}`;
+      const endNodeY = blockResult.nextY;
+      const endNodeX = blockResult.horizontalBounds.minX + 
+                     (blockResult.horizontalBounds.maxX - 
+                      blockResult.horizontalBounds.minX - NODE_WIDTH) / 2;
+      
+      const endNode = createFlowNode(
+        endNodeId,
+        'EndBlock',
+        { label_name: 'End', node_type: 'EndBlock' },
+        { x: endNodeX, y: endNodeY },
+        theme
+      );
+      
+      // Add nodes
+      allNodes = allNodes.concat(blockResult.nodes);
+      allNodes.push(endNode);
+      
+      // Process edges
+      const blockEdges = blockResult.edges;
+      const nodeIdsInBlock = new Set(blockResult.nodes.map(n => n.id));
+      const sourceNodesInBlock = new Set<string>();
+      
+      blockEdges.forEach(edge => {
+        if (nodeIdsInBlock.has(edge.source)) {
+          sourceNodesInBlock.add(edge.source);
+        }
+      });
+      
+      // Connect leaf nodes to EndBlock
+      blockResult.nodes.forEach(node => {
+        // Exclude the LabelBlock node itself from auto-connecting to EndBlock
+        if (node.id !== labelBlock.id && !sourceNodesInBlock.has(node.id)) {
+          // Check if an edge to the end node wasn't already created
+          const existingEdgeToEnd = blockEdges.find(
+            edge => edge.source === node.id && edge.target === endNodeId
+          );
+          
+          if (!existingEdgeToEnd) {
+            blockEdges.push(createFlowEdge(
+              createEdgeId(node.id, endNodeId, 'leaf'),
+              node.id,
+              endNodeId,
+              theme
+            ));
+          }
+        }
+      });
+      
+      // Add all edges
+      allEdges = allEdges.concat(blockEdges);
+      
+      // Update Y position for next label block with spacing
+      currentY = endNodeY + NODE_HEIGHT_BASE + VERTICAL_SPACING * 3;
+    }
+    
+    // Remove duplicate edges
+    const uniqueEdges = Array.from(
+      new Map(allEdges.map(edge => [edge.id, edge])).values()
+    );
     
     return {
-      initialNodes: flowNodes,
-      initialEdges: flowEdges
+      initialNodes: allNodes,
+      initialEdges: uniqueEdges
     };
+    
   } catch (error) {
-    console.error('[Transformer] Error transforming tree to flow:', error);
-    throw error;
+    console.error('Error transforming tree to flow:', error);
+    return { initialNodes: [], initialEdges: [] };
   }
 };

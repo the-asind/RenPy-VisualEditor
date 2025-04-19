@@ -282,7 +282,7 @@ const EditorPageInternal: React.FC = () => {
     if (parsedData && activeTabId) {
       try {
         // Pass activeTabId to transformTreeToFlow to filter nodes
-        const { initialNodes, initialEdges } = transformTreeToFlow(parsedData);
+        const { initialNodes, initialEdges } = transformTreeToFlow(parsedData, theme, activeTabId);
         console.log("Generated Nodes for tab:", activeTabId, initialNodes);
         console.log("Generated Edges for tab:", activeTabId, initialEdges);
         setNodes(initialNodes);
