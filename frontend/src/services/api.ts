@@ -20,6 +20,17 @@ const apiClient = axios.create({
   },
 });
 
+// Add auth token to all requests if available
+apiClient.interceptors.request.use((config) => {
+  const token = localStorage.getItem('auth_token');
+  if (token && config.headers) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+}, (error) => {
+  return Promise.reject(error);
+});
+
 /**
  * Parses an uploaded RenPy script file.
  * @param file - The .rpy file to parse.
