@@ -3,3 +3,11 @@ uvicorn>=0.23.0
 python-multipart
 pydantic>=2.0.0
 aiofiles>=23.1.0
+cachetools>=5.3.0
+passlib>=1.7.4
+bcrypt<4.0.0
+passlib[bcrypt]
+python-jose[cryptography]
+pytest
+pytest-asyncio
+pydantic[email]
