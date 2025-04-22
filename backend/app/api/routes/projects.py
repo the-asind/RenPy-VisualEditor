@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Body
 from typing import List, Dict, Any, Optional
 from ...services.database import DatabaseService
-from ...auth.auth import get_current_user
+from ...api.routes.auth import get_current_user
 import uuid
 
 projects_router = APIRouter()
