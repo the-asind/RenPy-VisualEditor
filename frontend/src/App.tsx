@@ -6,6 +6,7 @@ import HomeIcon from '@mui/icons-material/Home';
 import FolderIcon from '@mui/icons-material/Folder';
 import PeopleIcon from '@mui/icons-material/People';
 import AccountCircleIcon from '@mui/icons-material/AccountCircle';
+import { useTranslation } from 'react-i18next';
 
 import TopBar from './components/layout/TopBar';
 import Sidebar from './components/layout/Sidebar';
@@ -13,6 +14,7 @@ import AppRoutes from './routes/AppRoutes';
 
 function App() {
   const theme = useTheme();
+  const { t } = useTranslation();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const [mobileNavValue, setMobileNavValue] = useState(0);
   const navigate = useNavigate();
@@ -20,6 +22,8 @@ function App() {
 
   // Determine if we're in the editor mode
   const isEditorMode = location.pathname.includes('/editor');
+  const isHomePage = location.pathname === '/';
+  const showSidebar = !isEditorMode && !isHomePage;
 
   // Update mobile nav value based on current route
   useEffect(() => {
@@ -48,7 +52,7 @@ function App() {
       flexDirection: 'column',
       height: '100vh',
       bgcolor: theme.palette.background.default,
-      overflow: 'hidden', // Prevent scrollbars at the App level
+      // overflow: 'hidden', // Allow scrolling within child containers
     }}>
       {/* Top Bar - Conditionally rendered */}
       {!isEditorMode && <TopBar />}
@@ -56,21 +60,21 @@ function App() {
       <Box sx={{
         display: 'flex',
         flex: 1,
-        overflow: 'hidden', // Prevent scrollbars here too
+        // overflow: 'hidden', // Allow child content to scroll
         // Remove top padding in editor mode, apply only when TopBar is visible
         pt: isEditorMode ? 0 : 8
       }}>
-        {/* Sidebar - Conditionally rendered */}
-        {!isEditorMode && <Sidebar isEditorMode={isEditorMode} />}
+        {/* Sidebar - Conditionally rendered (hide on home and editor) */}
+        {showSidebar && <Sidebar isEditorMode={isEditorMode} />}
 
         {/* Main Content Area */} 
         <Box
           component="main"
           sx={{
             flexGrow: 1,
-            overflow: 'hidden', // Let child components manage scrolling if needed
+            overflowY: 'auto', // enable vertical scrolling for overflowing content
             p: 0, // Remove padding, pages handle their own
-            position: 'relative', // Keep for potential absolute positioning inside
+            position: 'relative',
             // Apply padding at the bottom on mobile only when NOT in editor mode
             pb: isMobile && !isEditorMode ? 8 : 0
           }}
@@ -95,10 +99,9 @@ function App() {
             borderTop: `1px solid ${theme.palette.divider}`
           }}
         >
-          <BottomNavigationAction label="Home" icon={<HomeIcon />} />
-          <BottomNavigationAction label="Projects" icon={<FolderIcon />} />
-          <BottomNavigationAction label="Users" icon={<PeopleIcon />} />
-          <BottomNavigationAction label="Profile" icon={<AccountCircleIcon />} />
+          <BottomNavigationAction label={t('nav.home')} icon={<HomeIcon />} />
+          <BottomNavigationAction label={t('nav.projects')} icon={<FolderIcon />} />
+          <BottomNavigationAction label={t('nav.profile')} icon={<AccountCircleIcon />} />
         </BottomNavigation>
       )}
     </Box>

@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import ReactFlow, {
   useNodesState,
   useEdgesState,
@@ -73,15 +74,15 @@ const activeUsers: ActiveUser[] = [
 const getStatusColor = (status: string, theme: any) => {
   switch (status) {
     case 'editing':
-      return { color: theme.palette.success.main, label: 'Editing' };
+      return { color: theme.palette.success.main };
     case 'online':
-      return { color: theme.palette.info.main, label: 'Online' };
+      return { color: theme.palette.info.main };
     case 'afk':
-      return { color: theme.palette.warning.main, label: 'AFK' };
+      return { color: theme.palette.warning.main };
     case 'away':
-      return { color: theme.palette.error.main, label: 'Away' };
+      return { color: theme.palette.error.main };
     default:
-      return { color: theme.palette.grey[500], label: 'Unknown' };
+      return { color: theme.palette.grey[500] };
   }
 };
 
@@ -106,6 +107,7 @@ const EditorContainer = styled(Box)(({ theme }) => ({
 }));
 
 const EditorPageInternal: React.FC = () => {
+  const { t } = useTranslation();
   const theme = useTheme();
   const [scriptId, setScriptId] = useState<string | null>(null);
   const [projectName, setProjectName] = useState<string>('test project');
@@ -186,7 +188,14 @@ const EditorPageInternal: React.FC = () => {
         }
         // Object structure handling (key-value pairs of label blocks)
         else if (parsedData.nodes && typeof parsedData.nodes === 'object') {
-          // ...existing code for handling nodes object...
+          Object.entries(parsedData.nodes).forEach(([key, node]: [string, any]) => {
+            if (node.node_type === 'LabelBlock') {
+              extractedLabelBlocks.push({
+                id: key,
+                name: node.label_name || `Label ${key}`
+              });
+            }
+          });
         }
         
         console.log('Extracted LabelBlocks:', extractedLabelBlocks);
@@ -196,7 +205,7 @@ const EditorPageInternal: React.FC = () => {
           console.log('No LabelBlocks found, creating a default one');
           extractedLabelBlocks.push({
             id: 'default-label',
-            name: 'Main Script'
+            name: t('editor.defaultLabel')
           });
         }
         
@@ -213,7 +222,7 @@ const EditorPageInternal: React.FC = () => {
         console.error('Error extracting LabelBlocks:', error);
         
         // Create a default tab in case of error
-        const defaultLabelBlock = { id: 'default-label', name: 'Main Script' };
+        const defaultLabelBlock = { id: 'default-label', name: t('editor.defaultLabel') };
         setLabelBlocks([defaultLabelBlock]);
         setActiveTabId(defaultLabelBlock.id);
       }
@@ -274,13 +283,13 @@ const EditorPageInternal: React.FC = () => {
     if (!file) return;
 
     if (!file.name.toLowerCase().endsWith('.rpy')) {
-      setError('Invalid file type. Please select a .rpy file.');
+      setError(t('editor.invalidFileType'));
       return;
     }
 
     // Basic size check
     if (file.size > 1 * 1024 * 1024) {
-      setError('File is too large (max 1MB).');
+      setError(t('editor.fileTooLarge'));
       return;
     }
 
@@ -297,7 +306,7 @@ const EditorPageInternal: React.FC = () => {
       setParsedData(data.tree);
       console.log('Parsed data:', data);
     } catch (err: any) {
-      setError(err.detail || err.message || 'Failed to parse script.');
+      setError(err.detail || err.message || t('editor.parseError'));
       setScriptId(null);
       setFileName('');
       setParsedData(null);
@@ -305,7 +314,7 @@ const EditorPageInternal: React.FC = () => {
       setIsLoading(false);
       event.target.value = '';
     }
-  }, [setNodes, setEdges]);
+  }, [setNodes, setEdges, t]);
 
   const handleCreateNew = useCallback(async () => {
     setIsLoading(true);
@@ -523,42 +532,42 @@ const EditorPageInternal: React.FC = () => {
                 width: '100%'
               }}
             >
-              <Tooltip title="Zoom In" placement="right">
+              <Tooltip title={t('editor.zoomIn')} placement="right">
                 <Button 
                   onClick={handleZoomIn} 
                   sx={{ mb: 0.5, justifyContent: expandedDrawer ? 'flex-start' : 'center' }}
                 >
                   <ZoomInIcon fontSize="small" />
-                  {expandedDrawer && <Typography sx={{ ml: 1 }}>Zoom In</Typography>}
+                  {expandedDrawer && <Typography sx={{ ml: 1 }}>{t('editor.zoomIn')}</Typography>}
                 </Button>
               </Tooltip>
-              <Tooltip title="Zoom Out" placement="right">
+              <Tooltip title={t('editor.zoomOut')} placement="right">
                 <Button 
                   onClick={handleZoomOut} 
                   sx={{ mb: 0.5, justifyContent: expandedDrawer ? 'flex-start' : 'center' }}
                 >
                   <ZoomOutIcon fontSize="small" />
-                  {expandedDrawer && <Typography sx={{ ml: 1 }}>Zoom Out</Typography>}
+                  {expandedDrawer && <Typography sx={{ ml: 1 }}>{t('editor.zoomOut')}</Typography>}
                 </Button>
               </Tooltip>
-              <Tooltip title="Toggle Pan Mode" placement="right">
+              <Tooltip title={t('editor.panMode')} placement="right">
                 <Button 
                   onClick={togglePanMode} 
                   variant={isPanMode ? "contained" : "outlined"}
                   sx={{ mb: 0.5, justifyContent: expandedDrawer ? 'flex-start' : 'center' }}
                 >
                   <PanToolIcon fontSize="small" />
-                  {expandedDrawer && <Typography sx={{ ml: 1 }}>Pan Mode</Typography>}
+                  {expandedDrawer && <Typography sx={{ ml: 1 }}>{t('editor.panMode')}</Typography>}
                 </Button>
               </Tooltip>
-              <Tooltip title="Toggle Minimap" placement="right">
+              <Tooltip title={t('editor.minimap')} placement="right">
                 <Button 
                   onClick={toggleMinimap} 
                   variant={showMinimap ? "contained" : "outlined"}
                   sx={{ justifyContent: expandedDrawer ? 'flex-start' : 'center' }}
                 >
                   <ViewComfyIcon fontSize="small" />
-                  {expandedDrawer && <Typography sx={{ ml: 1 }}>Minimap</Typography>}
+                  {expandedDrawer && <Typography sx={{ ml: 1 }}>{t('editor.minimap')}</Typography>}
                 </Button>
               </Tooltip>
             </ButtonGroup>
@@ -628,7 +637,7 @@ const EditorPageInternal: React.FC = () => {
                         {user.name}
                       </Typography>
                       <Chip 
-                        label={statusInfo.label}
+                        label={t(`editor.status.${user.status}`)}
                         size="small"
                         sx={{ 
                           height: 20, 
@@ -643,7 +652,7 @@ const EditorPageInternal: React.FC = () => {
                   )}
                   
                   {!expandedDrawer && (
-                    <Tooltip title={`${user.name} - ${statusInfo.label}`} placement="right">
+                    <Tooltip title={`${user.name} - ${t(`editor.status.${user.status}`)}`} placement="right">
                       <Typography 
                         variant="caption" 
                         sx={{ 
@@ -652,7 +661,7 @@ const EditorPageInternal: React.FC = () => {
                           fontWeight: 600,
                         }}
                       >
-                        {statusInfo.label}
+                        {t(`editor.status.${user.status}`)}
                       </Typography>
                     </Tooltip>
                   )}
@@ -697,10 +706,10 @@ const EditorPageInternal: React.FC = () => {
               }}
             >
               <Typography variant="h4" sx={{ mb: 2, fontWeight: 600 }}>
-                Get Started
+                {t('editor.getStarted')}
               </Typography>
               <Typography variant="body1" sx={{ mb: 4, maxWidth: 500, textAlign: 'center' }}>
-                Open an existing Ren'Py script (.rpy) or create a new one to start visualizing your story.
+                {t('editor.openOrCreate')}
               </Typography>
               <Box
                 sx={{
@@ -715,7 +724,7 @@ const EditorPageInternal: React.FC = () => {
                     size="large"
                     sx={{ px: 3, py: 1.5 }}
                   >
-                    Open .rpy File
+                    {t('editor.openFile')}
                     <input
                       type="file"
                       accept=".rpy"
@@ -731,7 +740,7 @@ const EditorPageInternal: React.FC = () => {
                     onClick={handleCreateNew}
                     sx={{ px: 3, py: 1.5 }}
                   >
-                    Create New Script
+                    {t('editor.createNew')}
                   </Button>
                 </motion.div>
               </Box>
@@ -742,7 +751,6 @@ const EditorPageInternal: React.FC = () => {
           {isLoading && (
             <Box
               sx={{
-                // ... existing layout styles ...
                 // Use theme for styling
                 backgroundColor: theme.custom.loading.background,
                 border: `1px solid ${theme.custom.loading.border}`,
@@ -757,7 +765,7 @@ const EditorPageInternal: React.FC = () => {
                 zIndex: 5, 
               }}
             >
-              <Typography variant="h6">Loading...</Typography>
+              <Typography variant="h6">{t('editor.loading')}</Typography>
             </Box>
           )}
 
@@ -765,7 +773,6 @@ const EditorPageInternal: React.FC = () => {
           {error && (
             <Box
               sx={{
-                // ... existing layout styles ...
                 // Use theme for styling
                 backgroundColor: theme.custom.error.background,
                 border: `1px solid ${theme.custom.error.border}`,
@@ -781,7 +788,7 @@ const EditorPageInternal: React.FC = () => {
                 zIndex: 5, 
               }}
             >
-              <Typography variant="h6">Error: {error}</Typography>
+              <Typography variant="h6">{t('editor.error', { error })}</Typography>
             </Box>
           )}
 

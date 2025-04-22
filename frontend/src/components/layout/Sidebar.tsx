@@ -3,6 +3,7 @@ import { Drawer, List, ListItem, ListItemIcon, ListItemText, Avatar, Box, Fab, T
 import AddIcon from '@mui/icons-material/Add';
 import FolderIcon from '@mui/icons-material/Folder';
 import { useLocation } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 
 const drawerWidth = 180;
 
@@ -25,6 +26,7 @@ interface SidebarProps {
 const Sidebar: React.FC<SidebarProps> = ({ isEditorMode = false }) => {
   const theme = useTheme();
   const location = useLocation();
+  const { t } = useTranslation();
   
   // Only show users section in editor mode
   const showActiveUsers = isEditorMode || location.pathname.includes('/editor');
@@ -64,7 +66,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isEditorMode = false }) => {
                 color: theme.palette.text.secondary 
               }}
             >
-              Active Users
+              {t('sidebar.activeUsers')}
             </Typography>
             <List sx={{ py: 0 }}>
               {activeUsers.map((user) => (
@@ -117,7 +119,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isEditorMode = false }) => {
                 color: theme.palette.text.secondary 
               }}
             >
-              Projects
+              {t('nav.projects')}
             </Typography>
             <List sx={{ py: 0 }}>
               {projects.map((project) => (
@@ -156,7 +158,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isEditorMode = false }) => {
         <Box sx={{ p: 2, display: 'flex', justifyContent: 'center' }}>
           <Fab 
             color="primary" 
-            aria-label="add new project"
+            aria-label={t('button.createNewProjectTitle')}
             size="medium"
           >
             <AddIcon />

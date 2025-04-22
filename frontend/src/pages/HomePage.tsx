@@ -8,6 +8,7 @@ import AddIcon from '@mui/icons-material/Add';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import ShareIcon from '@mui/icons-material/Share';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 
 interface Project {
   id: number;
@@ -20,30 +21,37 @@ interface Project {
 const projects: Project[] = [
   { 
     id: 1, 
-    name: 'Visual Novel Demo', 
-    description: 'A simple visual novel demonstrating basic gameplay mechanics and character dialogues.',
+    name: 'test', 
+    description: 'Simple test project description.',
     scriptCount: 3,
     hasEditAccess: false
   },
   { 
     id: 2, 
-    name: 'Branching Storyline', 
-    description: 'Complex narrative with multiple endings based on player choices throughout the game.',
+    name: 'Разветвленный Сюжет', 
+    description: 'Сложное повествование с несколькими концовками.',
     scriptCount: 7,
     hasEditAccess: true
   },
   { 
     id: 3, 
-    name: 'Character Introduction', 
-    description: 'Character development sequences with backstories and personality traits.',
+    name: 'Тренинг-система', 
+    description: 'Интерактивный тренинг с вопросами и ответами.',
     scriptCount: 4,
     hasEditAccess: false
   },
   { 
     id: 4, 
-    name: 'Mystery Adventure', 
-    description: 'Interactive detective story with clues, evidence collection, and suspect interrogation.',
+    name: 'Симуляция', 
+    description: 'Симуляция реального мира с элементами «вопрос-ответ».',
     scriptCount: 12,
+    hasEditAccess: true
+  },
+  { 
+    id: 5, 
+    name: 'Новый проект', 
+    description: 'Описание нового проекта.',
+    scriptCount: 0,
     hasEditAccess: true
   },
 ];
@@ -51,6 +59,7 @@ const projects: Project[] = [
 const HomePage: React.FC = () => {
   const theme = useTheme();
   const navigate = useNavigate();
+  const { t } = useTranslation();
 
   const handleOpenProject = (projectId: number) => {
     navigate(`/editor?project=${projectId}`);
@@ -79,21 +88,11 @@ const HomePage: React.FC = () => {
             fontSize: '2rem',
           }}
         >
-          My Projects
+          {t('home.projects')}
         </Typography>
       </Box>
 
       {/* Recent Projects Section */}
-      <Typography 
-        variant="subtitle1" 
-        sx={{ 
-          mb: 3, 
-          fontWeight: 600,
-          ml: 1
-        }}
-      >
-        Recent Projects
-      </Typography>
 
       <Grid container spacing={3}>
         {projects.map((project) => (
@@ -127,7 +126,7 @@ const HomePage: React.FC = () => {
                     fontWeight: 500,
                   }}
                 >
-                  {project.scriptCount} script{project.scriptCount !== 1 ? 's' : ''}
+                  {t('projects.script', { count: project.scriptCount })}
                 </Typography>
                 
                 {project.hasEditAccess ? (
@@ -144,7 +143,7 @@ const HomePage: React.FC = () => {
                       }
                     }}
                   >
-                    Editor
+                    {t('button.editor')}
                   </Button>
                 ) : (
                   <Button
@@ -158,7 +157,7 @@ const HomePage: React.FC = () => {
                       color: theme.palette.primary.main,
                     }}
                   >
-                    Viewer
+                    {t('button.viewer')}
                   </Button>
                 )}
               </Box>
@@ -208,13 +207,13 @@ const HomePage: React.FC = () => {
                 <IconButton
                   size="small"
                   onClick={() => handleOpenProject(project.id)}
-                  aria-label="Open project"
+                  aria-label={t('action.openProject')}
                 >
                   <OpenInNewIcon fontSize="small" />
                 </IconButton>
                 <IconButton
                   size="small"
-                  aria-label="Share project"
+                  aria-label={t('action.shareProject')}
                 >
                   <ShareIcon fontSize="small" />
                 </IconButton>
@@ -269,14 +268,14 @@ const HomePage: React.FC = () => {
                   mb: 1,
                 }}
               >
-                Create New Project
+                {t('button.createNewProjectTitle')}
               </Typography>
               <Typography
                 variant="body2"
                 color="text.secondary"
                 align="center"
               >
-                Start building your next Ren'Py visual novel project
+                {t('button.createNewProjectDesc')}
               </Typography>
             </Card>
           </motion.div>

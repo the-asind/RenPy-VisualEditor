@@ -1,36 +1,41 @@
 import React, { useState } from 'react';
-import { AppBar, Toolbar, IconButton, Typography, Box, Menu, MenuItem } from '@mui/material';
+import { AppBar, Toolbar, IconButton, Typography, Box, Menu, MenuItem, Button } from '@mui/material';
 import HomeIcon from '@mui/icons-material/Home';
 import Brightness4Icon from '@mui/icons-material/Brightness4';
 import Brightness7Icon from '@mui/icons-material/Brightness7';
 import AccountCircle from '@mui/icons-material/AccountCircle';
+import TranslateIcon from '@mui/icons-material/Translate';
+import SettingsIcon from '@mui/icons-material/Settings';
 import { useThemeContext } from '../../contexts/ThemeContext';
+import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '@mui/material/styles';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 
 const TopBar: React.FC = () => {
   const { mode, toggleTheme } = useThemeContext();
+  const { isAuthenticated, logout } = useAuth();
+  const { t, i18n } = useTranslation();
   const theme = useTheme();
   const navigate = useNavigate();
 
-  const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
-
-  const handleMenu = (event: React.MouseEvent<HTMLElement>) => {
-    setAnchorEl(event.currentTarget);
-  };
-
-  const handleClose = () => {
-    setAnchorEl(null);
-  };
+  // Language menu state
+  const [langAnchorEl, setLangAnchorEl] = useState<null | HTMLElement>(null);
+  const handleLangMenu = (e: React.MouseEvent<HTMLElement>) => setLangAnchorEl(e.currentTarget);
+  const handleLangClose = () => setLangAnchorEl(null);
+  // Settings menu state
+  const [settingsAnchorEl, setSettingsAnchorEl] = useState<null | HTMLElement>(null);
+  const handleSettingsMenu = (e: React.MouseEvent<HTMLElement>) => setSettingsAnchorEl(e.currentTarget);
+  const handleSettingsClose = () => setSettingsAnchorEl(null);
 
   const handleSettings = () => {
-    console.log("Navigate to Settings");
-    handleClose();
+    navigate('/profile');
+    handleSettingsClose();
   };
 
   const handleLogout = () => {
-    console.log("Logout");
-    handleClose();
+    logout();
+    handleSettingsClose();
   };
 
   const handleHomeClick = () => {
@@ -64,40 +69,68 @@ const TopBar: React.FC = () => {
           sx={{ ml: 1, flexGrow: 1 }}
           color="inherit"
         >
-          Ren'Py Visual Editor
+          {t('app.title')}
         </Typography>
 
         <Box sx={{ display: 'flex', alignItems: 'center' }}>
           <IconButton sx={{ ml: 1 }} onClick={toggleTheme} color="inherit">
             {mode === 'dark' ? <Brightness7Icon /> : <Brightness4Icon />}
           </IconButton>
+          {/* Language selector */}
           <IconButton
             size="large"
-            aria-label="account of current user"
-            aria-controls="menu-appbar"
+            aria-label="language"
+            aria-controls="language-menu"
             aria-haspopup="true"
-            onClick={handleMenu}
+            onClick={handleLangMenu}
             color="inherit"
           >
-            <AccountCircle />
+            <TranslateIcon />
           </IconButton>
           <Menu
-            id="menu-appbar"
-            anchorEl={anchorEl}
-            anchorOrigin={{
-              vertical: 'top',
-              horizontal: 'right',
-            }}
+            id="language-menu"
+            anchorEl={langAnchorEl}
+            anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
             keepMounted
-            transformOrigin={{
-              vertical: 'top',
-              horizontal: 'right',
-            }}
-            open={Boolean(anchorEl)}
-            onClose={handleClose}
+            transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+            open={Boolean(langAnchorEl)}
+            onClose={handleLangClose}
           >
-            <MenuItem onClick={handleSettings}>Settings</MenuItem>
-            <MenuItem onClick={handleLogout}>Logout</MenuItem>
+            <MenuItem onClick={() => { i18n.changeLanguage('en'); handleLangClose(); }}>{t('language.english')}</MenuItem>
+            <MenuItem onClick={() => { i18n.changeLanguage('ru'); handleLangClose(); }}>{t('language.russian')}</MenuItem>
+          </Menu>
+          {!isAuthenticated && (
+            <>
+              <Button color="inherit" onClick={() => navigate('/login')}>
+                {t('menu.login')}
+              </Button>
+              <Button color="inherit" onClick={() => navigate('/register')}>
+                {t('menu.register')}
+              </Button>
+            </>
+          )}
+          {/* Settings dropdown */}
+          <IconButton
+            size="large"
+            aria-label="settings"
+            aria-controls="settings-menu"
+            aria-haspopup="true"
+            onClick={handleSettingsMenu}
+            color="inherit"
+          >
+            <SettingsIcon />
+          </IconButton>
+          <Menu
+            id="settings-menu"
+            anchorEl={settingsAnchorEl}
+            anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
+            keepMounted
+            transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+            open={Boolean(settingsAnchorEl)}
+            onClose={handleSettingsClose}
+          >
+            <MenuItem onClick={handleSettings}>{t('menu.settings')}</MenuItem>
+            {isAuthenticated && <MenuItem onClick={handleLogout}>{t('menu.logout')}</MenuItem>}
           </Menu>
         </Box>
       </Toolbar>

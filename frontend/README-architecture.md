@@ -2,10 +2,7 @@
 
 ### Phase 1 — MVP Editor
 
-The editor is structured as trees that start with a **LabelBlock** and end with an **“end”** block. The number of LabelBlocks corresponds to the number of tabs, which can be switched on the fly.
-
-1. **Main Page:**  
-   When visiting the main page, the user is redirected to `/editor`.
+1. The editor is structured as trees that start with a **LabelBlock** and end with an **“end”** block. The number of LabelBlocks corresponds to the number of tabs, which can be switched on the fly.
 
 2. **File Options:**  
    Initially, the user can either open an existing working file (with a `.rpy` extension and size not exceeding the limit defined in the API) or create a new empty file that contains only the line `label Start:`.
