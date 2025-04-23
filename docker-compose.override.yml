@@ -24,4 +24,4 @@ services:
     environment:
       - ENVIRONMENT=dev 
       
-      - CORS_ORIGINS=http://localhost:3001 
+      - CORS_ORIGINS=http://localhost:3001

@@ -107,7 +107,11 @@ async def test_parse_if_else_structure(sample_renpy_script):
     assert if_node is not None
     assert if_node.label_name.startswith("if condition")
 
-    # Check if else branch exists
+    # Check if else branch exists - false_branch is now a list
     assert if_node.false_branch is not None
-    assert if_node.false_branch.node_type == ChoiceNodeType.ACTION
-    assert "Что-то происходит, если условие не выполнено" in if_node.false_branch.label_name
+    assert len(if_node.false_branch) > 0
+    
+    # Get the first node in the false branch
+    false_branch_node = if_node.false_branch[0]
+    assert false_branch_node.node_type == ChoiceNodeType.ACTION
+    assert "Что-то происходит, если условие не выполнено" in false_branch_node.label_name
