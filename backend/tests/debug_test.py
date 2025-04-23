@@ -30,5 +30,5 @@ def test_debug_db():
         if os.path.exists(db_path):
             try:
                 os.remove(db_path)
-            except:
-                print(f"Could not remove {db_path}")
+            except OSError:
+                print(f"Could not remove {db_path} due to an OSError")
