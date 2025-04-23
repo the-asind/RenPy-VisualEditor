@@ -9,6 +9,20 @@ export interface ParsedScriptResponse {
   tree: any;
 }
 
+// Интерфейс для ответа при получении содержимого узла
+export interface NodeContentResponse {
+  content: string;
+  start_line: number;
+  end_line: number;
+}
+
+// Интерфейс для ответа при обновлении содержимого узла
+export interface UpdateNodeResponse {
+  message: string;
+  line_diff: number;
+  content: string;
+}
+
 const effectiveApiUrl = import.meta.env.VITE_API_URL;
 // Log the URL being used to help debug
 console.log('API Base URL configured:', effectiveApiUrl);
@@ -99,12 +113,131 @@ export const createNewScript = async (filename: string = 'new_script.rpy'): Prom
     return result;
   } catch (error) {
     console.error(`[API Error] Failed during createNewScript for ${filename}. Error originated from parseScript call.`);
-    // No need to log the error again here, parseScript does it.
     // Re-throw the error caught from parseScript
     throw error; // Re-throw the detailed error from parseScript
   }
 };
 
-// Add other API functions (getNodeContent, updateNodeContent, etc.) here later...
+/**
+ * Получает содержимое узла на основе его начальной и конечной строки.
+ * @param scriptId - ID скрипта, к которому принадлежит узел.
+ * @param startLine - Начальная строка узла.
+ * @param endLine - Конечная строка узла.
+ * @returns Обещание с содержимым узла.
+ */
+export const getNodeContent = async (
+  scriptId: string, 
+  startLine: number, 
+  endLine: number
+): Promise<NodeContentResponse> => {
+  const targetUrl = `${apiClient.defaults.baseURL}/scripts/node-content/${scriptId}`;
+  console.log(`[API Request] GET ${targetUrl} for node lines ${startLine}-${endLine}`);
+  
+  try {
+    const response = await apiClient.get<NodeContentResponse>(`/scripts/node-content/${scriptId}`, {
+      params: { start_line: startLine, end_line: endLine },
+    });
+    console.log('[API Response] getNodeContent successful:', response.data);
+    return response.data;
+  } catch (error) {
+    console.error('[API Error] Failed during getNodeContent call.');
+    console.error('Script ID:', scriptId);
+    console.error('Start line:', startLine);
+    console.error('End line:', endLine);
+    
+    const axiosError = error as AxiosError;
+    
+    if (axiosError.response) {
+      console.error('Error Response Data:', axiosError.response.data);
+      console.error('Error Response Status:', axiosError.response.status);
+    } else if (axiosError.request) {
+      console.error('Error Request:', axiosError.request);
+    } else {
+      console.error('Error Message:', axiosError.message);
+    }
+    
+    throw axiosError.response?.data || new Error(`Failed to get node content. Status: ${axiosError.response?.status || 'unknown'}. ${axiosError.message}`);
+  }
+};
 
+/**
+ * Обновляет содержимое узла в скрипте.
+ * @param scriptId - ID скрипта, к которому принадлежит узел.
+ * @param startLine - Начальная строка узла (до редактирования).
+ * @param endLine - Конечная строка узла (до редактирования).
+ * @param content - Новое содержимое узла.
+ * @returns Обещание с информацией об обновлении.
+ */
+export const updateNodeContent = async (
+  scriptId: string,
+  startLine: number,
+  endLine: number,
+  content: string
+): Promise<UpdateNodeResponse> => {
+  const targetUrl = `${apiClient.defaults.baseURL}/scripts/update-node/${scriptId}`;
+  console.log(`[API Request] POST ${targetUrl} to update node lines ${startLine}-${endLine}`);
+  
+  try {
+    const response = await apiClient.post<UpdateNodeResponse>(
+      `/scripts/update-node/${scriptId}`,
+      { content }, // Отправляем содержимое в теле запроса
+      { params: { start_line: startLine, end_line: endLine } } // Строки в параметрах запроса
+    );
+    console.log('[API Response] updateNodeContent successful:', response.data);
+    return response.data;
+  } catch (error) {
+    console.error('[API Error] Failed during updateNodeContent call.');
+    console.error('Script ID:', scriptId);
+    console.error('Start line:', startLine);
+    console.error('End line:', endLine);
+    console.error('Content length:', content.length);
+    
+    const axiosError = error as AxiosError;
+    
+    if (axiosError.response) {
+      console.error('Error Response Data:', axiosError.response.data);
+      console.error('Error Response Status:', axiosError.response.status);
+    } else if (axiosError.request) {
+      console.error('Error Request:', axiosError.request);
+    } else {
+      console.error('Error Message:', axiosError.message);
+    }
+    
+    throw axiosError.response?.data || new Error(`Failed to update node content. Status: ${axiosError.response?.status || 'unknown'}. ${axiosError.message}`);
+  }
+};
+
+/**
+ * Получает полное содержимое скрипта для сохранения на локальный диск.
+ * @param scriptId - ID скрипта.
+ * @returns Обещание с полным содержимым скрипта.
+ */
+export const getScriptContent = async (scriptId: string): Promise<string> => {
+  const targetUrl = `${apiClient.defaults.baseURL}/scripts/download/${scriptId}`;
+  console.log(`[API Request] GET ${targetUrl} for full script content`);
+  
+  try {
+    const response = await apiClient.get<{content: string, filename: string}>(`/scripts/download/${scriptId}`);
+    console.log('[API Response] getScriptContent successful');
+    return response.data.content;
+  } catch (error) {
+    console.error('[API Error] Failed during getScriptContent call.');
+    console.error('Script ID:', scriptId);
+    
+    const axiosError = error as AxiosError;
+    
+    if (axiosError.response) {
+      console.error('Error Response Data:', axiosError.response.data);
+      console.error('Error Response Status:', axiosError.response.status);
+    } else if (axiosError.request) {
+      console.error('Error Request:', axiosError.request);
+    } else {
+      console.error('Error Message:', axiosError.message);
+    }
+    
+    throw axiosError.response?.data || new Error(`Failed to get full script content. Status: ${axiosError.response?.status || 'unknown'}. ${axiosError.message}`);
+  }
+};
+
+// Export the API client
 export default apiClient;

@@ -34,7 +34,9 @@ import {
   Divider,
   Tabs,
   Tab,
-  Paper
+  Paper,
+  Snackbar, // Добавляем компонент уведомлений
+  Alert     // Добавляем компонент предупреждений
 } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import MenuIcon from '@mui/icons-material/Menu';
@@ -44,12 +46,14 @@ import PanToolIcon from '@mui/icons-material/PanTool';
 import ViewComfyIcon from '@mui/icons-material/ViewComfy';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+import SaveIcon from '@mui/icons-material/Save';
 import 'reactflow/dist/style.css';
 import { motion } from 'framer-motion';
 
 // Import services from TypeScript files
-import { parseScript, createNewScript } from '../services/api';
+import { parseScript, createNewScript, getNodeContent, updateNodeContent, getScriptContent } from '../services/api';
 import { transformTreeToFlow } from '../utils/flowTransformer';
+import NodeEditorPopup from './NodeEditorPopup'; // Импортируем компонент редактора узла
 import './EditorPage.css';
 
 // Width for the editor toolbar drawer
@@ -144,14 +148,221 @@ const EditorPageInternal: React.FC = () => {
   const toggleDrawerExpansion = () => {
     setExpandedDrawer(!expandedDrawer);
   };
+  // State for Node Editor Popup
+  const [selectedNodeForEdit, setSelectedNodeForEdit] = useState<Node | null>(null);
+  const [isEditorPopupOpen, setIsEditorPopupOpen] = useState<boolean>(false);
+  const [editorInitialContent, setEditorInitialContent] = useState<string>('');
+  const [isFetchingNodeContent, setIsFetchingNodeContent] = useState<boolean>(false);
+  const [snackbarOpen, setSnackbarOpen] = useState<boolean>(false);
+  const [snackbarMessage, setSnackbarMessage] = useState<string>('');
+  const [snackbarSeverity, setSnackbarSeverity] = useState<'success' | 'error' | 'warning' | 'info'>('info');
 
-  // Function to handle node clicks
-  const onNodeClick = useCallback((event: React.MouseEvent, node: Node) => {
+  // Function to handle node clicks - Opens the editor popup
+  const onNodeClick = useCallback(async (event: React.MouseEvent, node: Node) => {
     console.log('Clicked node:', node);
-    // Later: Open CodeMirror popup slice editor
-  }, []);
 
-  // Effect to extract LabelBlocks and set up tabs when parsedData changes
+    
+    if (node.type === 'endNode' || node.data?.originalData?.node_type === 'End') {
+        console.log('Clicked on an End node, not opening editor.');
+        return;
+    }
+
+    if (!scriptId) {
+      console.error("Cannot fetch node content without scriptId");
+      
+      setSnackbarMessage(t('editor.errorNoScriptId', 'Не удалось получить ID скрипта'));
+      setSnackbarSeverity('error');
+      setSnackbarOpen(true);
+      return;
+    }
+
+    const startLine = node.data?.originalData?.start_line;
+    const endLine = node.data?.originalData?.end_line;
+
+    if (startLine === undefined || endLine === undefined) {
+      console.error("Node data is missing start_line or end_line:", node.data);
+      setSnackbarMessage(t('editor.errorMissingNodeLines', 'В данных узла отсутствуют строки начала или конца'));
+      setSnackbarSeverity('error');
+      setSnackbarOpen(true);
+      return;
+    }
+
+    setSelectedNodeForEdit(node);
+    setIsFetchingNodeContent(true);
+    setIsEditorPopupOpen(true); 
+    setEditorInitialContent(''); 
+
+    try {
+      const contentResponse = await getNodeContent(scriptId, startLine, endLine);
+      setEditorInitialContent(contentResponse.content);
+    } catch (fetchError: any) {
+      console.error("Error fetching node content:", fetchError);
+      setSnackbarMessage(fetchError.message || t('editor.errorFetchContent', 'Не удалось получить содержимое узла'));
+      setSnackbarSeverity('error');
+      setSnackbarOpen(true);
+      setIsEditorPopupOpen(false); 
+      setSelectedNodeForEdit(null);
+    } finally {
+      setIsFetchingNodeContent(false);
+    }
+  }, [scriptId, t]);  
+  const reloadScriptData = useCallback(async () => {
+    if (!scriptId || !fileName) {
+      console.error("Cannot reload script data without scriptId and fileName");
+      return;
+    }
+    
+    setIsLoading(true);
+    try {
+      
+      
+      const scriptContent = await getScriptContent(scriptId);
+      const blob = new Blob([scriptContent], { type: 'text/plain' });
+      const file = new File([blob], fileName, { type: 'text/plain' });
+      
+      console.log("Re-parsing script to get updated nodes and edges");
+      const data = await parseScript(file);
+      
+      
+      const currentScriptId = scriptId;
+      
+      
+      setParsedData(data.tree);
+      
+      setScriptId(currentScriptId);
+      
+      console.log("Script data fully reloaded after node edit");
+    } catch (error) {
+      console.error("Failed to reload script data:", error);
+      setSnackbarMessage(t('editor.errorReloadScript', 'Ошибка при обновлении визуального представления'));
+      setSnackbarSeverity('error');
+      setSnackbarOpen(true);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [scriptId, fileName, t]);
+
+  
+  const handleSaveNodeContent = useCallback(async (startLine: number, endLine: number, newContent: string) => {
+    if (!scriptId || !selectedNodeForEdit) {
+      throw new Error(t('editor.errorSaveNoContext', 'Не удалось определить контекст для сохранения'));
+    }
+
+    
+    
+    const nodeStartLine = selectedNodeForEdit.data?.originalData?.start_line;
+    const nodeEndLine = selectedNodeForEdit.data?.originalData?.end_line;
+    
+    console.log(`Saving node ${selectedNodeForEdit.id} (lines ${nodeStartLine}-${nodeEndLine})`);
+    
+    if (!nodeStartLine || !nodeEndLine) {
+      throw new Error(t('editor.errorMissingLines', 'Не удалось определить диапазон строк для редактирования'));
+    }
+
+    try {
+      
+      const updateResponse = await updateNodeContent(scriptId, nodeStartLine, nodeEndLine, newContent);
+      console.log('Node update response:', updateResponse);
+      
+      
+      
+      if (updateResponse.line_diff !== 0) {
+        console.log(`Line count changed by ${updateResponse.line_diff}, reloading script data`);
+        await reloadScriptData();
+      }
+
+      
+      setSnackbarMessage(t('editor.saveSuccess', 'Изменения сохранены'));
+      setSnackbarSeverity('success');
+      setSnackbarOpen(true);
+
+      
+      
+      if (updateResponse.line_diff !== 0) {
+        
+        
+      }
+
+    } catch (saveError: any) {
+      console.error("Error saving node content:", saveError);
+      setSnackbarMessage(saveError.message || t('editor.errorSaveGeneric', 'Ошибка при сохранении изменений'));
+      setSnackbarSeverity('error');
+      setSnackbarOpen(true);
+      throw saveError; 
+    }
+  }, [scriptId, selectedNodeForEdit, t]);
+
+  
+  const handleDownloadScript = useCallback(async () => {
+    if (!scriptId || !fileName) {
+      setSnackbarMessage(t('editor.errorNoFileToSave', 'Нет файла для сохранения'));
+      setSnackbarSeverity('error');
+      setSnackbarOpen(true);
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      
+      const content = await getScriptContent(scriptId);
+      
+      
+      const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+      
+      
+      const url = window.URL.createObjectURL(blob);
+      
+      
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName; 
+      
+      
+      document.body.appendChild(link);
+      link.click();
+      
+      
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      
+      setSnackbarMessage(t('editor.saveToLocalSuccess', 'Файл успешно сохранен на диск'));
+      setSnackbarSeverity('success');
+      setSnackbarOpen(true);
+    } catch (error: any) {
+      console.error('Error downloading script:', error);
+      setSnackbarMessage(error.message || t('editor.saveToLocalError', 'Ошибка при сохранении файла'));
+      setSnackbarSeverity('error');
+      setSnackbarOpen(true);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [scriptId, fileName, t]);
+
+  
+  const handleSwitchToGlobalEditor = useCallback(() => {
+    console.log("Switching to global editor...");
+    
+    setSnackbarMessage(t('editor.globalEditorNotImplemented', 'Функция глобального редактора пока не реализована'));
+    setSnackbarSeverity('warning');
+    setSnackbarOpen(true);
+  }, [t]);
+
+  
+  const handleCloseEditorPopup = () => {
+    setIsEditorPopupOpen(false);
+    setSelectedNodeForEdit(null);
+    setEditorInitialContent('');
+  };
+
+  
+  const handleSnackbarClose = (event?: React.SyntheticEvent | Event, reason?: string) => {
+    if (reason === 'clickaway') {
+      return;
+    }
+    setSnackbarOpen(false);
+  };
+  
+  
   useEffect(() => {
     if (parsedData) {
       try {
@@ -410,13 +621,22 @@ const EditorPageInternal: React.FC = () => {
                 fontWeight: 500 
               }}>{projectName}</span>
             </Typography>
-          </Box>
-
-          {scriptId && (
-            <Box>
-              <Typography variant="subtitle2" color="text.secondary" sx={{ opacity: 0.7 }}>
+          </Box>          {scriptId && (
+            <Box sx={{ display: 'flex', alignItems: 'center' }}>
+              <Typography variant="subtitle2" color="text.secondary" sx={{ opacity: 0.7, mr: 2 }}>
                 Editing: {fileName} (ID: {scriptId})
               </Typography>
+              <Tooltip title={t('editor.saveToLocal', 'Сохранить на диск')}>
+                <Button
+                  variant="outlined"
+                  size="small"
+                  onClick={handleDownloadScript}
+                  startIcon={<SaveIcon />}
+                  sx={{ ml: 1 }}
+                >
+                  {t('editor.saveToLocal', 'Сохранить на диск')}
+                </Button>
+              </Tooltip>
             </Box>
           )}
         </Toolbar>
@@ -825,11 +1045,36 @@ const EditorPageInternal: React.FC = () => {
                 <Background color={theme.palette.divider} />
                 <Controls />
                 {showMinimap && <MiniMap nodeColor={(node) => theme.custom.nodeColors[node.data?.originalData?.node_type] || theme.custom.nodeColors.action} />}
-              </ReactFlow>
-            </Box>
+              </ReactFlow>            </Box>
           )}
         </EditorContainer>
       </Box>
+
+      {/* Node Editor Popup */}
+      {selectedNodeForEdit && scriptId && (
+        <NodeEditorPopup
+          open={isEditorPopupOpen}
+          onClose={handleCloseEditorPopup}
+          nodeData={selectedNodeForEdit}
+          initialContent={editorInitialContent}
+          scriptId={scriptId}
+          onSave={handleSaveNodeContent}
+          onSwitchToGlobal={handleSwitchToGlobalEditor}
+          isLoading={isFetchingNodeContent}
+        />
+      )}
+
+      {/* Snackbar для уведомлений */}
+      <Snackbar
+          open={snackbarOpen}
+          autoHideDuration={6000}
+          onClose={handleSnackbarClose}
+          anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+          <Alert onClose={handleSnackbarClose} severity={snackbarSeverity} sx={{ width: '100%' }}>
+              {snackbarMessage}
+          </Alert>
+      </Snackbar>
     </Box>
   );
 };
