@@ -134,7 +134,6 @@ class DatabaseService:
         self.db_path.parent.mkdir(exist_ok=True)
         self._initialize_database()
         self.script_cache = ScriptCache(max_size=50, ttl_seconds=600)
-        self._connection = None
     
     def _initialize_database(self):
         """Create database schema if it doesn't exist."""
@@ -226,37 +225,39 @@ class DatabaseService:
             raise
     
     def _get_connection(self):
-        """Get a database connection with proper settings."""
-        if not self._connection:
-            self._connection = sqlite3.connect(self.db_path, isolation_level=None)  # Auto-commit mode
-            self._connection.row_factory = sqlite3.Row  # Return rows as dictionaries
-        return self._connection
+        """Get a new database connection with proper settings."""
+        # Removed connection caching to prevent threading issues with TestClient
+        connection = sqlite3.connect(self.db_path, isolation_level=None, check_same_thread=False) # Allow cross-thread usage for FastAPI TestClient context
+        connection.row_factory = sqlite3.Row  # Return rows as dictionaries
+        connection.execute("PRAGMA foreign_keys = ON") # Ensure foreign keys are enabled for each connection
+        return connection
     
     def close(self):
-        """Explicitly close any open database connections."""
+        """Explicitly close any open database connections (if any were cached - now deprecated)."""
+        # Connection caching is removed, so this method might be less critical,
+        # but kept for potential future use or explicit cleanup needs.
         try:
-            if hasattr(self, '_connection') and self._connection:
-                self._connection.close()
-                self._connection = None
-                
             # Clear the script cache
             if hasattr(self, 'script_cache'):
                 self.script_cache.clear()
         except Exception as e:
-            print(f"Error closing database connection: {e}")
-            
-    def __del__(self):
-        """Ensure connections are closed when the object is garbage collected."""
-        self.close()
+            print(f"Error during database service cleanup: {e}")
     
-    def create_project(self, name: str, owner_id: str) -> str:
+    def __del__(self):
+        """Ensure cleanup on object garbage collection."""
+        # No connection to close here anymore due to removal of caching
+        pass
+    
+    def create_project(self, name: str, owner_id: str, description: str = None) -> str:
         """Create a new project and return its ID."""
         project_id = str(uuid.uuid4())
         try:
+            # Handle None description by setting it to an empty string
+            description = description or ""
             with sqlite3.connect(self.db_path) as conn:
                 conn.execute(
-                    'INSERT INTO projects (id, name, owner_id) VALUES (?, ?, ?)',
-                    (project_id, name, owner_id)
+                    'INSERT INTO projects (id, name, description, owner_id) VALUES (?, ?, ?, ?)',
+                    (project_id, name, description, owner_id)
                 )
             logger.info(f"Created project {name} with ID {project_id}")
             return project_id
@@ -630,6 +631,25 @@ class DatabaseService:
                 (session_id, current_time)
             )
             return [dict(row) for row in cursor.fetchall()]
+    
+    def get_active_project_users(self, project_id: str) -> List[Dict[str, Any]]:
+        """Get users currently active in a project."""
+        try:
+            with self._get_connection() as conn:
+                # Get users with access to this project
+                cursor = conn.execute(
+                    '''
+                    SELECT u.id, u.username, pa.role_id as role
+                    FROM users u
+                    JOIN project_access pa ON u.id = pa.user_id
+                    WHERE pa.project_id = ?
+                    ''',
+                    (project_id,)
+                )
+                return [dict(row) for row in cursor.fetchall()]
+        except Exception as e:
+            logger.error(f"Failed to get active project users: {str(e)}")
+            return []  # Return empty list on error to ensure API doesn't completely fail
 
     # TODO: Add usage statistics tracking methods - #issue/130
     def track_script_edit(self, script_id: str, user_id: str, action_type: str, metadata: Optional[Dict] = None) -> None:

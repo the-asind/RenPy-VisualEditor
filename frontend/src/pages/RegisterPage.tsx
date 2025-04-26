@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Box, Button, TextField, Typography, Alert } from '@mui/material';
 import { useAuth } from '../contexts/AuthContext';
@@ -18,9 +18,13 @@ const RegisterPage: React.FC = () => {
   const { register, isAuthenticated } = useAuth();
   const navigate = useNavigate();
 
-  // Redirect if already authenticated
+  // Redirect if already authenticated in an effect to avoid state updates during render
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigate('/', { replace: true });
+    }
+  }, [isAuthenticated, navigate]);
   if (isAuthenticated) {
-    navigate('/', { replace: true });
     return null;
   }
 

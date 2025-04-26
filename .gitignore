@@ -14,3 +14,5 @@ reactflow-DOCS/
 node_modules/
 *.log
 backend/uploads/
+debug_temp*
+*.db

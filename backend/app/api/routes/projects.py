@@ -3,8 +3,16 @@ from typing import List, Dict, Any, Optional
 from ...services.database import DatabaseService
 from ...api.routes.auth import get_current_user
 import uuid
+import logging # Add this import
 
-projects_router = APIRouter()
+# Get a logger instance
+logger = logging.getLogger(__name__)
+
+projects_router = APIRouter(
+    prefix="/projects",
+    tags=["projects"],
+    responses={404: {"description": "Not found"}}
+)
 db_service = DatabaseService()
 
 @projects_router.post("/")
@@ -16,7 +24,7 @@ async def create_project(
     """Create a new project."""
     try:
         # Create project
-        project_id = db_service.create_project(name, user["id"])
+        project_id = db_service.create_project(name, user["id"], description)
         
         # Grant project access to creator (as owner)
         db_service.grant_project_access(project_id, user["id"], "role_owner")
@@ -87,13 +95,37 @@ async def create_script(
     user: Dict = Depends(get_current_user)
 ) -> Dict[str, Any]:
     """Create a new script in a project."""
-    # TODO: Implement access control check
     try:
-        script_id = db_service.save_script(project_id, filename, content)
+        # Verify user has access to the project
+        # Note: This relies on db_service.get_user_projects returning the user's role for this project.
+        projects = db_service.get_user_projects(user["id"])
+        project = next((p for p in projects if p["id"] == project_id), None)
+        
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found or access denied")
+
+        # Check if user has edit permissions (Owner or Editor role)
+        # Ensure the 'role' key exists before checking its value.
+        if "role" not in project:
+            logger.error(f"Role information missing for user {user['id']} in project {project_id}. Project data: {project}")
+            # Ideally, db_service.get_user_projects should always return the role.
+            # As a fallback, consider fetching the role explicitly here if possible.
+            raise HTTPException(status_code=500, detail="Internal server error: Could not determine user role for the project.")
+            
+        if project["role"] not in ["Owner", "Editor"]:
+            logger.warning(f"User {user['id']} with role '{project['role']}' attempted to create script in project {project_id}. Permission denied.")
+            raise HTTPException(status_code=403, detail="You don't have permission to create scripts in this project")
+            
+        # Create the script
+        script_id = db_service.save_script(project_id, filename, content, user["id"])
+        logger.info(f"User {user['id']} created script {script_id} ('{filename}') in project {project_id}")
         return {
             "id": script_id,
             "filename": filename,
             "project_id": project_id
         }
+    except HTTPException as http_exc: # Re-raise HTTP exceptions directly
+        raise http_exc
     except Exception as e:
+        logger.error(f"Failed to create script in project {project_id} for user {user['id']}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to create script: {str(e)}")

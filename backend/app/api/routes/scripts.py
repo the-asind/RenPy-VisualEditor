@@ -1,4 +1,4 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks, Body, Depends
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, BackgroundTasks, Body, Depends
 from fastapi.responses import JSONResponse
 import os
 import tempfile
@@ -46,20 +46,21 @@ def node_to_dict(node: ChoiceNode) -> Dict[str, Any]:
 async def parse_script(
     background_tasks: BackgroundTasks, 
     file: UploadFile = File(...),
-    token: str = Depends(oauth2_scheme)
+    project_id: Optional[str] = Form(None),
+    current_user: Dict[str, Any] = Depends(get_current_user)
 ) -> Dict[str, Any]:
     """
     Parse a RenPy script file and return its tree structure with line references.
     
     Args:
         file: The uploaded RenPy script file
+        project_id: Optional ID of the project to associate the script with
         
     Returns:
         JSON representation of the parsed script tree with line references
     """
     try:
-        # Get current user
-        current_user = await get_current_user(token)
+        # current_user now injected via Depends
         
         if not file.filename.lower().endswith(".rpy"):
             raise HTTPException(status_code=400, detail="Invalid file type. Only .rpy files are allowed.")
@@ -72,12 +73,25 @@ async def parse_script(
         if file_size > 1024 * 1024:  # 1MB limit
             raise HTTPException(status_code=400, detail="File too large. Maximum size is 1MB.")
         
-        # Create temporary project if needed
-        # For MVP, we'll use a default project ID
-        project_id = current_user.get("default_project_id", None)
+        # Get project ID (either from request or find/create default)
         if not project_id:
-            project_id = db_service.create_project("Default Project", current_user["id"])
-            # TODO: Update user with default project ID - #issue/128
+            # Try to get user's default project
+            user_projects = db_service.get_user_projects(current_user["id"])
+            default_projects = [p for p in user_projects if p["name"] == "Default Project"]
+            
+            if default_projects:
+                # Use existing default project
+                project_id = default_projects[0]["id"]
+            else:
+                # Create a new default project
+                project_id = db_service.create_project("Default Project", current_user["id"])
+        else:
+            # Verify user has access to the specified project
+            user_projects = db_service.get_user_projects(current_user["id"])
+            has_access = any(p["id"] == project_id for p in user_projects)
+            
+            if not has_access:
+                raise HTTPException(status_code=403, detail="Access denied to the specified project")
         
         # Parse the content to check validity
         temp_dir = Path(tempfile.gettempdir()) / "renpy_editor" / str(uuid.uuid4())

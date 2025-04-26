@@ -10,16 +10,14 @@ from ..routes.auth import get_current_user
 
 logger = logging.getLogger(__name__)
 
-# Create router
 ws_router = APIRouter(
     prefix="/ws",
-    tags=["websockets"]
+    tags=["websockets"],
+    responses={404: {"description": "Not found"}}
 )
 
-# Initialize database service
 db_service = DatabaseService()
 
-# Routes
 @ws_router.websocket("/project/{project_id}")
 async def project_websocket(
     websocket: WebSocket,
