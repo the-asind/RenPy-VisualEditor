@@ -4,20 +4,20 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        VITE_API_URL: http://backend:8000/api
+        VITE_API_URL: http://backend:9000/api
     ports:
       - "3000:80"
     depends_on:
       - backend
     environment:
-      - VITE_API_URL=http://backend:8000/api
+      - VITE_API_URL=http://backend:9000/api
 
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
     ports:
-      - "8000:8000"
+      - "9000:9000"
     volumes:
       - ./backend/database:/app/database
       - db-data:/data

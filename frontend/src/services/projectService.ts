@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 // Base URL for API calls - read from environment variables or use default
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:9000/api';
 
 // Create axios instance with default configuration
 const api = axios.create({
@@ -37,9 +37,11 @@ export interface Project {
   scripts?: any[];
 }
 
-const projectService = {  /**
+const projectService = {  
+  /**
    * Get all projects accessible by the current user
-   */  async getUserProjects(): Promise<Project[]> {
+   */
+  async getUserProjects(): Promise<Project[]> {
     try {
       const response = await api.get('/projects');
       
@@ -50,17 +52,24 @@ const projectService = {  /**
       
       // Transform projects to match the frontend interface
       // and calculate additional properties
-      return projectsArray.map((project: any) => ({
-        id: project.id,
-        name: project.name,
-        description: project.description || '',
-        scriptCount: project.scriptCount || 0,
-        hasEditAccess: project.role === 'Owner' || project.role === 'Editor',
-        owner_id: project.owner_id,
-        role: project.role,
-        created_at: project.created_at,
-        updated_at: project.updated_at,
-      }));
+      // Ensure uniqueness of projects by ID
+      const uniqueProjects = new Map<string | number, Project>();
+      projectsArray.forEach((project: any) => {
+        if (!uniqueProjects.has(project.id)) {
+          uniqueProjects.set(project.id, {
+            id: project.id,
+            name: project.name,
+            description: project.description || '',
+            scriptCount: project.scriptCount || 0,
+            hasEditAccess: project.role === 'Owner' || project.role === 'Editor',
+            owner_id: project.owner_id,
+            role: project.role,
+            created_at: project.created_at,
+            updated_at: project.updated_at,
+          });
+        }
+      });
+      return Array.from(uniqueProjects.values());
     } catch (error) {
       console.error('Error fetching projects:', error);
       throw error;
@@ -69,7 +78,8 @@ const projectService = {  /**
 
   /**
    * Create a new project
-   */  async createProject(name: string, description: string): Promise<Project> {
+   */
+  async createProject(name: string, description: string): Promise<Project> {
     try {
       const response = await api.post('/projects', {
         name,
@@ -88,9 +98,11 @@ const projectService = {  /**
       throw error;
     }
   },
+
   /**
    * Get details for a specific project
-   */  async getProject(projectId: string | number): Promise<Project> {
+   */
+  async getProject(projectId: string | number): Promise<Project> {
     try {
       const response = await api.get(`/projects/${projectId}`);
       
@@ -134,16 +146,26 @@ const projectService = {  /**
   },
 
   /**
-   * Share project with another user or update user's role
+   * Delete a project
    */
-  async shareProject(projectId: string | number, userId: string, roleId: string | null): Promise<void> {
+  async deleteProject(projectId: string | number): Promise<void> {
+    await api.delete(`/projects/${projectId}`);
+  },
+
+  /**
+   * Share project with another user or update user's role
+   * The second parameter is now `username` instead of `userId` to reflect its actual content.
+   * The payload to the backend will still use the key `user_id` for this username due to backend aliasing.
+   */
+  async shareProject(projectId: string | number, username: string, roleId: string | null): Promise<void> {
     try {
       await api.post(`/projects/${projectId}/share`, {
-        user_id: userId,
+        user_id: username, // This key is aliased to `username_to_share` on the backend
         role: roleId
       });
-    } catch (error) {
-      console.error(`Error sharing project ${projectId} with user ${userId}:`, error);
+    } catch (error: any) { // Added type for error
+      // Log the specific error and rethrow for the component to handle
+      console.error(`Error sharing project ${projectId} with user ${username} (role: ${roleId}):`, error.response?.data || error.message);
       throw error;
     }
   },

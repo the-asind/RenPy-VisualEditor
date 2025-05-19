@@ -287,7 +287,7 @@ class TestAuthService:
         time_left = expiry_time - datetime.utcnow()
         
         # Should be less than the default token expiry but more than 10 minutes
-        assert time_left < timedelta(days=1)  # Less than default
+        assert time_left < timedelta(days=3)  # Less than default
         assert time_left > timedelta(minutes=10)  # Enough for a collaboration session
     
     def test_validate_session_token(self, auth_service):

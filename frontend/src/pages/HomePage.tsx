@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Box, Typography, Grid, Card, CardContent, Button,
   IconButton, useTheme, CircularProgress, Alert, Dialog,
@@ -13,6 +13,7 @@ import EditIcon from '@mui/icons-material/Edit';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import useProjects from '../hooks/useProjects';
+import { useAuth } from '../contexts/AuthContext'; // Import useAuth
 import { Project } from '../services/projectService';
 import ProjectManageDialog from '../components/project/ProjectManageDialog';
 
@@ -20,6 +21,7 @@ const HomePage: React.FC = () => {
   const theme = useTheme();
   const navigate = useNavigate();
   const { t } = useTranslation();
+  const { isAuthenticated, token } = useAuth(); // Get isAuthenticated state and token
   
   // State for new project dialog
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -33,6 +35,23 @@ const HomePage: React.FC = () => {
   
   // Get projects from database using our custom hook
   const { projects, loading, error, refreshProjects, createProject } = useProjects();
+
+  // Redirect to login if not authenticated
+  useEffect(() => {
+    // We need to check token here because isAuthenticated might be false during initial load
+    // even if token exists, until the AuthContext verifies the token.
+    const currentToken = localStorage.getItem('auth_token'); 
+    if (!currentToken) {
+      navigate('/login');
+    }
+  }, [navigate]); // Rerun if navigate changes, though it's unlikely
+
+  // Additional effect to handle cases where token becomes null after initial load (e.g. logout)
+  useEffect(() => {
+    if (!token && !isAuthenticated) { // If token is explicitly null and not authenticated
+        navigate('/login');
+    }
+  }, [token, isAuthenticated, navigate]);
 
   const handleOpenProject = (projectId: number | string) => {
     navigate(`/editor?project=${projectId}`);
@@ -117,6 +136,7 @@ const HomePage: React.FC = () => {
       {/* Loading State */}
       {loading ? (
         <Box 
+
           sx={{ 
             display: 'flex', 
             justifyContent: 'center', 
@@ -128,7 +148,8 @@ const HomePage: React.FC = () => {
         </Box>
       ) : (
         /* Projects Grid */
-        <Grid container spacing={3}>          {projects.map((project) => (
+        <Grid container spacing={3}>          
+        {projects.map((project) => (
             <Grid item xs={12} sm={6} lg={4} xl={3} key={project.id}>
               <Card
                 onClick={() => handleOpenManageDialog(project)}
@@ -166,7 +187,7 @@ const HomePage: React.FC = () => {
                       fontWeight: 500,
                     }}
                   >
-                    {t('projects.script', { count: project.scriptCount || 0 })}
+                    {t('project.script', { count: project.scriptCount || 0 })}
                   </Typography>
                   
                   {project.hasEditAccess ? (
@@ -360,13 +381,13 @@ const HomePage: React.FC = () => {
         maxWidth="sm"
         fullWidth
       >
-        <DialogTitle>{t('projects.createNew')}</DialogTitle>
+        <DialogTitle>{t('project.createNew')}</DialogTitle>
         <DialogContent>
           <TextField
             autoFocus
             margin="dense"
             id="name"
-            label={t('projects.name')}
+            label={t('project.name')}
             type="text"
             fullWidth
             variant="outlined"
@@ -378,7 +399,7 @@ const HomePage: React.FC = () => {
           <TextField
             margin="dense"
             id="description"
-            label={t('projects.description')}
+            label={t('project.description')}
             multiline
             rows={4}
             fullWidth

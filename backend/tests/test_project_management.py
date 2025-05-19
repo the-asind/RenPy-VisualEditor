@@ -477,42 +477,134 @@ label start:
                 pass
 
     def test_share_project(self, auth_token, temp_db):
-        """Test sharing a project with another user."""
+        """Test sharing a project with another user via API."""
         
-        headers = {"Authorization": f"Bearer {auth_token}"}
-        resp = client.post("/api/projects/", headers=headers, json={"name":"ShareProj"})
-        project_id = resp.json()["id"]
+        headers_user1 = {"Authorization": f"Bearer {auth_token}"} # Token for the project owner
+        
+        # 1. Create a project as user1
+        project_name = "ProjectToShare"
+        create_project_resp = client.post(
+            "/api/projects/", 
+            headers=headers_user1, 
+            json={"name": project_name, "description": "A project to test sharing"}
+        )
+        assert create_project_resp.status_code == 200, f"Failed to create project: {create_project_resp.text}"
+        project_id = create_project_resp.json()["id"]
 
-        
-        from app.services.auth import AuthService
-        second_id = str(uuid.uuid4())
+        # 2. Create a second user (user2) directly in the database for testing
+        from app.services.auth import AuthService # Moved import here
+        user2_id = str(uuid.uuid4())
+        user2_username = "test_share_user2"
         with temp_db._get_connection() as conn:
             conn.execute(
                 "INSERT INTO users (id, username, email, password_hash) VALUES (?, ?, ?, ?)",
-                (second_id, "user2", "user2@example.com", "$2b$12$dummyhash")
+                (user2_id, user2_username, "share_user2@example.com", "$2b$12$dummyhashforshare")
             )
-            temp_db.grant_project_access(project_id, second_id, "role_viewer")
+            conn.commit()
 
-        
-        auth2 = AuthService(temp_db)
-        token2 = auth2.create_access_token({"sub": second_id, "username": "user2"})
-
+        # 3. User1 shares the project with User2 via API, assigning 'role_viewer'
+        # Ensure 'role_viewer' is a valid role ID from your temp_db setup
+        role_to_assign = "role_viewer" 
+        share_payload = {"user_id": user2_username, "role": role_to_assign}
         
         share_resp = client.post(
             f"/api/projects/{project_id}/share",
-            headers=headers,
-            json={"user_id": second_id, "role": "role_viewer"}
+            headers=headers_user1, # User1 (owner) performs the share action
+            json=share_payload
         )
-        assert share_resp.status_code == 200
+        assert share_resp.status_code == 200, f"API call to share project failed: {share_resp.text}. Payload: {share_payload}"
 
+        # 4. Verify User2 can now access the project
+        auth_service_user2 = AuthService(temp_db)
+        token_user2 = auth_service_user2.create_access_token({"sub": user2_id, "username": user2_username})
+        headers_user2 = {"Authorization": f"Bearer {token_user2}"}
         
-        resp2 = client.get(
+        get_project_resp_user2 = client.get(
             f"/api/projects/{project_id}",
-            headers={"Authorization": f"Bearer {token2}"}
+            headers=headers_user2 # User2 attempts to access
         )
-        assert resp2.status_code == 200
-        proj2 = resp2.json()
-        assert proj2["id"] == project_id
+        assert get_project_resp_user2.status_code == 200, f"User2 failed to access shared project: {get_project_resp_user2.text}"
+        project_details_for_user2 = get_project_resp_user2.json()
+        assert project_details_for_user2["id"] == project_id
+        # Optionally, assert role if project details include it for the current user
+        # assert project_details_for_user2.get("role") == role_to_assign # Or however role is exposed
+
+        # 5. Verify the project sharing record in the database
+        with temp_db._get_connection() as conn:
+            cursor = conn.execute(
+                "SELECT role_id FROM project_access WHERE project_id = ? AND user_id = ?",
+                (project_id, user2_id)
+            )
+            project_user_entry = cursor.fetchone()
+            assert project_user_entry is not None, "Project sharing record not found in database after API call"
+            assert project_user_entry["role_id"] == role_to_assign, f"Incorrect role_id in database. Expected {role_to_assign}, got {project_user_entry['role_id']}"
+
+    def test_share_project_with_role_name(self, auth_token, temp_db):
+        """Test sharing a project with another user via API using the role NAME."""
+        
+        headers_user1 = {"Authorization": f"Bearer {auth_token}"} # Token for the project owner
+        
+        # 1. Create a project as user1
+        project_name = "ProjectToShareByName"
+        create_project_resp = client.post(
+            "/api/projects/", 
+            headers=headers_user1, 
+            json={"name": project_name, "description": "A project to test sharing by role name"}
+        )
+        assert create_project_resp.status_code == 200, f"Failed to create project: {create_project_resp.text}"
+        project_id = create_project_resp.json()["id"]
+
+        # 2. Create a second user (user2)
+        from app.services.auth import AuthService
+        user2_id = str(uuid.uuid4())
+        user2_username = "test_share_user2_by_name"
+        with temp_db._get_connection() as conn:
+            conn.execute(
+                "INSERT INTO users (id, username, email, password_hash) VALUES (?, ?, ?, ?)",
+                (user2_id, user2_username, "share_user2_name@example.com", "$2b$12$dummyhashforname")
+            )
+            conn.commit()
+
+        # 3. User1 shares the project with User2 via API, assigning role by NAME
+        role_name_to_send_in_payload = "Viewer"  # This is the role NAME
+        expected_role_id_in_db = "role_viewer" # This is the corresponding ID
+
+        share_payload = {"user_id": user2_username, "role": role_name_to_send_in_payload}
+        
+        share_resp = client.post(
+            f"/api/projects/{project_id}/share",
+            headers=headers_user1,
+            json=share_payload
+        )
+        
+        # IDEAL BEHAVIOR: Backend should accept name, find ID, and return 200
+        # or return 4xx if names are not supported / name is invalid.
+        # A 500 here indicates a bug in handling this case.
+        assert share_resp.status_code == 200, f"API call to share project with role name failed: {share_resp.text}. Payload: {share_payload}"
+
+        # 4. Verify User2 can access
+        auth_service_user2 = AuthService(temp_db)
+        token_user2 = auth_service_user2.create_access_token({"sub": user2_id, "username": "user_for_delete_test"})
+        headers_user2 = {"Authorization": f"Bearer {token_user2}"}
+        
+        get_project_resp_user2 = client.get(
+            f"/api/projects/{project_id}",
+            headers=headers_user2
+        )
+        assert get_project_resp_user2.status_code == 200, f"User2 failed to access project shared by role name: {get_project_resp_user2.text}"
+        project_details_for_user2 = get_project_resp_user2.json()
+        assert project_details_for_user2["id"] == project_id
+
+        # 5. Verify the correct role_id was stored in the database
+        with temp_db._get_connection() as conn:
+            cursor = conn.execute(
+                "SELECT role_id FROM project_access WHERE project_id = ? AND user_id = ?",
+                (project_id, user2_id)
+            )
+            project_user_entry = cursor.fetchone()
+            assert project_user_entry is not None, "Project sharing record not found in database after API call (role name)"
+            assert project_user_entry["role_id"] == expected_role_id_in_db, f"Incorrect role_id in database. Expected {expected_role_id_in_db}, got {project_user_entry['role_id']}"
+
 
     def test_create_script_endpoint(self, auth_token):
         """Test creating a script via the projects/{project_id}/scripts endpoint."""
@@ -534,6 +626,58 @@ label start:
         
         proj = client.get(f"/api/projects/{project_id}", headers=headers).json()
         assert any(s["id"] == script_id for s in proj["scripts"])
+
+    def test_delete_project_endpoint(self, auth_token, temp_db):
+        """Test deleting a project via the projects/{project_id} endpoint."""
+        headers = {"Authorization": f"Bearer {auth_token}"}
+
+        # 1. Create a project
+        create_resp = client.post("/api/projects/", headers=headers, json={"name": "ProjectToDelete"})
+        assert create_resp.status_code == 200
+        project_to_delete_id = create_resp.json()["id"]
+        owner_id = create_resp.json()["owner_id"] # Assuming owner_id is returned
+
+        # 2. Delete the project as the owner
+        delete_resp = client.delete(f"/api/projects/{project_to_delete_id}", headers=headers)
+        assert delete_resp.status_code == 200
+        assert delete_resp.json()["message"] == f"Project {project_to_delete_id} deleted successfully."
+
+        # 3. Verify the project is no longer accessible
+        get_resp = client.get(f"/api/projects/{project_to_delete_id}", headers=headers)
+        assert get_resp.status_code == 404 # Or appropriate error for not found/access denied after deletion
+
+        # 4. Attempt to delete a non-existent project
+        non_existent_project_id = str(uuid.uuid4())
+        delete_non_existent_resp = client.delete(f"/api/projects/{non_existent_project_id}", headers=headers)
+        assert delete_non_existent_resp.status_code == 404
+
+        # 5. Test deletion permission: Create another project
+        create_resp_2 = client.post("/api/projects/", headers=headers, json={"name": "ProjectToTestPermissions"})
+        assert create_resp_2.status_code == 200
+        project_id_perms_test = create_resp_2.json()["id"]
+
+        # 6. Create a second user and token
+        from app.services.auth import AuthService
+        second_user_id = str(uuid.uuid4())
+        with temp_db._get_connection() as conn:
+            conn.execute(
+                "INSERT INTO users (id, username, email, password_hash) VALUES (?, ?, ?, ?)",
+                (second_user_id, "user_for_delete_test", "user_del_test@example.com", "$2b$12$dummyhash")
+            )
+            conn.commit()
+        
+        auth_service_2 = AuthService(temp_db)
+        token_2 = auth_service_2.create_access_token({"sub": second_user_id, "username": "user_for_delete_test"})
+        headers_2 = {"Authorization": f"Bearer {token_2}"}
+
+        # 7. Attempt to delete the project with the second user's token (should fail)
+        delete_permission_resp = client.delete(f"/api/projects/{project_id_perms_test}", headers=headers_2)
+        assert delete_permission_resp.status_code == 403 # Forbidden
+
+        # 8. Verify project still exists (was not deleted by non-owner)
+        get_resp_after_failed_delete = client.get(f"/api/projects/{project_id_perms_test}", headers=headers) # Check with owner token
+        assert get_resp_after_failed_delete.status_code == 200
+
 
     def _create_mock_tree(self):
         """Create a mock parse tree for testing."""

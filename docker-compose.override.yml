@@ -12,15 +12,15 @@ services:
       - /app/node_modules 
     environment:
       - NODE_ENV=development
-      - VITE_API_URL=http://localhost:8000/api 
+      - VITE_API_URL=http://localhost:9000/api 
 
   backend:
     
-    command: uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 
+    command: uvicorn app.main:app --reload --host 0.0.0.0 --port 9000 
     volumes:
       - ./backend:/app 
     ports: 
-      - "8000:8000" 
+      - "9000:9000" 
     environment:
       - ENVIRONMENT=dev 
       

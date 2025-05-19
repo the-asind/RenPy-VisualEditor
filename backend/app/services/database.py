@@ -451,21 +451,21 @@ class DatabaseService:
             raise
     
     def get_user_by_username(self, username: str) -> Optional[Dict[str, Any]]:
-        """Get user details by username."""
+        """Fetches a user by their username."""
+        conn = self._get_connection()
         try:
-            with self._get_connection() as conn:
-                cursor = conn.execute(
-                    'SELECT id, username, email, password_hash, created_at FROM users WHERE username = ?',
-                    (username,)
-                )
-                user = cursor.fetchone()
-                if not user:
-                    return None
-                
-                return dict(user)
-        except Exception as e:
-            logger.error(f"Failed to get user by username: {str(e)}")
-            raise
+            cursor = conn.cursor()
+            cursor.execute("SELECT id, username, email, password_hash, created_at FROM users WHERE username = ?", (username,))
+            user_data = cursor.fetchone()
+            if user_data:
+                return dict(user_data)  # sqlite3.Row can be directly converted to dict
+            return None
+        except sqlite3.Error as e:
+            logger.error(f"Database error when fetching user by username '{username}': {e}", exc_info=True)
+            return None
+        finally:
+            if conn:
+                conn.close()
 
     def get_user_by_id(self, user_id: str) -> Optional[Dict[str, Any]]:
         """Get user details by ID."""
@@ -491,7 +491,7 @@ class DatabaseService:
                 # Get projects owned by user
                 owned_cursor = conn.execute(
                     '''
-                    SELECT p.id, p.name, p.description, p.created_at, p.updated_at,
+                    SELECT p.id, p.name, p.description, p.created_at, p.updated_at, p.owner_id,
                            'Owner' as role
                     FROM projects p
                     WHERE p.owner_id = ?
@@ -503,7 +503,7 @@ class DatabaseService:
                 # Get projects shared with user
                 shared_cursor = conn.execute(
                     '''
-                    SELECT p.id, p.name, p.description, p.created_at, p.updated_at,
+                    SELECT p.id, p.name, p.description, p.created_at, p.updated_at, p.owner_id,
                            r.name as role
                     FROM projects p
                     JOIN project_access pa ON p.id = pa.project_id
@@ -514,44 +514,82 @@ class DatabaseService:
                 )
                 shared_projects = [dict(row) for row in shared_cursor.fetchall()]
                 
-                # Combine results
-                return owned_projects + shared_projects
+                # Combine and ensure uniqueness (a user could be owner and also have explicit access)
+                all_projects_dict = {p["id"]: p for p in owned_projects}
+                for p in shared_projects:
+                    if p["id"] not in all_projects_dict:
+                        all_projects_dict[p["id"]] = p
+                    # Potentially update role if a more specific one is granted than just 'Owner'
+                    # For now, owner role takes precedence if listed as owned.
+                    # Or, if a user is an owner, their role is 'Owner' regardless of project_access entries.
+
+                return list(all_projects_dict.values())
         except Exception as e:
             logger.error(f"Failed to get user projects: {str(e)}")
             raise
     
-    def grant_project_access(self, project_id: str, user_id: str, role_id: str) -> bool:
-        """Grant a user access to a project with the specified role."""
+    def get_role_by_id(self, role_id: str) -> Optional[Dict[str, Any]]:
+        """Get role details by role ID."""
         try:
             with self._get_connection() as conn:
-                # Check if access already exists
-                check_cursor = conn.execute(
-                    'SELECT 1 FROM project_access WHERE project_id = ? AND user_id = ?',
-                    (project_id, user_id)
+                cursor = conn.execute(
+                    "SELECT id, name, description FROM roles WHERE id = ?",
+                    (role_id,)
                 )
-                if check_cursor.fetchone():
-                    # Update existing access
-                    conn.execute(
-                        '''
-                        UPDATE project_access 
-                        SET role_id = ?, granted_at = CURRENT_TIMESTAMP
-                        WHERE project_id = ? AND user_id = ?
-                        ''',
-                        (role_id, project_id, user_id)
-                    )
-                else:
-                    # Create new access
-                    conn.execute(
-                        '''
-                        INSERT INTO project_access (project_id, user_id, role_id)
-                        VALUES (?, ?, ?)
-                        ''',
-                        (project_id, user_id, role_id)
-                    )
-                return True
+                role = cursor.fetchone()
+                return dict(role) if role else None
         except Exception as e:
-            logger.error(f"Failed to grant project access: {str(e)}")
+            logger.error(f"Failed to get role by ID '{role_id}': {str(e)}")
             raise
+
+    def get_role_by_name(self, role_name: str) -> Optional[Dict[str, Any]]:
+        """Get role details by role name."""
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.execute(
+                    "SELECT id, name, description FROM roles WHERE name = ?",
+                    (role_name,)
+                )
+                role = cursor.fetchone()
+                return dict(role) if role else None
+        except Exception as e:
+            logger.error(f"Failed to get role by name '{role_name}': {str(e)}")
+            raise
+    
+    def grant_project_access(self, project_id: str, user_id: str, role_id: str) -> bool:
+        """Grant a user a specific role on a project."""
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            # Check if access already exists
+            cursor.execute("SELECT role_id FROM project_access WHERE project_id = ? AND user_id = ?", (project_id, user_id))
+            existing_access = cursor.fetchone()
+
+            if existing_access:
+                if existing_access["role_id"] == role_id:
+                    logger.info(f"User {user_id} already has role {role_id} for project {project_id}. No change needed.")
+                    return True
+                else:
+                    logger.info(f"Updating role for user {user_id} on project {project_id} from {existing_access['role_id']} to {role_id}")
+                    cursor.execute("UPDATE project_access SET role_id = ? WHERE project_id = ? AND user_id = ?",
+                                   (role_id, project_id, user_id))
+            else:
+                logger.info(f"Granting new role {role_id} to user {user_id} for project {project_id}")
+                cursor.execute("INSERT INTO project_access (project_id, user_id, role_id) VALUES (?, ?, ?)",
+                               (project_id, user_id, role_id))
+            conn.commit()
+            return True
+        except sqlite3.IntegrityError as e:
+            logger.error(f"Database integrity error granting access for project {project_id} to user {user_id} with role {role_id}: {e}", exc_info=True)
+            conn.rollback()
+            return False
+        except sqlite3.Error as e:
+            logger.error(f"Database error granting access for project {project_id} to user {user_id} with role {role_id}: {e}", exc_info=True)
+            conn.rollback()
+            return False
+        finally:
+            if conn:
+                conn.close()
     
     def get_project_scripts(self, project_id: str) -> List[Dict[str, Any]]:
         """Get all scripts for a project."""
@@ -573,6 +611,87 @@ class DatabaseService:
             logger.error(f"Failed to get project scripts: {str(e)}")
             raise
     
+    def get_project_details(self, project_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Retrieve project details by project ID.
+
+        Args:
+            project_id: The ID of the project to retrieve.
+
+        Returns:
+            A dictionary containing project details (id, name, description, owner_id, created_at, updated_at)
+            or None if the project is not found.
+        """
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.execute(
+                    "SELECT id, name, description, owner_id, created_at, updated_at FROM projects WHERE id = ?",
+                    (project_id,)
+                )
+                row = cursor.fetchone()
+                if row:
+                    return {
+                        "id": row[0],
+                        "name": row[1],
+                        "description": row[2],
+                        "owner_id": row[3],
+                        "created_at": row[4],
+                        "updated_at": row[5]
+                    }
+                return None
+        except sqlite3.Error as e:
+            logger.error(f"Error fetching project details for project_id {project_id}: {e}", exc_info=True)
+            return None
+
+    def delete_project(self, project_id: str) -> bool:
+        """
+        Delete a project and all its associated data (scripts, versions, access).
+
+        Args:
+            project_id: The ID of the project to delete.
+
+        Returns:
+            True if the project was deleted, False otherwise.
+        """
+        try:
+            with self._get_connection() as conn:
+                conn.execute('BEGIN TRANSACTION')
+                try:
+                    # Get all script IDs for the project
+                    cursor = conn.execute("SELECT id FROM scripts WHERE project_id = ?", (project_id,))
+                    script_ids = [row[0] for row in cursor.fetchall()]
+
+                    # Delete versions for each script
+                    for script_id in script_ids:
+                        conn.execute("DELETE FROM versions WHERE script_id = ?", (script_id,))
+                        # Invalidate script cache
+                        self.script_cache.delete(script_id)
+                    
+                    # Delete scripts
+                    conn.execute("DELETE FROM scripts WHERE project_id = ?", (project_id,))
+                    
+                    # Delete project access records
+                    conn.execute("DELETE FROM project_access WHERE project_id = ?", (project_id,))
+                    
+                    # Delete the project itself
+                    result = conn.execute("DELETE FROM projects WHERE id = ?", (project_id,))
+                    
+                    conn.execute('COMMIT')
+                    
+                    deleted = result.rowcount > 0
+                    if deleted:
+                        logger.info(f"Successfully deleted project {project_id} and all associated data.")
+                    else:
+                        logger.warning(f"Project {project_id} not found for deletion or already deleted.")
+                    return deleted
+                except Exception as e:
+                    conn.execute('ROLLBACK')
+                    logger.error(f"Failed to delete project {project_id} (transaction rolled back): {str(e)}", exc_info=True)
+                    raise
+        except sqlite3.Error as e:
+            logger.error(f"Database connection error during project deletion for {project_id}: {str(e)}", exc_info=True)
+            raise
+
     # Editing session methods
     def create_editing_session(self, script_id: str) -> str:
         """Create a new editing session and return its ID."""

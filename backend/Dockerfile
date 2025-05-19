@@ -12,7 +12,7 @@ COPY . .
 RUN mkdir -p /app/database && \
     chmod -R 755 /app/database
 
-EXPOSE 8000
+EXPOSE 9000
 
 # Launch the FastAPI app using Uvicorn
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "9000"]
