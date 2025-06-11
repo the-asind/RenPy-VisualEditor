@@ -47,7 +47,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isEditorMode = false }) => {
     >
       <Toolbar /> {/* Offset content below AppBar */}
       <Box sx={{ 
-        overflow: 'auto', 
+        overflowY: 'auto',
+        overflowX: 'auto',
         display: 'flex', 
         flexDirection: 'column', 
         height: '100%',
@@ -88,7 +89,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isEditorMode = false }) => {
                       height: 28, 
                       bgcolor: user.id === 1 ? 'primary.main' : 'secondary.main',
                       mr: 2,
-                      fontSize: '0.875rem'
+                      fontSize: '0.95rem'
                     }}
                   >
                     {user.id}

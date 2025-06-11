@@ -253,39 +253,43 @@ const ProjectManageDialog: React.FC<ProjectManageDialogProps> = ({
               {isProcessingUserAction && <CircularProgress size={20} sx={{ml: 1}}/>}
               <List dense>
                 {projectUsers.length > 0 ? (
-                  projectUsers.map((user) => (
-                    <ListItem key={user.id} divider sx={{ py: 1.5 }}>
-                      <ListItemText 
-                        primary={user.username} 
-                        secondary={user.id === currentProject.owner_id ? t('project.owner') : (availableRoles.find(r => r.id === user.role)?.name || user.role)}
-                      />
-                      {user.id !== currentProject.owner_id && (
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                          <FormControl variant="outlined" size="small" sx={{ minWidth: 130 }}>
-                            <InputLabel id={`role-select-label-${user.id}`}>{t('project.role')}</InputLabel>
-                            <Select
-                              labelId={`role-select-label-${user.id}`}
-                              value={user.role}
-                              label={t('project.role')}
-                              onChange={(e: SelectChangeEvent<string>) => handleChangeUserRole(user.username, e.target.value)}
-                              disabled={isProcessingUserAction}
-                            >
-                              {availableRoles.map((role) => (
-                                <MenuItem key={role.id} value={role.id}>
-                                  {role.name}
-                                </MenuItem>
-                              ))}
-                            </Select>
-                          </FormControl>
-                          <Tooltip title={t('button.removeUser')}>
-                            <IconButton edge="end" onClick={() => handleRemoveUserFromProject(user.id)} disabled={isProcessingUserAction} color="warning">
-                              <DeleteIcon />
-                            </IconButton>
-                          </Tooltip>
-                        </Box>
-                      )}
-                    </ListItem>
-                  ))
+                  projectUsers.map((user) => {
+                    const roleDetails = availableRoles.find(r => r.id === user.role);
+                    const roleDisplayName = roleDetails ? t(`project.${roleDetails.name.toLowerCase()}`) : user.role;
+                    return (
+                      <ListItem key={user.id} divider sx={{ py: 1.5 }}>
+                        <ListItemText 
+                          primary={user.username} 
+                          secondary={user.id === currentProject.owner_id ? t('project.owner') : roleDisplayName}
+                        />
+                        {user.id !== currentProject.owner_id && (
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <FormControl variant="outlined" size="small" sx={{ minWidth: 130 }}>
+                              <InputLabel id={`role-select-label-${user.id}`}>{t('project.role')}</InputLabel>
+                              <Select
+                                labelId={`role-select-label-${user.id}`}
+                                value={user.role}
+                                label={t('project.role')}
+                                onChange={(e: SelectChangeEvent<string>) => handleChangeUserRole(user.username, e.target.value)}
+                                disabled={isProcessingUserAction}
+                              >
+                                {availableRoles.map((role) => (
+                                  <MenuItem key={role.id} value={role.id}>
+                                    {t(`project.${role.name.toLowerCase()}`)}
+                                  </MenuItem>
+                                ))}
+                              </Select>
+                            </FormControl>
+                            <Tooltip title={t('button.removeUser')}>
+                              <IconButton edge="end" onClick={() => handleRemoveUserFromProject(user.id)} disabled={isProcessingUserAction} color="warning">
+                                <DeleteIcon />
+                              </IconButton>
+                            </Tooltip>
+                          </Box>
+                        )}
+                      </ListItem>
+                    );
+                  })
                 ) : (
                   <Typography color="textSecondary" sx={{ml: 2}}>{t('project.noMembersYet')}</Typography>
                 )}
@@ -318,7 +322,7 @@ const ProjectManageDialog: React.FC<ProjectManageDialogProps> = ({
                   >
                     {availableRoles.map((role) => (
                       <MenuItem key={role.id} value={role.id}>
-                        {role.name}
+                        {t(`project.${role.name.toLowerCase()}`)}
                       </MenuItem>
                     ))}
                   </Select>

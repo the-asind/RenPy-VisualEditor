@@ -16,3 +16,4 @@ node_modules/
 backend/uploads/
 debug_temp*
 *.db
+.notes/

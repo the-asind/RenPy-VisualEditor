@@ -90,7 +90,7 @@ const TopBar: React.FC = () => {
           <Menu
             id="language-menu"
             anchorEl={langAnchorEl}
-            anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
+            anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
             keepMounted
             transformOrigin={{ vertical: 'top', horizontal: 'right' }}
             open={Boolean(langAnchorEl)}
@@ -123,7 +123,7 @@ const TopBar: React.FC = () => {
           <Menu
             id="settings-menu"
             anchorEl={settingsAnchorEl}
-            anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
+            anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
             keepMounted
             transformOrigin={{ vertical: 'top', horizontal: 'right' }}
             open={Boolean(settingsAnchorEl)}

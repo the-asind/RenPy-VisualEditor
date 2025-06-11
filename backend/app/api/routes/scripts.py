@@ -61,37 +61,29 @@ async def parse_script(
     """
     try:
         # current_user now injected via Depends
-        
+        if not file.filename:
+            raise HTTPException(status_code=400, detail="Filename is required")
+            
         if not file.filename.lower().endswith(".rpy"):
             raise HTTPException(status_code=400, detail="Invalid file type. Only .rpy files are allowed.")
-            
+
         # Read file content
-        file_size = 0
         content = await file.read()
         file_size = len(content)
         
         if file_size > 1024 * 1024:  # 1MB limit
             raise HTTPException(status_code=400, detail="File too large. Maximum size is 1MB.")
         
-        # Get project ID (either from request or find/create default)
+        # Project ID is required - no default project logic
         if not project_id:
-            # Try to get user's default project
-            user_projects = db_service.get_user_projects(current_user["id"])
-            default_projects = [p for p in user_projects if p["name"] == "Default Project"]
-            
-            if default_projects:
-                # Use existing default project
-                project_id = default_projects[0]["id"]
-            else:
-                # Create a new default project
-                project_id = db_service.create_project("Default Project", current_user["id"])
-        else:
-            # Verify user has access to the specified project
-            user_projects = db_service.get_user_projects(current_user["id"])
-            has_access = any(p["id"] == project_id for p in user_projects)
-            
-            if not has_access:
-                raise HTTPException(status_code=403, detail="Access denied to the specified project")
+            raise HTTPException(status_code=400, detail="Project ID is required")
+        
+        # Verify user has access to the specified project
+        user_projects = db_service.get_user_projects(current_user["id"])
+        has_access = any(p["id"] == project_id for p in user_projects)
+        
+        if not has_access:
+            raise HTTPException(status_code=403, detail="Access denied to the specified project")
         
         # Parse the content to check validity
         temp_dir = Path(tempfile.gettempdir()) / "renpy_editor" / str(uuid.uuid4())
@@ -491,5 +483,65 @@ async def search_scripts(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error searching scripts: {str(e)}")
+
+@scripts_router.get("/load/{script_id}", response_model=Dict[str, Any])
+async def load_existing_script(
+    script_id: str,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+) -> Dict[str, Any]:
+    """
+    Load an existing script and return its parsed tree structure.
+    
+    Args:
+        script_id: The ID of the script to load
+        
+    Returns:
+        JSON representation of the script with parsed tree
+    """
+    try:
+        # Get script from database
+        script = db_service.get_script(script_id)
+        if not script:
+            raise ResourceNotFoundException("Script", script_id)
+        
+        # Validate user has access to the script's project
+        project_id = script["project_id"]
+        user_projects = db_service.get_user_projects(current_user["id"])
+        has_access = any(p["id"] == project_id for p in user_projects)
+        
+        if not has_access:
+            raise HTTPException(status_code=403, detail="Access denied to this script")
+        
+        # Parse the script content to build tree
+        temp_dir = Path(tempfile.gettempdir()) / "renpy_editor" / str(uuid.uuid4())
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        
+        temp_file = temp_dir / script["filename"]
+        with open(temp_file, "w", encoding='utf-8') as f:
+            f.write(script["content"])
+        
+        try:
+            # Parse the file to build the tree
+            parsed_tree = await parser.parse_async(str(temp_file))
+            
+            # Return result
+            result = {
+                "script_id": script_id,
+                "filename": script["filename"],
+                "tree": node_to_dict(parsed_tree)
+            }
+            
+            return result
+        finally:
+            # Clean up temp file
+            import shutil
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            
+    except ResourceNotFoundException as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error loading script: {str(e)}")
 
 # TODO: Add endpoints for version history retrieval - #issue/129

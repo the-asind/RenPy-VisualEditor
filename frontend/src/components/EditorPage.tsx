@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import ReactFlow, {
   useNodesState,
   useEdgesState,
@@ -15,14 +16,12 @@ import ReactFlow, {
   Connection,
   useReactFlow // Add this import
 } from 'reactflow';
-import {
-  Box,
+import {  Box,
   Drawer,
   Typography,
   IconButton,
   List,
   ListItem,
-  ButtonGroup,
   Button,
   Avatar,
   Chip,
@@ -36,7 +35,16 @@ import {
   Tab,
   Paper,
   Snackbar, // Добавляем компонент уведомлений
-  Alert     // Добавляем компонент предупреждений
+  Alert,     // Добавляем компонент предупреждений
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  SelectChangeEvent,
+  CircularProgress,
+  Grid,
+  Card,
+  CardContent
 } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import MenuIcon from '@mui/icons-material/Menu';
@@ -51,7 +59,8 @@ import 'reactflow/dist/style.css';
 import { motion } from 'framer-motion';
 
 // Import services from TypeScript files
-import { parseScript, createNewScript, getNodeContent, updateNodeContent, getScriptContent } from '../services/api';
+import { parseScript, createNewScript, getNodeContent, updateNodeContent, getScriptContent, loadExistingScript } from '../services/api';
+import projectService, { Project } from '../services/projectService';
 import { transformTreeToFlow } from '../utils/flowTransformer';
 import NodeEditorPopup from './NodeEditorPopup'; // Импортируем компонент редактора узла
 import './EditorPage.css';
@@ -113,10 +122,18 @@ const EditorContainer = styled(Box)(({ theme }) => ({
 const EditorPageInternal: React.FC = () => {
   const { t } = useTranslation();
   const theme = useTheme();
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  
+  // Project ID is required from URL
+  const projectId = searchParams.get('project');
+  
   const [scriptId, setScriptId] = useState<string | null>(null);
-  const [projectName, setProjectName] = useState<string>('test project');
+  const [projectName, setProjectName] = useState<string>('');
   const [fileName, setFileName] = useState<string>('');
+  const [currentProject, setCurrentProject] = useState<Project | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isLoadingProject, setIsLoadingProject] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [parsedData, setParsedData] = useState<any>(null);
   const [drawerOpen, setDrawerOpen] = useState<boolean>(true); // Changed to true by default
@@ -219,9 +236,9 @@ const EditorPageInternal: React.FC = () => {
       const scriptContent = await getScriptContent(scriptId);
       const blob = new Blob([scriptContent], { type: 'text/plain' });
       const file = new File([blob], fileName, { type: 'text/plain' });
-      
-      console.log("Re-parsing script to get updated nodes and edges");
-      const data = await parseScript(file);
+        console.log("Re-parsing script to get updated nodes and edges");
+      const projectId = currentProject?.id?.toString();
+      const data = await parseScript(file, projectId);
       
       
       const currentScriptId = scriptId;
@@ -257,31 +274,19 @@ const EditorPageInternal: React.FC = () => {
     
     if (!nodeStartLine || !nodeEndLine) {
       throw new Error(t('editor.errorMissingLines', 'Не удалось определить диапазон строк для редактирования'));
-    }
-
-    try {
+    }    try {
       
       const updateResponse = await updateNodeContent(scriptId, nodeStartLine, nodeEndLine, newContent);
       console.log('Node update response:', updateResponse);
       
-      
-      
-      if (updateResponse.line_diff !== 0) {
-        console.log(`Line count changed by ${updateResponse.line_diff}, reloading script data`);
-        await reloadScriptData();
-      }
+      // Always reload script data to refresh the graph after any content change
+      console.log('Reloading script data to refresh graph after node content update');
+      await reloadScriptData();
 
       
       setSnackbarMessage(t('editor.saveSuccess', 'Изменения сохранены'));
       setSnackbarSeverity('success');
       setSnackbarOpen(true);
-
-      
-      
-      if (updateResponse.line_diff !== 0) {
-        
-        
-      }
 
     } catch (saveError: any) {
       console.error("Error saving node content:", saveError);
@@ -488,7 +493,6 @@ const EditorPageInternal: React.FC = () => {
       setEdges([]);
     }
   }, [parsedData, activeTabId, setNodes, setEdges, theme, reactFlowInstance]);
-
   const handleFileChange = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -504,6 +508,12 @@ const EditorPageInternal: React.FC = () => {
       return;
     }
 
+    // Ensure we have a valid project before uploading
+    if (!currentProject || !currentProject.id) {
+      setError(t('editor.noProjectSelected', 'No project selected. Please select a project first.'));
+      return;
+    }
+
     setIsLoading(true);
     setError(null);
     setParsedData(null);
@@ -511,7 +521,8 @@ const EditorPageInternal: React.FC = () => {
     setEdges([]);
 
     try {
-      const data = await parseScript(file);
+      const projectId = currentProject.id.toString();
+      const data = await parseScript(file, projectId);
       setScriptId(data.script_id);
       setFileName(data.filename);
       setParsedData(data.tree);
@@ -525,9 +536,14 @@ const EditorPageInternal: React.FC = () => {
       setIsLoading(false);
       event.target.value = '';
     }
-  }, [setNodes, setEdges, t]);
-
+  }, [setNodes, setEdges, t, currentProject]);
   const handleCreateNew = useCallback(async () => {
+    // Ensure we have a valid project before creating script
+    if (!currentProject || !currentProject.id) {
+      setError(t('editor.noProjectSelected', 'No project selected. Please select a project first.'));
+      return;
+    }
+
     setIsLoading(true);
     setError(null);
     setParsedData(null);
@@ -537,7 +553,8 @@ const EditorPageInternal: React.FC = () => {
     try {
       const timestamp = new Date().getTime();
       const newFilename = `new_script_${timestamp.toString(16)}.rpy`;
-      const data = await createNewScript(newFilename);
+      const projectId = currentProject.id.toString();
+      const data = await createNewScript(newFilename, projectId);
       setScriptId(data.script_id);
       setFileName(data.filename);
       setParsedData(data.tree);
@@ -550,7 +567,7 @@ const EditorPageInternal: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [setNodes, setEdges]);
+  }, [setNodes, setEdges, t, currentProject]);
 
   const onConnect = useCallback(
     (connection: Connection) => setEdges((eds) => addEdge(connection, eds)),
@@ -583,7 +600,64 @@ const EditorPageInternal: React.FC = () => {
   // Handle tab change with smooth centering
   const handleTabChange = (event: React.SyntheticEvent, newTabId: string) => {
     setActiveTabId(newTabId);
-  };
+  };  // Load available projects
+  const loadProjects = useCallback(async () => {
+    try {
+      const projects = await projectService.getUserProjects();
+      // We no longer need this since project ID is required from URL
+    } catch (error) {
+      console.error('Failed to load projects:', error);
+    }
+  }, []);
+
+  // Load specific project from URL parameter
+  const loadProjectFromUrl = useCallback(async (projectId: string) => {
+    setIsLoadingProject(true);
+    try {
+      const project = await projectService.getProject(projectId);
+      setCurrentProject(project);
+      setProjectName(project.name);
+      setError(null);
+      console.log(`Loaded project from URL: ${project.name} (${projectId})`);
+    } catch (error) {
+      console.error('Failed to load project from URL:', error);
+      setError(t('editor.projectNotFound', 'Project not found or access denied'));    } finally {
+      setIsLoadingProject(false);
+    }
+  }, [t]);
+
+  // Check URL parameters and load project (required)
+  useEffect(() => {
+    if (!projectId) {
+      setError(t('editor.missingProjectId', 'Project ID is required. Please access editor from project page.'));
+      return;
+    }    
+    loadProjectFromUrl(projectId);
+  }, [projectId, loadProjectFromUrl, t]);
+
+  // Handle loading existing script
+  const handleLoadExistingScript = useCallback(async (scriptId: string, filename: string) => {
+    setIsLoading(true);
+    setError(null);
+    setParsedData(null);
+    setNodes([]);
+    setEdges([]);
+
+    try {
+      const data = await loadExistingScript(scriptId);
+      setScriptId(data.script_id);
+      setFileName(data.filename);
+      setParsedData(data.tree);
+      console.log('Loaded existing script:', data);
+    } catch (err: any) {
+      setError(err.detail || err.message || t('editor.loadScriptError', 'Failed to load script'));
+      setScriptId(null);
+      setFileName('');
+      setParsedData(null);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [setNodes, setEdges, t]);
 
   return (
     <Box sx={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
@@ -712,8 +786,7 @@ const EditorPageInternal: React.FC = () => {
           flexShrink: 0,
           position: 'absolute',
           zIndex: 1100, // Lower than AppBar but above the canvas
-          transition: 'all 0.3s ease',
-          '& .MuiDrawer-paper': {
+          transition: 'all 0.3s ease',          '& .MuiDrawer-paper': {
             width: expandedDrawer ? expandedDrawerWidth : drawerWidth,
             boxSizing: 'border-box',
             top: 64, // AppBar height
@@ -724,10 +797,17 @@ const EditorPageInternal: React.FC = () => {
             boxShadow: theme.custom.glass.shadow,
             transform: sideMenuVisible ? 'translateX(0)' : 'translateX(-100%)',
             transition: 'transform 0.3s ease, opacity 0.3s ease',
+            overflow: 'hidden', // Prevent horizontal scroll
+            overflowY: 'auto', // Allow vertical scroll only
           },
         }}
       >
-        <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+        <Box sx={{ 
+          display: 'flex', 
+          flexDirection: 'column', 
+          height: '100%',
+          overflow: 'hidden' // Prevent horizontal scroll
+        }}>
           {/* Toolbar buttons */}
           <List sx={{ py: 1 }}>
             <ListItem disablePadding sx={{ display: 'block', textAlign: 'center', mb: 1 }}>
@@ -736,26 +816,27 @@ const EditorPageInternal: React.FC = () => {
               </IconButton>
             </ListItem>
             
-            <Divider sx={{ my: 1, borderColor: theme.palette.divider }} />
-
-            {/* Zoom and Pan Controls */}
-            <ButtonGroup
-              orientation="vertical"
-              variant="outlined"
-              size="small"
+            <Divider sx={{ my: 1, borderColor: theme.palette.divider }} />            {/* Zoom and Pan Controls */}
+            <Box
               sx={{ 
                 display: 'flex', 
                 flexDirection: 'column',
-                alignItems: 'center',
+                alignItems: 'stretch',
                 px: 1, 
                 mb: 2,
-                width: '100%'
+                gap: 0.5
               }}
             >
               <Tooltip title={t('editor.zoomIn')} placement="right">
                 <Button 
-                  onClick={handleZoomIn} 
-                  sx={{ mb: 0.5, justifyContent: expandedDrawer ? 'flex-start' : 'center' }}
+                  onClick={handleZoomIn}
+                  variant="outlined"
+                  size="small"
+                  sx={{ 
+                    justifyContent: expandedDrawer ? 'flex-start' : 'center',
+                    minWidth: expandedDrawer ? 'auto' : 40,
+                    width: '100%'
+                  }}
                 >
                   <ZoomInIcon fontSize="small" />
                   {expandedDrawer && <Typography sx={{ ml: 1 }}>{t('editor.zoomIn')}</Typography>}
@@ -763,8 +844,14 @@ const EditorPageInternal: React.FC = () => {
               </Tooltip>
               <Tooltip title={t('editor.zoomOut')} placement="right">
                 <Button 
-                  onClick={handleZoomOut} 
-                  sx={{ mb: 0.5, justifyContent: expandedDrawer ? 'flex-start' : 'center' }}
+                  onClick={handleZoomOut}
+                  variant="outlined"
+                  size="small"
+                  sx={{ 
+                    justifyContent: expandedDrawer ? 'flex-start' : 'center',
+                    minWidth: expandedDrawer ? 'auto' : 40,
+                    width: '100%'
+                  }}
                 >
                   <ZoomOutIcon fontSize="small" />
                   {expandedDrawer && <Typography sx={{ ml: 1 }}>{t('editor.zoomOut')}</Typography>}
@@ -774,7 +861,12 @@ const EditorPageInternal: React.FC = () => {
                 <Button 
                   onClick={togglePanMode} 
                   variant={isPanMode ? "contained" : "outlined"}
-                  sx={{ mb: 0.5, justifyContent: expandedDrawer ? 'flex-start' : 'center' }}
+                  size="small"
+                  sx={{ 
+                    justifyContent: expandedDrawer ? 'flex-start' : 'center',
+                    minWidth: expandedDrawer ? 'auto' : 40,
+                    width: '100%'
+                  }}
                 >
                   <PanToolIcon fontSize="small" />
                   {expandedDrawer && <Typography sx={{ ml: 1 }}>{t('editor.panMode')}</Typography>}
@@ -784,13 +876,18 @@ const EditorPageInternal: React.FC = () => {
                 <Button 
                   onClick={toggleMinimap} 
                   variant={showMinimap ? "contained" : "outlined"}
-                  sx={{ justifyContent: expandedDrawer ? 'flex-start' : 'center' }}
+                  size="small"
+                  sx={{ 
+                    justifyContent: expandedDrawer ? 'flex-start' : 'center',
+                    minWidth: expandedDrawer ? 'auto' : 40,
+                    width: '100%'
+                  }}
                 >
                   <ViewComfyIcon fontSize="small" />
                   {expandedDrawer && <Typography sx={{ ml: 1 }}>{t('editor.minimap')}</Typography>}
                 </Button>
               </Tooltip>
-            </ButtonGroup>
+            </Box>
             
             <Divider sx={{ my: 1, borderColor: theme.palette.divider }} />
           </List>
@@ -908,9 +1005,120 @@ const EditorPageInternal: React.FC = () => {
           zIndex: 1, // Base layer
           overflow: 'hidden',
         }}
-      >
-        <EditorContainer>
-          {!scriptId && !isLoading && (
+      >        <EditorContainer>
+          {/* Loading project state */}
+          {isLoadingProject && (
+            <Box
+              sx={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                height: '100%',
+                p: 3,
+              }}
+            >
+              <CircularProgress size={60} sx={{ mb: 2 }} />
+              <Typography variant="h6">
+                {t('editor.loadingProject', 'Loading project...')}
+              </Typography>
+            </Box>
+          )}
+
+          {/* Project loaded but no script selected */}
+          {!scriptId && !isLoading && !isLoadingProject && currentProject && (
+            <Box
+              sx={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                height: '100%',
+                p: 3,
+                maxWidth: '800px',
+                margin: '0 auto',
+              }}
+            >
+              <Typography variant="h4" sx={{ mb: 2, fontWeight: 600, textAlign: 'center' }}>
+                {currentProject.name}
+              </Typography>
+              {currentProject.description && (
+                <Typography variant="body1" sx={{ mb: 4, textAlign: 'center', color: 'text.secondary' }}>
+                  {currentProject.description}
+                </Typography>
+              )}
+              
+              {/* Show existing scripts if any */}
+              {currentProject.scripts && currentProject.scripts.length > 0 && (
+                <Box sx={{ mb: 4, width: '100%' }}>
+                  <Typography variant="h6" sx={{ mb: 2 }}>
+                    {t('editor.existingScripts', 'Existing Scripts')}
+                  </Typography>
+                  <Grid container spacing={2}>
+                    {currentProject.scripts.map((script: any) => (
+                      <Grid item xs={12} sm={6} md={4} key={script.id}>
+                        <Card 
+                          sx={{ 
+                            cursor: 'pointer',
+                            '&:hover': { 
+                              boxShadow: 4,
+                              transform: 'translateY(-2px)',
+                            },
+                            transition: 'all 0.2s ease-in-out'
+                          }}                          onClick={() => {
+                            // Load existing script
+                            handleLoadExistingScript(script.id, script.filename);
+                          }}
+                        >
+                          <CardContent>
+                            <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1 }}>
+                              {script.filename}
+                            </Typography>
+                            <Typography variant="body2" color="text.secondary">
+                              {t('editor.clickToOpen', 'Click to open')}
+                            </Typography>
+                          </CardContent>
+                        </Card>
+                      </Grid>
+                    ))}
+                  </Grid>
+                </Box>
+              )}
+              
+              {/* Action buttons */}
+              <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', justifyContent: 'center' }}>
+                <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.98 }}>
+                  <Button
+                    component="label"
+                    variant="contained"
+                    size="large"
+                    sx={{ px: 3, py: 1.5 }}
+                  >
+                    {t('editor.uploadScript', 'Upload Script')}
+                    <input
+                      type="file"
+                      accept=".rpy"
+                      onChange={handleFileChange}
+                      hidden
+                    />
+                  </Button>
+                </motion.div>
+                <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.98 }}>
+                  <Button
+                    variant="outlined"
+                    size="large"
+                    onClick={handleCreateNew}
+                    sx={{ px: 3, py: 1.5 }}
+                  >
+                    {t('editor.createNewScript', 'Create New Script')}
+                  </Button>
+                </motion.div>
+              </Box>
+            </Box>
+          )}
+
+          {/* No project selected (fallback to project selection) */}
+          {!scriptId && !isLoading && !isLoadingProject && !currentProject && (
             <Box
               sx={{
                 display: 'flex',
@@ -927,10 +1135,42 @@ const EditorPageInternal: React.FC = () => {
             >
               <Typography variant="h4" sx={{ mb: 2, fontWeight: 600 }}>
                 {t('editor.getStarted')}
+              </Typography>              <Typography variant="body1" sx={{ mb: 4, maxWidth: 500, textAlign: 'center' }}>
+                {currentProject ? 
+                  t('editor.workingWithProject', `Working with project: ${currentProject.name}`) :
+                  t('editor.loadingProject', 'Loading project...')
+                }
               </Typography>
-              <Typography variant="body1" sx={{ mb: 4, maxWidth: 500, textAlign: 'center' }}>
-                {t('editor.openOrCreate')}
-              </Typography>
+              
+              {/* Show existing scripts in project */}
+              {currentProject?.scripts && currentProject.scripts.length > 0 && (
+                <Box sx={{ mb: 3, minWidth: 400 }}>
+                  <Typography variant="h6" sx={{ mb: 2 }}>
+                    {t('editor.existingScripts', 'Existing Scripts')}
+                  </Typography>
+                  <List sx={{ maxHeight: 200, overflow: 'auto' }}>
+                    {currentProject.scripts.map((script) => (
+                      <ListItem 
+                        key={script.id} 
+                        button
+                        onClick={() => handleLoadExistingScript(script.id, script.filename)}
+                        sx={{ 
+                          border: '1px solid',
+                          borderColor: 'divider',
+                          borderRadius: 1,
+                          mb: 1
+                        }}
+                      >
+                        <ListItemText 
+                          primary={script.filename}
+                          secondary={`Last updated: ${new Date(script.updated_at).toLocaleDateString()}`}
+                        />
+                      </ListItem>
+                    ))}
+                  </List>
+                </Box>
+              )}
+              
               <Box
                 sx={{
                   display: 'flex',
