@@ -176,11 +176,11 @@ const darkTheme = createTheme({
       background: alpha('#d32f2f', 0.3), // error.dark
       color: '#e57373', // error.light
       border: alpha('#f44336', 0.5), // error.main
-    },
-    fileOptions: {
+    },    fileOptions: {
       background: alpha('#243155', 0.8), // paper
       border: alpha('#334155', 0.5), // divider
-    }
+    },
+    edgeColor: '#cbd5e1', // Светло-серые стрелки в тёмной теме
   }
 });
 
@@ -210,11 +210,11 @@ declare module '@mui/material/styles' {
         background: string;
         color: string;
         border: string;
-      };
-      fileOptions: {
+      };      fileOptions: {
         background: string;
         border: string;
       };
+      edgeColor: string;
     };
   }
   interface ThemeOptions {
@@ -241,11 +241,11 @@ declare module '@mui/material/styles' {
         background?: string;
         color?: string;
         border?: string;
-      };
-      fileOptions?: {
+      };      fileOptions?: {
         background?: string;
         border?: string;
       };
+      edgeColor?: string;
     };
   }
 }

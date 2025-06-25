@@ -115,3 +115,53 @@ async def test_parse_if_else_structure(sample_renpy_script):
     false_branch_node = if_node.false_branch[0]
     assert false_branch_node.node_type == ChoiceNodeType.ACTION
     assert "Что-то происходит, если условие не выполнено" in false_branch_node.label_name
+
+@pytest.mark.asyncio
+async def test_label_with_only_actions_no_extra_node():
+    """
+    Tests that a label with only actions has one child action node
+    spanning the entire label body, and that no extra nodes are created.
+    This specifically tests for a bug where an extra node was created
+    or the action node's line numbers were corrupted.
+    """
+    script_content = """
+label simple_label:
+    "Action 1"
+    "Action 2"
+    jump next_one
+
+label next_one:
+    return
+    """
+    with tempfile.NamedTemporaryFile(suffix='.rpy', delete=False, mode='w', encoding='utf-8') as f:
+        f.write(textwrap.dedent(script_content))
+        filepath = f.name
+
+    try:
+        parser = RenPyParser()
+        root_node = await parser.parse_async(filepath)
+    
+        simple_label = next((c for c in root_node.children if c.label_name == "simple_label"), None)
+        assert simple_label is not None
+        assert simple_label.node_type == ChoiceNodeType.LABEL_BLOCK
+    
+        # The label should contain exactly one child node of type ACTION
+        assert len(simple_label.children) == 1
+        action_node = simple_label.children[0]
+        assert action_node.node_type == ChoiceNodeType.ACTION
+    
+        # Script lines from dedent:
+        # 1: label simple_label:
+        # 2:     "Action 1"
+        # 3:     "Action 2"
+        # 4:     jump next_one
+        # 5:
+        # 6: label next_one:
+        
+        # The action node should start after the label definition
+        assert action_node.start_line == 2
+        
+        # And end on the line before the next label (including empty lines)
+        assert action_node.end_line == 5
+    finally:
+        os.unlink(filepath)

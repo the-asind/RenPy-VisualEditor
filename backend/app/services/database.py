@@ -374,6 +374,26 @@ class DatabaseService:
             logger.error(f"Failed to get script: {str(e)}")
             raise
     
+    def get_script_by_filename(self, project_id: str, filename: str) -> Optional[Dict[str, Any]]:
+        """Get script details by project ID and filename."""
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.execute(
+                    'SELECT id, project_id, filename, content, created_at, updated_at, last_edited_by FROM scripts WHERE project_id = ? AND filename = ?',
+                    (project_id, filename)
+                )
+                script = cursor.fetchone()
+                if not script:
+                    return None
+                
+                script_dict = dict(script)
+                script_dict["content_lines"] = script_dict["content"].splitlines()
+                
+                return script_dict
+        except Exception as e:
+            logger.error(f"Failed to get script by filename: {str(e)}")
+            raise
+
     def delete_script(self, script_id: str) -> bool:
         """Delete a script and its versions."""
         # Invalidate cache

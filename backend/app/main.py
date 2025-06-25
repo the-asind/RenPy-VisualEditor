@@ -3,8 +3,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordBearer
 from .api.routes import router as api_router
-from .api.routes.auth import auth_router
-from .api.routes.websocket import ws_router
 from .models.exceptions import BaseAppException
 
 # Initialize FastAPI app
@@ -25,8 +23,6 @@ app.add_middleware(
 
 # Include routers
 app.include_router(api_router, prefix="/api")
-app.include_router(auth_router, prefix="/api")
-app.include_router(ws_router, prefix="/api")
 
 # Root endpoint
 @app.get("/")

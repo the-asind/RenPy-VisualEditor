@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef, useLayoutEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import ReactFlow, {
@@ -10,11 +10,9 @@ import ReactFlow, {
   ReactFlowProvider,
   MiniMap,
   Node,
-  Edge,
-  NodeChange,
-  EdgeChange,
+  Viewport,
   Connection,
-  useReactFlow // Add this import
+  useReactFlow
 } from 'reactflow';
 import {  Box,
   Drawer,
@@ -34,8 +32,8 @@ import {  Box,
   Tabs,
   Tab,
   Paper,
-  Snackbar, // Добавляем компонент уведомлений
-  Alert,     // Добавляем компонент предупреждений
+  Snackbar,
+  Alert,     
   FormControl,
   InputLabel,
   Select,
@@ -44,7 +42,8 @@ import {  Box,
   CircularProgress,
   Grid,
   Card,
-  CardContent
+  CardContent,
+  ListItemText
 } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import MenuIcon from '@mui/icons-material/Menu';
@@ -58,11 +57,10 @@ import SaveIcon from '@mui/icons-material/Save';
 import 'reactflow/dist/style.css';
 import { motion } from 'framer-motion';
 
-// Import services from TypeScript files
 import { parseScript, createNewScript, getNodeContent, updateNodeContent, getScriptContent, loadExistingScript } from '../services/api';
 import projectService, { Project } from '../services/projectService';
 import { transformTreeToFlow } from '../utils/flowTransformer';
-import NodeEditorPopup from './NodeEditorPopup'; // Импортируем компонент редактора узла
+import NodeEditorPopup from './NodeEditorPopup';
 import './EditorPage.css';
 
 // Width for the editor toolbar drawer
@@ -152,6 +150,22 @@ const EditorPageInternal: React.FC = () => {
   const [showMinimap, setShowMinimap] = useState<boolean>(true);
   const reactFlowInstance = useReactFlow(); // Add ReactFlow instance ref
 
+  // --- NEW: viewport ref and helpers ---
+  const savedViewportRef = useRef<Viewport | null>(null);
+  const prevActiveTabId = useRef<string | null>(null); // Ref to track tab changes
+  const isGraphReloading = useRef(false);
+
+  const captureViewport = useCallback(() => {
+    if (reactFlowInstance) {
+      savedViewportRef.current = reactFlowInstance.getViewport();
+    }
+  }, [reactFlowInstance]);
+  // --- END viewport helpers ---
+
+  // --- NEW: track active label name for tab stabilization ---
+  const [activeLabelName, setActiveLabelName] = useState<string | null>(null);
+  // --- END ---
+
   // Function to toggle the editor toolbar drawer
   const toggleDrawer = () => {
     setDrawerOpen(!drawerOpen);
@@ -228,7 +242,10 @@ const EditorPageInternal: React.FC = () => {
       console.error("Cannot reload script data without scriptId and fileName");
       return;
     }
-    
+
+    isGraphReloading.current = true;
+    captureViewport(); // <-- capture before reload
+
     setIsLoading(true);
     try {
       
@@ -241,12 +258,7 @@ const EditorPageInternal: React.FC = () => {
       const data = await parseScript(file, projectId);
       
       
-      const currentScriptId = scriptId;
-      
-      
       setParsedData(data.tree);
-      
-      setScriptId(currentScriptId);
       
       console.log("Script data fully reloaded after node edit");
     } catch (error) {
@@ -257,7 +269,7 @@ const EditorPageInternal: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [scriptId, fileName, t]);
+  }, [scriptId, fileName, t, captureViewport, currentProject]);
 
   
   const handleSaveNodeContent = useCallback(async (startLine: number, endLine: number, newContent: string) => {
@@ -295,7 +307,7 @@ const EditorPageInternal: React.FC = () => {
       setSnackbarOpen(true);
       throw saveError; 
     }
-  }, [scriptId, selectedNodeForEdit, t]);
+  }, [scriptId, selectedNodeForEdit, t, reloadScriptData]);
 
   
   const handleDownloadScript = useCallback(async () => {
@@ -427,13 +439,22 @@ const EditorPageInternal: React.FC = () => {
         
         // Set the extracted label blocks
         setLabelBlocks(extractedLabelBlocks);
-        
-        // Set active tab to the first LabelBlock or maintain current selection if valid
+
+        // --- NEW: try to restore tab by label name first ---
         if (extractedLabelBlocks.length > 0) {
-          if (!activeTabId || !extractedLabelBlocks.some(lb => lb.id === activeTabId)) {
-            setActiveTabId(extractedLabelBlocks[0].id);
+          let nextTabId = extractedLabelBlocks[0].id;
+          if (activeLabelName) {
+            const prevByName = extractedLabelBlocks.find(lb => lb.name === activeLabelName);
+            if (prevByName) {
+              nextTabId = prevByName.id;
+            }
+          } else if (activeTabId && extractedLabelBlocks.some(lb => lb.id === activeTabId)) {
+            nextTabId = activeTabId;
           }
+          setActiveTabId(nextTabId);
         }
+        // --- END ---
+
       } catch (error) {
         console.error('Error extracting LabelBlocks:', error);
         
@@ -443,11 +464,10 @@ const EditorPageInternal: React.FC = () => {
         setActiveTabId(defaultLabelBlock.id);
       }
     } else {
-      // Reset LabelBlocks and active tab when there's no parsed data
       setLabelBlocks([]);
       setActiveTabId(null);
     }
-  }, [parsedData, activeTabId]);
+  }, [parsedData, activeTabId, activeLabelName, t]);
 
   // Effect to transform data when parsedData and activeTabId change
   useEffect(() => {
@@ -460,11 +480,40 @@ const EditorPageInternal: React.FC = () => {
         setNodes(initialNodes);
         setEdges(initialEdges);
         
-        // Center view on the new nodes when they're loaded
+      } catch (transformError: any) {
+        console.error("Error transforming tree to flow:", transformError);
+        setError(`Failed to visualize script: ${transformError.message}`);
+        setNodes([]);
+        setEdges([]);
+      }
+    } else {
+      setNodes([]);
+      setEdges([]);
+    }
+  }, [parsedData, activeTabId, setNodes, setEdges, theme]);
+
+  // Effect to handle viewport: restore on graph update, or center on tab change
+  useLayoutEffect(() => {
+    // If a reload was triggered, the priority is to restore the viewport.
+    if (isGraphReloading.current) {
+        if (reactFlowInstance && nodes.length > 0 && savedViewportRef.current) {
+            reactFlowInstance.setViewport({ ...savedViewportRef.current });
+            savedViewportRef.current = null; // Consume the saved viewport
+            isGraphReloading.current = false; // Reset the flag, the restoration is done
+        }
+        return; // Prevent centering logic from running during a reload
+    }
+
+    // This logic now only runs for manual tab changes, not for reloads.
+    const tabChanged = prevActiveTabId.current !== activeTabId;
+    prevActiveTabId.current = activeTabId;
+
+    if (tabChanged && activeTabId && reactFlowInstance) {
         setTimeout(() => {
-          if (reactFlowInstance && initialNodes.length > 0) {
+          const currentNodes = reactFlowInstance.getNodes();
+          if (currentNodes.length > 0) {
             // Find the label block node to center on
-            const labelNode = initialNodes.find(
+            const labelNode = currentNodes.find(
               node => node.id === activeTabId || 
                     (node.data?.originalData?.node_type === 'LabelBlock')
             );
@@ -482,20 +531,14 @@ const EditorPageInternal: React.FC = () => {
             }
           }
         }, 100); // Small delay to ensure nodes are rendered
-      } catch (transformError: any) {
-        console.error("Error transforming tree to flow:", transformError);
-        setError(`Failed to visualize script: ${transformError.message}`);
-        setNodes([]);
-        setEdges([]);
-      }
-    } else {
-      setNodes([]);
-      setEdges([]);
     }
-  }, [parsedData, activeTabId, setNodes, setEdges, theme, reactFlowInstance]);
+  }, [nodes, activeTabId, reactFlowInstance]);
   const handleFileChange = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
+
+    isGraphReloading.current = true;
+    captureViewport(); // <-- capture before parseScript
 
     if (!file.name.toLowerCase().endsWith('.rpy')) {
       setError(t('editor.invalidFileType'));
@@ -536,13 +579,15 @@ const EditorPageInternal: React.FC = () => {
       setIsLoading(false);
       event.target.value = '';
     }
-  }, [setNodes, setEdges, t, currentProject]);
+  }, [setNodes, setEdges, t, currentProject, captureViewport]);
   const handleCreateNew = useCallback(async () => {
-    // Ensure we have a valid project before creating script
     if (!currentProject || !currentProject.id) {
       setError(t('editor.noProjectSelected', 'No project selected. Please select a project first.'));
       return;
     }
+
+    isGraphReloading.current = true;
+    captureViewport(); // <-- capture before createNewScript
 
     setIsLoading(true);
     setError(null);
@@ -567,7 +612,7 @@ const EditorPageInternal: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [setNodes, setEdges, t, currentProject]);
+  }, [setNodes, setEdges, t, currentProject, captureViewport]);
 
   const onConnect = useCallback(
     (connection: Connection) => setEdges((eds) => addEdge(connection, eds)),
@@ -600,6 +645,9 @@ const EditorPageInternal: React.FC = () => {
   // Handle tab change with smooth centering
   const handleTabChange = (event: React.SyntheticEvent, newTabId: string) => {
     setActiveTabId(newTabId);
+    // Найти имя label-а по id и сохранить
+    const lb = labelBlocks.find(lb => lb.id === newTabId);
+    if (lb) setActiveLabelName(lb.name);
   };  // Load available projects
   const loadProjects = useCallback(async () => {
     try {
@@ -637,6 +685,9 @@ const EditorPageInternal: React.FC = () => {
 
   // Handle loading existing script
   const handleLoadExistingScript = useCallback(async (scriptId: string, filename: string) => {
+    isGraphReloading.current = true;
+    captureViewport(); // <-- capture before loadExistingScript
+
     setIsLoading(true);
     setError(null);
     setParsedData(null);
@@ -657,7 +708,7 @@ const EditorPageInternal: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [setNodes, setEdges, t]);
+  }, [setNodes, setEdges, t, captureViewport]);
 
   return (
     <Box sx={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
@@ -1268,7 +1319,6 @@ const EditorPageInternal: React.FC = () => {
                 onEdgesChange={onEdgesChange}
                 onConnect={onConnect}
                 onNodeClick={onNodeClick}
-                fitView
                 className="flow-canvas"
                 nodesConnectable={false}
                 nodesDraggable={true} 

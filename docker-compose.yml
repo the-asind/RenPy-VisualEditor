@@ -1,16 +1,20 @@
+version: '3.8'
+
 services:
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-      args:
-        VITE_API_URL: http://backend:9000/api
     ports:
-      - "3000:80"
-    depends_on:
-      - backend
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - node_modules:/app/node_modules
     environment:
       - VITE_API_URL=http://backend:9000/api
+      - CHOKIDAR_USEPOLLING=true
+    depends_on:
+      - backend
 
   backend:
     build:
@@ -27,3 +31,4 @@ services:
 
 volumes:
   db-data:
+  node_modules:

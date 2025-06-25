@@ -46,7 +46,7 @@ def node_to_dict(node: ChoiceNode) -> Dict[str, Any]:
 async def parse_script(
     background_tasks: BackgroundTasks, 
     file: UploadFile = File(...),
-    project_id: Optional[str] = Form(None),
+    project_id: str = Form(...),
     current_user: Dict[str, Any] = Depends(get_current_user)
 ) -> Dict[str, Any]:
     """
@@ -54,7 +54,7 @@ async def parse_script(
     
     Args:
         file: The uploaded RenPy script file
-        project_id: Optional ID of the project to associate the script with
+        project_id: ID of the project to associate the script with
         
     Returns:
         JSON representation of the parsed script tree with line references
@@ -74,10 +74,6 @@ async def parse_script(
         if file_size > 1024 * 1024:  # 1MB limit
             raise HTTPException(status_code=400, detail="File too large. Maximum size is 1MB.")
         
-        # Project ID is required - no default project logic
-        if not project_id:
-            raise HTTPException(status_code=400, detail="Project ID is required")
-        
         # Verify user has access to the specified project
         user_projects = db_service.get_user_projects(current_user["id"])
         has_access = any(p["id"] == project_id for p in user_projects)
@@ -96,13 +92,27 @@ async def parse_script(
         # Parse the file to build the tree
         parsed_tree = await parser.parse_async(str(temp_file))
         
-        # Save to database
-        script_id = db_service.save_script(
-            project_id=project_id,
-            filename=file.filename,
-            content=content.decode('utf-8'),
-            user_id=current_user["id"]
-        )
+        # Check if script with this filename already exists in the project
+        existing_script = db_service.get_script_by_filename(project_id, file.filename)
+        
+        decoded_content = content.decode('utf-8')
+
+        if existing_script:
+            # Update existing script
+            script_id = existing_script["id"]
+            db_service.update_script(
+                script_id=script_id,
+                content=decoded_content,
+                user_id=current_user["id"]
+            )
+        else:
+            # Save to database
+            script_id = db_service.save_script(
+                project_id=project_id,
+                filename=file.filename,
+                content=decoded_content,
+                user_id=current_user["id"]
+            )
         
         # Clean up temp file
         background_tasks.add_task(shutil.rmtree, temp_dir, ignore_errors=True)
@@ -329,7 +339,7 @@ async def insert_node(
 async def download_script(
     script_id: str,
     token: str = Depends(oauth2_scheme)
-) -> Dict[str, Any]:
+) -> JSONResponse:
     """
     Download the current version of the script.
     

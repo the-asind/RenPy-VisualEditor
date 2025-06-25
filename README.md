@@ -30,12 +30,12 @@ This tool helps scenario writers create branching narratives visually without ne
 - [x] Implement node-based editor using ReactFlow
 - [x] Create node types for different RenPy elements
 - [ ] Add drag-and-drop functionality for connecting nodes
-- [ ] Implement direct node content editing
+- [x] Implement direct node content editing
 
 ### Phase 4: Synchronization & Persistence
-- [ ] Add database integration for project storage
+- [x] Add database integration for project storage
 - [x] Implement user authentication system
-- [ ] Create project management screens
+- [x] Create project management screens
 - [ ] Add file versioning capability
 
 ### Phase 5: Real-time Collaboration
@@ -43,6 +43,11 @@ This tool helps scenario writers create branching narratives visually without ne
 - [ ] Add user presence indicators
 - [ ] Create conflict resolution mechanisms
 - [ ] Implement edit history and undo/redo functionality
+
+### Phase 6: Better Implementation & Features
+- [ ] WYSIWYG editor for node content
+- [ ] Add support for more complex RenPy features (transitions, images, etc.)
+- [ ] Seamless node graph updates
 
 ## Architecture Notes
 

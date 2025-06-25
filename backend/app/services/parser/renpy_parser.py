@@ -1,7 +1,5 @@
 from enum import Enum
-from pathlib import Path
 from typing import List, Optional, Tuple
-import asyncio
 import aiofiles
 
 
@@ -36,6 +34,77 @@ class ChoiceNode:
         self.node_type = node_type
         self.children = []
         self.false_branch = []
+
+
+def _is_label(line: str) -> Tuple[bool, Optional[str]]:
+    """
+    Determines if a line is a label and extracts the label name.
+
+    Args:
+        line: The line to check.
+
+    Returns:
+        A tuple of (is_label, label_name)
+    """
+    line = line.strip()
+    if line.startswith("label ") and line.endswith(':'):
+        label_name = line[6:-1].strip()
+        return True, label_name
+    return False, None
+
+
+def _is_dialog_line(line: str) -> bool:
+    """
+    Checks if a line matches the RenPy dialog pattern:
+    - Optional character name/expression followed by space
+    - Text in quotes
+    - Optional space at the end
+    """
+    line = line.strip()
+
+    # Check if the line has quotes
+    if '"' not in line:
+        return False
+
+    # Check if the line ends with a quote (ignoring trailing spaces)
+    if not line.rstrip().endswith('"'):
+        return False
+
+    # Split at the first quote
+    parts = line.split('"', 1)
+
+    # If it starts with a quote, it's a dialog line without character name
+    if line.startswith('"'):
+        return True
+
+    # There should be a space between character name and the opening quote
+    character_part = parts[0].strip()
+    return character_part.endswith(' ')
+
+
+def _remove_bracketed_content(text: str) -> str:
+    """
+    Removes all content enclosed in brackets, including the brackets themselves.
+    For example, "1{brackets}23" becomes "123".
+
+    Args:
+        text: The input text to process
+
+    Returns:
+        Text with all bracketed content removed
+    """
+    result = ""
+    bracket_level = 0
+
+    for char in text:
+        if char == '{':
+            bracket_level += 1
+        elif char == '}':
+            bracket_level = max(0, bracket_level - 1)  # Ensure we don't go negative
+        elif bracket_level == 0:
+            result += char
+
+    return result
 
 
 class RenPyParser:
@@ -78,7 +147,7 @@ class RenPyParser:
         while index < len(self.lines):
             line = self.lines[index]
             
-            label_info = self._is_label(line)
+            label_info = _is_label(line)
             if label_info[0]:                
                 label_node = ChoiceNode(
                     label_name=label_info[1],
@@ -102,8 +171,6 @@ class RenPyParser:
                 if label_child_node.end_line >= label_child_node.start_line:
                     label_child_node.label_name = self._get_label_name(label_child_node)
                     label_node.children.append(label_child_node)
-                
-                label_child_node.start_line = index
                 
                 label_node.end_line = index - 1
                 root_node.children.append(label_node)
@@ -279,23 +346,7 @@ class RenPyParser:
                 index += 1
 
         return index
-    
-    def _is_label(self, line: str) -> Tuple[bool, Optional[str]]:
-        """
-        Determines if a line is a label and extracts the label name.
-        
-        Args:
-            line: The line to check.
-            
-        Returns:
-            A tuple of (is_label, label_name)
-        """
-        line = line.strip()
-        if line.startswith("label ") and line.endswith(':'):
-            label_name = line[6:-1].strip()
-            return True, label_name
-        return False, None
-    
+
     @staticmethod
     def _is_if_statement(line: str) -> bool:
         """
@@ -392,58 +443,6 @@ class RenPyParser:
                 break
                 
         return indent
-    
-    def _is_dialog_line(self, line: str) -> bool:
-        """
-        Checks if a line matches the RenPy dialog pattern:
-        - Optional character name/expression followed by space
-        - Text in quotes
-        - Optional space at the end
-        """
-        line = line.strip()
-        
-        # Check if the line has quotes
-        if '"' not in line:
-            return False
-        
-        # Check if the line ends with a quote (ignoring trailing spaces)
-        if not line.rstrip().endswith('"'):
-            return False
-        
-        # Split at the first quote
-        parts = line.split('"', 1)
-        
-        # If it starts with a quote, it's a dialog line without character name
-        if line.startswith('"'):
-            return True
-        
-        # There should be a space between character name and the opening quote
-        character_part = parts[0].strip()
-        return character_part.endswith(' ')
-    
-    def _remove_bracketed_content(self, text: str) -> str:
-        """
-        Removes all content enclosed in brackets, including the brackets themselves.
-        For example, "1{brackets}23" becomes "123".
-        
-        Args:
-            text: The input text to process
-            
-        Returns:
-            Text with all bracketed content removed
-        """
-        result = ""
-        bracket_level = 0
-        
-        for char in text:
-            if char == '{':
-                bracket_level += 1
-            elif char == '}':
-                bracket_level = max(0, bracket_level - 1)  # Ensure we don't go negative
-            elif bracket_level == 0:
-                result += char
-                
-        return result
 
     def _get_label_name(self, node: ChoiceNode) -> str:
         """
@@ -488,7 +487,7 @@ class RenPyParser:
                 if not line:
                     continue
                 
-                if self._is_dialog_line(line):
+                if _is_dialog_line(line):
                     first_dialog_lines.append(line)
                     if len(first_dialog_lines) >= 2:
                         break
@@ -502,7 +501,7 @@ class RenPyParser:
                 if not line:
                     continue
                 
-                if self._is_dialog_line(line):
+                if _is_dialog_line(line):
                     last_dialog_lines.insert(0, line)  # Insert at beginning to maintain order
                     if len(last_dialog_lines) >= 2:
                         break
@@ -560,7 +559,7 @@ class RenPyParser:
         
         # Remove content within brackets (including the brackets)
         if not node.node_type == ChoiceNodeType.IF_BLOCK and not node.node_type == ChoiceNodeType.MENU_OPTION:
-            label_text = self._remove_bracketed_content(label_text)
+            label_text = _remove_bracketed_content(label_text)
 
         # If the label is still empty or very short, try every line in the range
         if len(label_text) < 20:

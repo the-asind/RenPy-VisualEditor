@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import CodeMirror from '@uiw/react-codemirror';
-import { python } from "@codemirror/lang-python";
+import Editor from '@monaco-editor/react';
+import renpyMonarch from '../renpy.language';
 import { Theme } from '@mui/material/styles';
 import {
   Dialog,
@@ -31,17 +31,6 @@ interface NodeEditorPopupProps {
   onSave: (startLine: number, endLine: number, newContent: string) => Promise<void>;
   onSwitchToGlobal: () => void;
   isLoading: boolean;
-}
-
-
-declare module '@mui/material/styles' {
-  interface Theme {
-    custom?: {
-      nodeColors?: {
-        [key: string]: string;
-      };
-    };
-  }
 }
 
 const NodeEditorPopup: React.FC<NodeEditorPopupProps> = ({
@@ -212,6 +201,31 @@ const NodeEditorPopup: React.FC<NodeEditorPopupProps> = ({
   
   const nodeColor = getNodeColor();
 
+  // Monaco theme mapping
+  const monacoTheme = theme.palette.mode === 'dark' ? 'vs-dark' : 'vs-light';
+
+  // Register Ren'Py language on mount
+  const handleMonacoMount = useCallback((editor: any, monaco: any) => {
+    if (!monaco.languages.getLanguages().some((l: any) => l.id === 'renpy')) {
+      monaco.languages.register({ id: 'renpy' });
+      monaco.languages.setMonarchTokensProvider('renpy', renpyMonarch);
+      monaco.languages.setLanguageConfiguration('renpy', {
+        comments: { lineComment: '#' },
+        brackets: [['(', ')'], ['[', ']'], ['{', '}']],
+        autoClosingPairs: [
+          { open: '(', close: ')' },
+          { open: '[', close: ']' },
+          { open: '{', close: '}' },
+          { open: '"', close: '"', notIn: ['string'] }
+        ],
+        indentationRules: {
+          increaseIndentPattern: /^\s*(label|menu|if|elif|else|python|screen).*:\s*$/,
+          decreaseIndentPattern: /^\s*(return|pass)\b/
+        }
+      });
+    }
+  }, []);
+
   return (
     <Dialog
       open={open}
@@ -248,23 +262,22 @@ const NodeEditorPopup: React.FC<NodeEditorPopupProps> = ({
           </Box>
         ) : (
           <Box className="editor-container" sx={{ width: '100%' }}>
-            <CodeMirror
-              value={value}
+            <Editor
               height="400px"
-              onChange={onChange}
-              theme={theme.palette.mode === 'dark' ? 'dark' : 'light'}
-              style={{ width: '100%' }}
-              autoFocus={true}
-              indentWithTab={true}              
-              extensions={[python()]}
-              basicSetup={{
-                lineNumbers: true,
-                highlightActiveLine: true,
-                highlightSelectionMatches: true,
-                foldGutter: true,
+              language="renpy"
+              value={value}
+              theme={monacoTheme}
+              options={{
                 tabSize: 4,
+                insertSpaces: true,
+                automaticLayout: true,
+                wordWrap: 'on',
+                minimap: { enabled: false }
               }}
-              
+              onMount={handleMonacoMount}
+              onChange={(val) => {
+                onChange(val ?? '');
+              }}
             />
           </Box>
         )}

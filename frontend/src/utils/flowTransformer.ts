@@ -1,13 +1,11 @@
-import { MarkerType, Node, Edge, Position } from 'reactflow';
-import { Theme } from '@mui/material/styles'; // Import Theme type
+import { MarkerType, Node, Edge } from 'reactflow';
+import { Theme } from '@mui/material/styles'; 
 
-// Exported interface for the transformation result
 export interface FlowTransformerResult {
   initialNodes: Node[];
   initialEdges: Edge[];
 }
 
-// Types for nodes in the parsed data
 interface NodeData {
   id?: string;
   node_type?: string;
@@ -17,10 +15,9 @@ interface NodeData {
   condition?: string;
   children?: any[];
   false_branch?: any[];
-  [key: string]: any; // Allow for additional properties
+  [key: string]: any;
 }
 
-// Process result interface
 interface NodeProcessResult {
   nodes: Node[];
   edges: Edge[];
@@ -31,7 +28,6 @@ interface NodeProcessResult {
   };
 }
 
-// Add this interface to properly type optionResults
 interface MenuOptionProcessResult {
   node: NodeData;
   result: NodeProcessResult;
@@ -62,24 +58,23 @@ const createFlowNode = (
   position: { x: number, y: number }, 
   theme: Theme,
   style: Record<string, any> = {}
-): Node => {
-  // Determine node color from theme based on node_type
-  let backgroundColor = theme.custom.nodeColors.action;
+): Node => {  // Determine node color from theme based on node_type
+  let backgroundColor = theme.custom?.nodeColors?.action || theme.palette.primary.main;
   switch (data.node_type) {
     case 'LabelBlock':
-      backgroundColor = theme.custom.nodeColors.label;
+      backgroundColor = theme.custom?.nodeColors?.label || theme.palette.primary.main;
       break;
     case 'IfBlock':
-      backgroundColor = theme.custom.nodeColors.if;
+      backgroundColor = theme.custom?.nodeColors?.if || theme.palette.success.main;
       break;
     case 'MenuBlock':
-      backgroundColor = theme.custom.nodeColors.menu;
+      backgroundColor = theme.custom?.nodeColors?.menu || theme.palette.error.main;
       break;
     case 'MenuOption':
-      backgroundColor = theme.custom.nodeColors.menuOption;
+      backgroundColor = theme.custom?.nodeColors?.menuOption || theme.palette.warning.main;
       break;
     case 'EndBlock':
-      backgroundColor = theme.custom.nodeColors.end;
+      backgroundColor = theme.custom?.nodeColors?.end || theme.palette.grey[500];
       break;
   }
 
@@ -124,16 +119,19 @@ const createFlowEdge = (
     target,
     label,
     type,
-    animated,
-    style: {
+    animated,    style: {
       strokeWidth: 2,
-      stroke: isEndBlockEdge ? theme.custom.nodeColors.end : theme.palette.divider,
+      stroke: isEndBlockEdge 
+        ? theme.custom?.nodeColors?.end || theme.palette.divider
+        : theme.custom?.edgeColor || theme.palette.divider,
     },
     markerEnd: {
       type: MarkerType.ArrowClosed,
       width: 15,
       height: 15,
-      color: isEndBlockEdge ? theme.custom.nodeColors.end : theme.palette.divider,
+      color: isEndBlockEdge 
+        ? theme.custom?.nodeColors?.end || theme.palette.divider
+        : theme.custom?.edgeColor || theme.palette.divider,
     },
   };
 };

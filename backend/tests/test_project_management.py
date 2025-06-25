@@ -386,91 +386,29 @@ label start:
             except:
                 pass
 
-    @patch('app.api.routes.scripts.parse_script')
-    def test_create_default_project(self, mock_parse_script, auth_token):
-        """Test the system creates a default project when needed."""
-        
-        script_id1 = str(uuid.uuid4())
-        script_id2 = str(uuid.uuid4())
-        
-        
-        mock_parse_script.side_effect = [
-            {
-                "script_id": script_id1,
-                "filename": "test_script1.rpy",
-                "tree": {"id": "mock_tree1", "node_type": "LabelBlock", "label_name": "root", "children": []}
-            },
-            {
-                "script_id": script_id2,
-                "filename": "test_script2.rpy",
-                "tree": {"id": "mock_tree2", "node_type": "LabelBlock", "label_name": "root", "children": []}
-            }
-        ]
-        
+    def test_upload_without_project_id_fails(self, auth_token):
+        """Test that uploading a script without a project_id fails."""
         headers = {"Authorization": f"Bearer {auth_token}"}
         
-        
-        response = client.get("/api/projects/", headers=headers)
-        assert response.status_code == 200
-        projects_before = response.json()
-        default_projects_before = [p for p in projects_before if p["name"] == "Default Project"]
-        
-        
-        script_content = """
-label start:
-    "Hello, this is a test script for default project."
-    return
-"""
+        script_content = "label start:\n    \"This should fail.\"\n    return"
         with tempfile.NamedTemporaryFile(suffix=".rpy", delete=False, mode="w+") as temp_file:
             temp_file.write(script_content)
             temp_file_path = temp_file.name
-        
+
         try:
-            
             with open(temp_file_path, "rb") as f:
                 response = client.post(
                     "/api/scripts/parse",
                     headers=headers,
-                    files={"file": f}
+                    files={"file": f},
+                    data={}
                 )
             
-            assert response.status_code == 200, f"Script upload failed: {response.text}"
-            data1 = response.json()
-            
-            
-            response = client.get("/api/projects/", headers=headers)
-            projects = response.json()
-            default_projects = [p for p in projects if p["name"] == "Default Project"]
-            assert len(default_projects) == 1, "Default project not created or multiple defaults found"
-            default_project = default_projects[0]
-            
-            
-            with open(temp_file_path, "rb") as f:
-                response = client.post(
-                    "/api/scripts/parse",
-                    headers=headers,
-                    files={"file": f}
-                )
-            
-            assert response.status_code == 200, f"Script upload failed: {response.text}"
-            data2 = response.json()
-            
-            
-            response = client.get(f"/api/projects/{default_project['id']}", headers=headers)
-            updated_project = response.json()
-            assert "scripts" in updated_project, "Scripts not included in project details"
-            script_ids = [s["id"] for s in updated_project["scripts"]]
-            assert data1["script_id"] in script_ids, "First script not in default project"
-            assert data2["script_id"] in script_ids, "Second script not in default project"
-            
-            
-            response = client.get("/api/projects/", headers=headers)
-            projects = response.json()
-            default_projects = [p for p in projects if p["name"] == "Default Project"]
-            assert len(default_projects) == 1, "Multiple default projects found"
-        
+            assert response.status_code == 422
+            assert response.json()["detail"][0]['loc'] == ["body", "project_id"]
+            assert response.json()["detail"][0]['msg'] == "Field required"
+
         finally:
-            
             try:
                 os.unlink(temp_file_path)
             except:
