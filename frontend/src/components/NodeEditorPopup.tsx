@@ -1,7 +1,6 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import Editor from '@monaco-editor/react';
-import renpyMonarch from '../renpy.language';
 import { Theme } from '@mui/material/styles';
 import {
   Dialog,
@@ -22,10 +21,25 @@ import CancelIcon from '@mui/icons-material/Cancel';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 
+interface NodeOriginalData {
+  start_line?: number;
+  end_line?: number;
+  node_type?: string;
+}
+
+interface NodeData {
+  label?: string;
+  id?: string;
+  originalData?: NodeOriginalData;
+  data?: {
+    originalData?: NodeOriginalData;
+  };
+}
+
 interface NodeEditorPopupProps {
   open: boolean;
   onClose: () => void;
-  nodeData: any;
+  nodeData: NodeData;
   initialContent: string;
   scriptId: string;
   onSave: (startLine: number, endLine: number, newContent: string) => Promise<void>;
@@ -52,6 +66,7 @@ const NodeEditorPopup: React.FC<NodeEditorPopupProps> = ({
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState<boolean>(false);
   const [hasReturnWarning, setHasReturnWarning] = useState<boolean>(false);
   const [baseIndent, setBaseIndent] = useState<string>('');
+  const [confirmDialog, setConfirmDialog] = useState<{ open: boolean; type: 'discard' | 'switch' | null }>({ open: false, type: null });
 
   
   const removeBaseIndent = (content: string): string => {
@@ -171,21 +186,31 @@ const NodeEditorPopup: React.FC<NodeEditorPopupProps> = ({
 
   const handleDiscard = () => {
     if (hasUnsavedChanges) {
-      if (!window.confirm(t('nodeEditor.confirmDiscard', 'Вы уверены, что хотите отменить несохраненные изменения?'))) {
-        return;
-      }
+      setConfirmDialog({ open: true, type: 'discard' });
+      return;
     }
     onClose();
   };
 
   const handleSwitch = () => {
     if (hasUnsavedChanges) {
-      if (!window.confirm(t('nodeEditor.confirmSwitchUnsaved', 'У вас есть несохраненные изменения. Продолжить переключение на полный редактор?'))) {
-        return;
-      }
+      setConfirmDialog({ open: true, type: 'switch' });
+      return;
     }
     onSwitchToGlobal();
     onClose();
+  };
+
+  const handleConfirmDialogClose = (confirmed: boolean) => {
+    if (confirmed) {
+      if (confirmDialog.type === 'discard') {
+        onClose();
+      } else if (confirmDialog.type === 'switch') {
+        onSwitchToGlobal();
+        onClose();
+      }
+    }
+    setConfirmDialog({ open: false, type: null });
   };
 
   
@@ -201,12 +226,34 @@ const NodeEditorPopup: React.FC<NodeEditorPopupProps> = ({
   
   const nodeColor = getNodeColor();
 
-  // Monaco theme mapping
-  const monacoTheme = theme.palette.mode === 'dark' ? 'vs-dark' : 'vs-light';
 
-  // Register Ren'Py language on mount
+  // --- Monaco Editor расширения ---
   const handleMonacoMount = useCallback((editor: any, monaco: any) => {
+    // Глобальная настройка языка Ren'Py, выполняется только один раз.
     if (!monaco.languages.getLanguages().some((l: any) => l.id === 'renpy')) {
+      // 1. Расширенная подсветка Monarch
+      const renpyMonarch = {
+        defaultToken: '',
+        tokenPostfix: '.renpy',
+        keywords: [
+          'label','call','jump','menu','choice','if','elif','else',
+          'screen','return','python','init','define','show','hide'
+        ],
+        tokenizer: {
+          root: [
+            // метки
+            [/^[ \t]*[a-zA-Z_]\w*:/, 'keyword'],
+            // комментарии
+            [/#.*$/,          'comment'],
+            // диалоги  "Mary Hello!"
+            [/\"[^\"]*\"/,     'string'],
+            // имена персонажей перед двоеточием
+            [/^[ \t]*[A-Z][A-Za-z_0-9]*[ \t]+\"/, 'type.identifier' ],
+            // python-блок
+            [/^\s*\$.*$/,     'number'],
+          ]
+        }
+      };
       monaco.languages.register({ id: 'renpy' });
       monaco.languages.setMonarchTokensProvider('renpy', renpyMonarch);
       monaco.languages.setLanguageConfiguration('renpy', {
@@ -223,8 +270,146 @@ const NodeEditorPopup: React.FC<NodeEditorPopupProps> = ({
           decreaseIndentPattern: /^\s*(return|pass)\b/
         }
       });
+
+      // 2. Кастомные темы Monaco (тёмная и светлая)
+      monaco.editor.defineTheme('renpyDark', {
+        base: 'vs-dark',
+        inherit: true,
+        rules: [
+          { token: 'keyword',         foreground: 'FF9D00', fontStyle:'bold' },
+          { token: 'comment',         foreground: '6A9955', fontStyle:'italic' },
+          { token: 'string',          foreground: 'CE9178' },
+          { token: 'type.identifier', foreground: '4FC1FF' }
+        ],
+        colors: {
+          'editor.background': '#1e1e1e',
+          'editor.foreground': '#d4d4d4',
+        }
+      });
+      monaco.editor.defineTheme('renpyLight', {
+        base: 'vs',
+        inherit: true,
+        rules: [
+          { token: 'keyword',         foreground: 'b46900', fontStyle:'bold' },
+          { token: 'comment',         foreground: '008000', fontStyle:'italic' },
+          { token: 'string',          foreground: 'a31515' },
+          { token: 'type.identifier', foreground: '267f99' }
+        ],
+        colors: {
+          'editor.background': '#fff',
+          'editor.foreground': '#1e1e1e',
+        }
+      });
+
+      // 3. Автодополнение и сниппеты
+      monaco.languages.registerCompletionItemProvider('renpy', {
+        triggerCharacters: [' ', ':'],
+        provideCompletionItems(model: any, pos: any) {
+          const suggestions: any[] = [];
+          for (const kw of ['label','call','jump','menu','return']) {
+            suggestions.push({
+              label: kw, kind: monaco.languages.CompletionItemKind.Keyword,
+              insertText: kw
+            });
+          }
+          suggestions.push({
+            label: 'menu-snippet',
+            kind: monaco.languages.CompletionItemKind.Snippet,
+            documentation: 'Базовый блок меню',
+            insertText: [
+              'menu:',
+              '\t"{{Вопрос?}}":',
+              '\t\tpass',
+              '\t"Отмена":',
+              '\t\treturn',
+            ].join('\n'),
+            insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet
+          });
+          // Динамические имена персонажей (поиск по тексту)
+          const text = model.getValue();
+          const charNames = Array.from(new Set(
+            (text.match(/^\s*([A-Z][A-Za-z_0-9]*)[ \t]+\"/gm) || [])
+              .map(l => l.match(/^\s*([A-Z][A-Za-z_0-9]*)[ \t]+\"/)?.[1])
+              .filter(Boolean)
+          ));
+          for (const name of charNames) {
+            suggestions.push({
+              label: name,
+              kind: monaco.languages.CompletionItemKind.Variable,
+              insertText: name
+            });
+          }
+          return { suggestions };
+        }
+      });
+
+      // 4. Hover-подсказки
+      monaco.languages.registerHoverProvider('renpy', {
+        provideHover(model: any, position: any) {
+          const word = model.getWordAtPosition(position);
+          if (word?.word === 'menu') {
+            return {
+              contents: [{ value: '**menu** – создаёт выбор игрока' }]
+            };
+          }
+          return null;
+        }
+      });
     }
-  }, []);
+
+
+    // Применить тему сразу при маунте (иначе Monaco иногда стартует с дефолтной)
+    const desiredTheme = theme.palette.mode === 'dark' ? 'renpyDark' : 'renpyLight';
+    if (editor._themeService?._theme !== desiredTheme) {
+      monaco.editor.setTheme(desiredTheme);
+    }
+
+    // 5. Линтинг (минимальный пример)
+    const linter = editor.onDidChangeModelContent(() => {
+      const model = editor.getModel();
+      if (!model) return;
+      const value = model.getValue();
+      const markers: any[] = [];
+      if (!/^label +start:/m.test(value)) {
+        markers.push({
+          severity: monaco.MarkerSeverity.Error,
+          message: 'Пропущен label "start".',
+          startLineNumber: 1, startColumn: 1,
+          endLineNumber: 1, endColumn: 1
+        });
+      }
+      monaco.editor.setModelMarkers(model, 'renpy-linter', markers);
+    });
+
+    // 6. Декорации для диалоговых строк
+    let oldDecoIds: string[] = [];
+    function decorateDialogLines() {
+      const model = editor.getModel();
+      if (!model) return;
+      const lines = model.getLinesContent();
+      const decorations: any[] = [];
+      lines.forEach((line: string, i: number) => {
+        if (/^\s*\".*\"/.test(line)) {
+          decorations.push({
+            range: new monaco.Range(i+1,1,i+1,line.length+1),
+            options: {
+              isWholeLine: true,
+              className: 'renpy-dialogue-line',
+              glyphMarginClassName: 'renpy-glyph'
+            }
+          });
+        }
+      });
+      oldDecoIds = editor.deltaDecorations(oldDecoIds, decorations);
+    }
+    const decorator = editor.onDidChangeModelContent(decorateDialogLines);
+    setTimeout(decorateDialogLines, 100); // для первого рендера
+
+    return () => {
+      linter.dispose();
+      decorator.dispose();
+    };
+  }, [theme.palette.mode]);
 
   return (
     <Dialog
@@ -266,13 +451,14 @@ const NodeEditorPopup: React.FC<NodeEditorPopupProps> = ({
               height="400px"
               language="renpy"
               value={value}
-              theme={monacoTheme}
+              theme={theme.palette.mode === 'dark' ? 'renpyDark' : 'renpyLight'}
               options={{
                 tabSize: 4,
                 insertSpaces: true,
                 automaticLayout: true,
                 wordWrap: 'on',
-                minimap: { enabled: false }
+                minimap: { enabled: false },
+                glyphMargin: true
               }}
               onMount={handleMonacoMount}
               onChange={(val) => {
@@ -331,6 +517,32 @@ const NodeEditorPopup: React.FC<NodeEditorPopupProps> = ({
           </Button>
         </Box>
       </DialogActions>
+      {/* Confirmation Dialog for Discard/Switch */}
+      <Dialog
+        open={confirmDialog.open}
+        onClose={() => handleConfirmDialogClose(false)}
+      >
+        <DialogTitle>
+          {confirmDialog.type === 'discard'
+            ? t('nodeEditor.confirmDiscardTitle', 'Отменить изменения?')
+            : t('nodeEditor.confirmSwitchUnsavedTitle', 'Переключиться с несохранёнными изменениями?')}
+        </DialogTitle>
+        <DialogContent>
+          <Typography>
+            {confirmDialog.type === 'discard'
+              ? t('nodeEditor.confirmDiscard', 'Вы уверены, что хотите отменить несохраненные изменения?')
+              : t('nodeEditor.confirmSwitchUnsaved', 'У вас есть несохраненные изменения. Продолжить переключение на полный редактор?')}
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => handleConfirmDialogClose(false)} color="secondary">
+            {t('common.cancel', 'Отмена')}
+          </Button>
+          <Button onClick={() => handleConfirmDialogClose(true)} color="primary" autoFocus>
+            {t('common.confirm', 'Подтвердить')}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Dialog>
   );
 };
