@@ -2,9 +2,7 @@ version: '3.8'
 
 services:
   frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
+    image: ghcr.io/the-asind/renpy-ve-frontend:latest
     ports:
       - "5173:5173"
     volumes:
@@ -17,9 +15,7 @@ services:
       - backend
 
   backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+    image: ghcr.io/the-asind/renpy-ve-backend:latest
     ports:
       - "9000:9000"
     volumes:
