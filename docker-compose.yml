@@ -4,21 +4,15 @@ services:
     restart: unless-stopped
     ports:
       - "5137:80"
-    volumes:
-      - ./frontend:/app
-      - node_modules:/app/node_modules
     environment:
       - VITE_API_URL=http://backend:9000/api
-      - CHOKIDAR_USEPOLLING=true
-    depends_on:
-      - backend
 
   backend:
     image: ghcr.io/the-asind/renpy-ve-backend:latest
+    restart: unless-stopped
     ports:
       - "9000:9000"
     volumes:
-      - ./backend/database:/app/database
       - db-data:/data
     environment:
       - DATABASE_PATH=/app/database/renpy_editor.db
@@ -26,4 +20,3 @@ services:
 
 volumes:
   db-data:
-  node_modules:
