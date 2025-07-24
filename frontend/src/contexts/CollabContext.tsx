@@ -108,7 +108,7 @@ export function CollabProvider({ children }: { children: ReactNode }) {
     }
     
     // Create new connection
-    const ws = new WebSocket(`ws://localhost:9000/api/ws/project/${projectId}?token=${token}`);
+    const ws = new WebSocket(`ws://http://82.202.143.172/:9000/api/ws/project/${projectId}?token=${token}`);
     
     ws.onopen = () => {
       console.log(`Connected to project ${projectId}`);
@@ -176,7 +176,7 @@ export function CollabProvider({ children }: { children: ReactNode }) {
     }
     
     // Create new connection
-    const ws = new WebSocket(`ws://localhost:9000/api/ws/script/${scriptId}?token=${token}`);
+    const ws = new WebSocket(`ws://82.202.143.172/api/ws/script/${scriptId}?token=${token}`);
     
     ws.onopen = () => {
       console.log(`Connected to script ${scriptId}`);
