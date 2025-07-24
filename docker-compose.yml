@@ -1,10 +1,9 @@
-version: '3.8'
-
 services:
   frontend:
     image: ghcr.io/the-asind/renpy-ve-frontend:latest
+    restart: unless-stopped
     ports:
-      - "5173:5173"
+      - "5137:80"
     volumes:
       - ./frontend:/app
       - node_modules:/app/node_modules
