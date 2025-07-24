@@ -68,3 +68,22 @@ The editor uses a direct reference approach where visual nodes point to specific
 - **Framework**: React
 - **UI Library**: Material-UI or Chakra UI
 - **Graph Visualization**: ReactFlow
+
+## Configuration
+
+The frontend expects an API base URL defined at build time via the
+`VITE_API_URL` environment variable. When using `docker compose`, create
+a `.env` file in the project root with your backend URL:
+
+```bash
+VITE_API_URL=http://82.202.143.172:9000/api
+```
+
+After updating the file, rebuild the frontend service:
+
+```bash
+docker compose build frontend
+docker compose up -d
+```
+
+This ensures the React application correctly calls the backend on port `9000`.

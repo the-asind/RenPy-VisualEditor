@@ -1,8 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-// Get API URL from environment variable or use default
-const API_URL = import.meta.env.VITE_API_URL;
+const API_URL = (window as any).RUNTIME_CONFIG?.VITE_API_URL || import.meta.env.VITE_API_URL;
 
 // Types for API responses
 type ApiError = {

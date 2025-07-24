@@ -23,7 +23,7 @@ export interface UpdateNodeResponse {
   content: string;
 }
 
-const effectiveApiUrl = import.meta.env.VITE_API_URL;
+const effectiveApiUrl = (window as any).RUNTIME_CONFIG?.VITE_API_URL || import.meta.env.VITE_API_URL;
 // Log the URL being used to help debug
 console.log('API Base URL configured:', effectiveApiUrl);
 

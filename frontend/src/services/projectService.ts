@@ -1,7 +1,6 @@
 import axios from 'axios';
 
-// Base URL for API calls - read from environment variables or use default
-const API_URL = import.meta.env.VITE_API_URL;
+const API_URL = (window as any).RUNTIME_CONFIG?.VITE_API_URL || import.meta.env.VITE_API_URL;
 
 // Create axios instance with default configuration
 const api = axios.create({

@@ -1,11 +1,15 @@
 services:
   frontend:
-    image: ghcr.io/the-asind/renpy-ve-frontend:latest
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL}
     restart: unless-stopped
     ports:
       - "5137:80"
     environment:
-      - VITE_API_URL=http://backend:9000/api
+      - VITE_API_URL=${VITE_API_URL}
 
   backend:
     image: ghcr.io/the-asind/renpy-ve-backend:latest
