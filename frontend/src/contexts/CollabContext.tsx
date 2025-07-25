@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useRef, ReactNode, useCallback, useMemo } from 'react';
 import { useAuth } from './AuthContext';
 
 // Define the types of messages we expect to receive
@@ -93,7 +93,7 @@ export function CollabProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // Connect to a project
-  const connectToProject = (projectId: string) => {
+  const connectToProject = useCallback((projectId: string) => {
     if (!isAuthenticated || !token) {
       console.error("Cannot connect: Not authenticated");
       return;
@@ -155,10 +155,10 @@ export function CollabProvider({ children }: { children: ReactNode }) {
     };
     
     projectWsRef.current = ws;
-  };
+  }, [isAuthenticated, token]);
   
   // Disconnect from project
-  const disconnectFromProject = () => {
+  const disconnectFromProject = useCallback(() => {
     if (projectWsRef.current) {
       projectWsRef.current.close();
       projectWsRef.current = null;
@@ -167,10 +167,10 @@ export function CollabProvider({ children }: { children: ReactNode }) {
     setProjectId(null);
     setConnected(false);
     setProjectUsers([]);
-  };
+  }, []);
   
   // Connect to a script
-  const connectToScript = (scriptId: string) => {
+  const connectToScript = useCallback((scriptId: string) => {
     if (!isAuthenticated || !token) {
       console.error("Cannot connect: Not authenticated");
       return;
@@ -227,10 +227,10 @@ export function CollabProvider({ children }: { children: ReactNode }) {
     };
     
     scriptWsRef.current = ws;
-  };
+  }, [isAuthenticated, token]);
   
   // Disconnect from script
-  const disconnectFromScript = () => {
+  const disconnectFromScript = useCallback(() => {
     if (scriptWsRef.current) {
       scriptWsRef.current.close();
       scriptWsRef.current = null;
@@ -239,7 +239,7 @@ export function CollabProvider({ children }: { children: ReactNode }) {
     setScriptId(null);
     setScriptUsers([]);
     setNodeLocks([]);
-  };
+  }, []);
   
   // Handle messages received on the project WebSocket
   const handleProjectMessage = (message: any) => {
@@ -475,26 +475,45 @@ export function CollabProvider({ children }: { children: ReactNode }) {
     } : null;
   };
   
+  const contextValue = useMemo(
+    () => ({
+      connected,
+      connecting,
+      projectUsers,
+      scriptUsers,
+      nodeLocks,
+      connectToProject,
+      disconnectFromProject,
+      connectToScript,
+      disconnectFromScript,
+      lockNode,
+      releaseNodeLock,
+      startEditingNode,
+      updateNode,
+      isNodeLocked,
+      getNodeLocker
+    }),
+    [
+      connected,
+      connecting,
+      projectUsers,
+      scriptUsers,
+      nodeLocks,
+      connectToProject,
+      disconnectFromProject,
+      connectToScript,
+      disconnectFromScript,
+      lockNode,
+      releaseNodeLock,
+      startEditingNode,
+      updateNode,
+      isNodeLocked,
+      getNodeLocker
+    ]
+  );
+
   return (
-    <CollabContext.Provider
-      value={{
-        connected,
-        connecting,
-        projectUsers,
-        scriptUsers,
-        nodeLocks,
-        connectToProject,
-        disconnectFromProject,
-        connectToScript,
-        disconnectFromScript,
-        lockNode,
-        releaseNodeLock,
-        startEditingNode,
-        updateNode,
-        isNodeLocked,
-        getNodeLocker
-      }}
-    >
+    <CollabContext.Provider value={contextValue}>
       {children}
     </CollabContext.Provider>
   );
