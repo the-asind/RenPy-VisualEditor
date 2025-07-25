@@ -74,10 +74,12 @@ class TestConnectionManager:
         assert ws in connection_manager.script_connections[script_id]
         assert user_id in connection_manager.user_sessions
         
-        # Verify user received node locks
-        assert len(ws.sent_messages) == 1
+        # Verify user received node locks and active users list
+        assert len(ws.sent_messages) == 2
         locks_message = json.loads(ws.sent_messages[0])
         assert locks_message["type"] == "node_locks"
+        active_message = json.loads(ws.sent_messages[1])
+        assert active_message["type"] == "active_users"
     
     async def test_disconnect(self, connection_manager):
         """Test disconnecting from a project and script."""
@@ -596,3 +598,49 @@ class TestConnectionManager:
             user_ids = [u["id"] for u in message["users"]]
             assert user1_id in user_ids
             assert user2_id in user_ids
+
+    async def test_project_active_users_on_disconnect(self, connection_manager):
+        """Active users list should update when a user disconnects from a project."""
+        ws1 = MockWebSocket()
+        ws2 = MockWebSocket()
+        project_id = "projectABC"
+
+        await connection_manager.connect_project(ws1, project_id, "u1", "User1")
+        ws1.sent_messages.clear()
+        await connection_manager.connect_project(ws2, project_id, "u2", "User2")
+        ws1.sent_messages.clear()
+        ws2.sent_messages.clear()
+
+        await connection_manager.disconnect(ws2, "u2")
+
+        assert ws1.sent_messages
+        last = json.loads(ws1.sent_messages[-1])
+        assert last["type"] == "active_users"
+        assert len(last["users"]) == 1
+        assert last["users"][0]["id"] == "u1"
+
+    async def test_script_active_users_updates(self, connection_manager):
+        """Users editing the same script should see updated active user lists."""
+        ws1 = MockWebSocket()
+        ws2 = MockWebSocket()
+        script_id = "scriptXYZ"
+
+        await connection_manager.connect_script(ws1, script_id, "u1", "User1")
+        ws1.sent_messages.clear()
+        await connection_manager.connect_script(ws2, script_id, "u2", "User2")
+
+        # Both users should have received an active_users message listing both
+        assert any(json.loads(m)["type"] == "active_users" for m in ws1.sent_messages)
+        assert any(json.loads(m)["type"] == "active_users" for m in ws2.sent_messages)
+
+        ws1.sent_messages.clear()
+        ws2.sent_messages.clear()
+
+        await connection_manager.disconnect(ws2, "u2")
+
+        # After disconnect, ws1 should get updated list with only itself
+        assert ws1.sent_messages
+        msg = json.loads(ws1.sent_messages[-1])
+        assert msg["type"] == "active_users"
+        assert len(msg["users"]) == 1
+        assert msg["users"][0]["id"] == "u1"

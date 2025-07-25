@@ -16,19 +16,48 @@ class ConnectionManager:
         # Map script_id -> set of WebSocket connections
         self.script_connections: Dict[str, Set[WebSocket]] = {}
         # User sessions: user_id -> {project_id, script_id, ws}
-        self.user_sessions: Dict[str, Dict[str, Any]] = {}        # Node locks: script_id -> {node_id -> {user_id, lock_time, expires_at}}
+        self.user_sessions: Dict[str, Dict[str, Any]] = {}
+        # Node locks: script_id -> {node_id -> {user_id, lock_time, expires_at}}
         self.node_locks: Dict[str, Dict[str, Dict[str, Any]]] = {}
         # Lock timeout in minutes
-        self.lock_timeout = 5    
+        self.lock_timeout = 5
+
+    async def broadcast_project_active_users(self, project_id: str):
+        """Broadcast the list of active users for a project."""
+        active_users = self.get_project_active_users(project_id)
+        await self.broadcast_to_project(
+            project_id,
+            {"type": "active_users", "users": active_users}
+        )
+
+    def get_script_active_users(self, script_id: str) -> List[Dict[str, Any]]:
+        """Return users currently editing a specific script."""
+        users = []
+        for uid, session in self.user_sessions.items():
+            if session.get("script_id") == script_id:
+                users.append({
+                    "id": uid,
+                    "username": session.get("username", "Unknown"),
+                    "connected_at": session.get("connected_at"),
+                })
+        return users
+
+    async def broadcast_script_active_users(self, script_id: str):
+        """Broadcast list of users editing a script."""
+        users = self.get_script_active_users(script_id)
+        await self.broadcast_to_script(
+            script_id,
+            {"type": "active_users", "users": users}
+        )
     async def connect_project(self, websocket: WebSocket, project_id: str, user_id: str, username: str):
         """Connect to project updates."""
         await websocket.accept()
-        
+
         if project_id not in self.project_connections:
             self.project_connections[project_id] = set()
-        
+
         self.project_connections[project_id].add(websocket)
-        
+
         # Update user session
         self.user_sessions[user_id] = {
             "project_id": project_id,
@@ -36,31 +65,10 @@ class ConnectionManager:
             "username": username,
             "connected_at": datetime.now().isoformat()
         }
-        
-        # Get active users for this project
-        active_users = self.get_project_active_users(project_id)
-        
-        # Send active users list to the newly connected client
-        await self.send_personal_message(
-            {
-                "type": "active_users",
-                "users": active_users
-            },
-            websocket
-        )
-        
-        # Also send active users list to all existing clients
-        # The test expects message type "active_users" for both new and existing clients
-        for connection in self.project_connections[project_id]:
-            if connection != websocket:  # Don't send again to the newly connected client
-                await self.send_personal_message(
-                    {
-                        "type": "active_users",
-                        "users": active_users
-                    },
-                    connection
-                )
-        
+
+        # Broadcast updated list of active users to everyone
+        await self.broadcast_project_active_users(project_id)
+
         logger.info(f"User {username} ({user_id}) connected to project {project_id}")
     
     async def connect_script(self, websocket: WebSocket, script_id: str, user_id: str, username: str):
@@ -110,6 +118,9 @@ class ConnectionManager:
             },
             websocket
         )
+
+        # Broadcast list of active users editing this script
+        await self.broadcast_script_active_users(script_id)
     
     async def lock_node(self, script_id: str, node_id: str, user_id: str, username: str) -> bool:
         """Try to acquire a lock on a node. Returns success status."""
@@ -511,8 +522,13 @@ class ConnectionManager:
                         }
                     )
             
-            # Remove user session
+            # Remove user session before broadcasting updated lists
             del self.user_sessions[user_id]
+
+            if project_id:
+                await self.broadcast_project_active_users(project_id)
+            if script_id:
+                await self.broadcast_script_active_users(script_id)
         
         logger.info(f"User {user_id if user_id else 'Unknown'} disconnected")
 

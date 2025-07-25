@@ -107,8 +107,16 @@ export function CollabProvider({ children }: { children: ReactNode }) {
       projectWsRef.current.close();
     }
     
+    // Determine WebSocket base URL from runtime or build config
+    const WS_URL =
+      (window as any).RUNTIME_CONFIG?.VITE_WS_URL ||
+      import.meta.env.VITE_WS_URL ||
+      (window as any).RUNTIME_CONFIG?.VITE_API_URL?.replace(/\/?api$/, '') ||
+      import.meta.env.VITE_API_URL?.replace(/\/?api$/, '') ||
+      'ws://localhost:9000';
+
     // Create new connection
-    const ws = new WebSocket(`ws://http://82.202.143.172/:9000/api/ws/project/${projectId}?token=${token}`);
+    const ws = new WebSocket(`${WS_URL}/api/ws/project/${projectId}?token=${token}`);
     
     ws.onopen = () => {
       console.log(`Connected to project ${projectId}`);
@@ -175,8 +183,16 @@ export function CollabProvider({ children }: { children: ReactNode }) {
       scriptWsRef.current.close();
     }
     
+    // Determine WebSocket base URL from runtime or build config
+    const WS_URL =
+      (window as any).RUNTIME_CONFIG?.VITE_WS_URL ||
+      import.meta.env.VITE_WS_URL ||
+      (window as any).RUNTIME_CONFIG?.VITE_API_URL?.replace(/\/?api$/, '') ||
+      import.meta.env.VITE_API_URL?.replace(/\/?api$/, '') ||
+      'ws://localhost:9000';
+
     // Create new connection
-    const ws = new WebSocket(`ws://82.202.143.172/api/ws/script/${scriptId}?token=${token}`);
+    const ws = new WebSocket(`${WS_URL}/api/ws/script/${scriptId}?token=${token}`);
     
     ws.onopen = () => {
       console.log(`Connected to script ${scriptId}`);

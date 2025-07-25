@@ -71,12 +71,14 @@ The editor uses a direct reference approach where visual nodes point to specific
 
 ## Configuration
 
-The frontend expects an API base URL defined at build time via the
-`VITE_API_URL` environment variable. When using `docker compose`, create
-a `.env` file in the project root with your backend URL:
+The frontend expects API and WebSocket base URLs defined at build time via
+`VITE_API_URL` and `VITE_WS_URL` environment variables. When using
+`docker compose`, create a `.env` file in the project root with your
+backend URL:
 
 ```bash
 VITE_API_URL=http://82.202.143.172:9000/api
+VITE_WS_URL=ws://82.202.143.172:9000
 ```
 
 After updating the file, rebuild the frontend service:
@@ -86,4 +88,5 @@ docker compose build frontend
 docker compose up -d
 ```
 
-This ensures the React application correctly calls the backend on port `9000`.
+This ensures the React application correctly calls the backend on port `9000`
+and establishes WebSocket connections using the same host.

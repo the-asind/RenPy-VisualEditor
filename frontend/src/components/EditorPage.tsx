@@ -67,19 +67,7 @@ import './EditorPage.css';
 const drawerWidth = 60;
 const expandedDrawerWidth = 240;
 
-// Interface for user with status
-interface ActiveUser {
-  id: number;
-  name: string;
-  status: 'online' | 'editing' | 'afk' | 'away';
-}
-
-// Mock active users data with statuses
-const activeUsers: ActiveUser[] = [
-  { id: 1, name: 'User 1', status: 'editing' },
-  { id: 2, name: 'User 2', status: 'online' },
-  { id: 3, name: 'User 3', status: 'afk' },
-];
+import { useCollab } from '../contexts/CollabContext';
 
 // Status color mapping
 const getStatusColor = (status: string, theme: any) => {
@@ -122,6 +110,14 @@ const EditorPageInternal: React.FC = () => {
   const theme = useTheme();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const {
+    connectToProject,
+    disconnectFromProject,
+    connectToScript,
+    disconnectFromScript,
+    projectUsers,
+    scriptUsers
+  } = useCollab();
   
   // Project ID is required from URL
   const projectId = searchParams.get('project');
@@ -683,6 +679,27 @@ const EditorPageInternal: React.FC = () => {
     loadProjectFromUrl(projectId);
   }, [projectId, loadProjectFromUrl, t]);
 
+  // Establish WebSocket connections for collaboration
+  useEffect(() => {
+    if (projectId) {
+      connectToProject(projectId);
+    }
+    return () => {
+      disconnectFromProject();
+    };
+  }, [projectId, connectToProject, disconnectFromProject]);
+
+  useEffect(() => {
+    if (scriptId) {
+      connectToScript(scriptId);
+    } else {
+      disconnectFromScript();
+    }
+    return () => {
+      disconnectFromScript();
+    };
+  }, [scriptId, connectToScript, disconnectFromScript]);
+
   // Handle loading existing script
   const handleLoadExistingScript = useCallback(async (scriptId: string, filename: string) => {
     isGraphReloading.current = true;
@@ -709,6 +726,15 @@ const EditorPageInternal: React.FC = () => {
       setIsLoading(false);
     }
   }, [setNodes, setEdges, t, captureViewport]);
+
+  // Combine project and script users for display
+  const combinedUsers = React.useMemo(() => {
+    const editing = scriptUsers.map(u => ({ ...u, status: 'editing' as const }));
+    const others = projectUsers
+      .filter(u => !scriptUsers.some(su => su.user_id === u.user_id))
+      .map(u => ({ ...u, status: 'online' as const }));
+    return [...editing, ...others];
+  }, [projectUsers, scriptUsers]);
 
   return (
     <Box sx={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
@@ -958,13 +984,13 @@ const EditorPageInternal: React.FC = () => {
           </Typography>
 
           <List sx={{ py: 0 }}>
-            {activeUsers.map((user) => {
+            {combinedUsers.map((user) => {
               const statusInfo = getStatusColor(user.status, theme);
               
               return (
-                <ListItem 
-                  key={user.id} 
-                  sx={{ 
+                <ListItem
+                  key={user.user_id}
+                  sx={{
                     py: 1,
                     px: expandedDrawer ? 2 : 1,
                     flexDirection: expandedDrawer ? 'row' : 'column',
@@ -982,7 +1008,7 @@ const EditorPageInternal: React.FC = () => {
                         fontWeight: 600,
                       }}
                     >
-                      {user.name.charAt(0)}
+                      {user.username.charAt(0).toUpperCase()}
                     </Avatar>
                     <Box 
                       sx={{
@@ -1002,7 +1028,7 @@ const EditorPageInternal: React.FC = () => {
                   {expandedDrawer && (
                     <Box sx={{ ml: 1.5, display: 'flex', flexDirection: 'column' }}>
                       <Typography variant="body2" sx={{ fontWeight: 500, lineHeight: 1.2 }}>
-                        {user.name}
+                        {user.username}
                       </Typography>
                       <Chip 
                         label={t(`editor.status.${user.status}`)}

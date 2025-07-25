@@ -5,11 +5,13 @@ services:
       dockerfile: Dockerfile
       args:
         VITE_API_URL: ${VITE_API_URL}
+        VITE_WS_URL: ${VITE_WS_URL}
     restart: unless-stopped
     ports:
       - "5137:80"
     environment:
       - VITE_API_URL=${VITE_API_URL}
+      - VITE_WS_URL=${VITE_WS_URL}
 
   backend:
     image: ghcr.io/the-asind/renpy-ve-backend:latest

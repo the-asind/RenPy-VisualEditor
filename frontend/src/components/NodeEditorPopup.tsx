@@ -20,6 +20,7 @@ import SaveIcon from '@mui/icons-material/Save';
 import CancelIcon from '@mui/icons-material/Cancel';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
+import { useCollab } from '../contexts/CollabContext';
 
 interface NodeOriginalData {
   start_line?: number;
@@ -58,10 +59,13 @@ const NodeEditorPopup: React.FC<NodeEditorPopupProps> = ({
   isLoading,
 }) => {  const { t } = useTranslation();
   const theme = useTheme() as Theme;
-  
-  
+  const { lockNode, releaseNodeLock, startEditingNode, updateNode } = useCollab();
+
+
   const [value, setValue] = useState<string>(initialContent);
   const [isSaving, setIsSaving] = useState<boolean>(false);
+  const [hasLock, setHasLock] = useState<boolean>(false);
+  const [readOnly, setReadOnly] = useState<boolean>(true);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState<boolean>(false);
   const [hasReturnWarning, setHasReturnWarning] = useState<boolean>(false);
@@ -145,6 +149,30 @@ const NodeEditorPopup: React.FC<NodeEditorPopupProps> = ({
     }
   }, [open, initialContent]);
 
+  // Acquire lock when popup opens
+  useEffect(() => {
+    let isActive = true;
+    if (open && nodeData?.id) {
+      setReadOnly(true);
+      lockNode(nodeData.id).then(success => {
+        if (!isActive) return;
+        setHasLock(success);
+        setReadOnly(!success);
+        if (success) {
+          startEditingNode(nodeData.id);
+        }
+      });
+    }
+    return () => {
+      isActive = false;
+      if (nodeData?.id) {
+        releaseNodeLock(nodeData.id);
+      }
+      setHasLock(false);
+      setReadOnly(true);
+    };
+  }, [open, nodeData?.id, lockNode, releaseNodeLock, startEditingNode]);
+
   
   const onChange = useMemo(() => {
     return (val: string) => {
@@ -167,14 +195,13 @@ const NodeEditorPopup: React.FC<NodeEditorPopupProps> = ({
     setIsSaving(true);
     setSaveError(null);
     try {
-      
       const contentWithIndent = addBaseIndent(value);
-      await onSave(
-        startLine,
-        endLine,
-        contentWithIndent
-      );
+      await onSave(startLine, endLine, contentWithIndent);
+      updateNode(nodeData.id!, contentWithIndent);
       setHasUnsavedChanges(false);
+      if (nodeData.id) {
+        releaseNodeLock(nodeData.id);
+      }
       onClose();
     } catch (error: any) {
       console.error("Error saving node:", error);
@@ -189,6 +216,9 @@ const NodeEditorPopup: React.FC<NodeEditorPopupProps> = ({
       setConfirmDialog({ open: true, type: 'discard' });
       return;
     }
+    if (nodeData.id) {
+      releaseNodeLock(nodeData.id);
+    }
     onClose();
   };
 
@@ -198,15 +228,20 @@ const NodeEditorPopup: React.FC<NodeEditorPopupProps> = ({
       return;
     }
     onSwitchToGlobal();
+    if (nodeData.id) {
+      releaseNodeLock(nodeData.id);
+    }
     onClose();
   };
 
   const handleConfirmDialogClose = (confirmed: boolean) => {
     if (confirmed) {
       if (confirmDialog.type === 'discard') {
+        if (nodeData.id) releaseNodeLock(nodeData.id);
         onClose();
       } else if (confirmDialog.type === 'switch') {
         onSwitchToGlobal();
+        if (nodeData.id) releaseNodeLock(nodeData.id);
         onClose();
       }
     }
@@ -458,7 +493,8 @@ const NodeEditorPopup: React.FC<NodeEditorPopupProps> = ({
                 automaticLayout: true,
                 wordWrap: 'on',
                 minimap: { enabled: false },
-                glyphMargin: true
+                glyphMargin: true,
+                readOnly: readOnly
               }}
               onMount={handleMonacoMount}
               onChange={(val) => {
@@ -466,6 +502,11 @@ const NodeEditorPopup: React.FC<NodeEditorPopupProps> = ({
               }}
             />
           </Box>
+        )}
+        {readOnly && (
+          <Alert severity="info" sx={{ mt: 1, mx: 2 }}>
+            {t('nodeEditor.waitLock', 'Ожидание доступа для редактирования...')}
+          </Alert>
         )}
         {saveError && (
           <Alert severity="error" sx={{ mt: 1, mx: 2, mb: 1 }}>{saveError}</Alert>
