@@ -11,3 +11,4 @@ python-jose[cryptography]
 pytest
 pytest-asyncio
 pydantic[email]
+uvicorn[standard]
