@@ -34,6 +34,7 @@ async def project_websocket(
         has_access = any(p["id"] == project_id for p in user_projects)
         
         if not has_access:
+            await websocket.accept()
             await websocket.close(code=4003, reason="Permission denied for this project")
             return
         
@@ -104,6 +105,7 @@ async def project_websocket(
             
     except Exception as e:
         logger.error(f"Authentication error: {str(e)}")
+        await websocket.accept()
         await websocket.close(code=4001, reason="Authentication failed")
 
 
@@ -121,6 +123,7 @@ async def script_websocket(
         # Get script info
         script = db_service.get_script(script_id)
         if not script:
+            await websocket.accept()
             await websocket.close(code=4004, reason="Script not found")
             return
         
@@ -130,6 +133,7 @@ async def script_websocket(
         has_access = any(p["id"] == project_id for p in user_projects)
         
         if not has_access:
+            await websocket.accept()
             await websocket.close(code=4003, reason="Permission denied for this script")
             return
         
@@ -233,6 +237,7 @@ async def script_websocket(
             
     except Exception as e:
         logger.error(f"Authentication error in script websocket: {str(e)}")
+        await websocket.accept()
         await websocket.close(code=4001, reason="Authentication failed")
 
 # TODO: Add endpoint for global editing notifications - #issue/127
