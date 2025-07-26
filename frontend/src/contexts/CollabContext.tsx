@@ -16,6 +16,7 @@ type MessageTypes =
   | 'active_users'
   | 'node_locks'
   | 'project_shared'
+  | 'lock_result'
   | 'error'
   | 'pong';
 
@@ -277,6 +278,10 @@ export function CollabProvider({ children }: { children: ReactNode }) {
         // Handle project sharing notification
         console.log(`Project shared with ${message.username}`);
         break;
+    
+      case 'lock_result':
+      // Lock results are handled at the script level
+      break;
         
       case 'error':
         console.error(`WebSocket error: ${message.message}`);
@@ -363,6 +368,10 @@ export function CollabProvider({ children }: { children: ReactNode }) {
       case 'node_updated':
         // Handle node content update
         console.log(`${message.username} updated node ${message.node_id}`);
+        break;
+      
+      case 'lock_result':
+        // Handled separately by lockNode promise
         break;
         
       case 'error':
