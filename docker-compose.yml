@@ -14,7 +14,9 @@ services:
       - VITE_WS_URL=${VITE_WS_URL}
 
   backend:
-    image: ghcr.io/the-asind/renpy-ve-backend:latest
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
     restart: unless-stopped
     ports:
       - "9000:9000"
