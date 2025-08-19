@@ -39,13 +39,13 @@ This tool helps scenario writers create branching narratives visually without ne
 - [ ] Add file versioning capability
 
 ### Phase 5: Real-time Collaboration
-- [ ] Implement WebSocket connections for real-time updates
-- [ ] Add user presence indicators
+- [x] Implement WebSocket connections for real-time updates
+- [x] Add user presence indicators
 - [ ] Create conflict resolution mechanisms
 - [ ] Implement edit history and undo/redo functionality
 
 ### Phase 6: Better Implementation & Features
-- [ ] WYSIWYG editor for node content
+- [x] basic WYSIWYG-dialog editor for node content
 - [ ] Add support for more complex RenPy features (transitions, images, etc.)
 - [ ] Seamless node graph updates
 
@@ -77,8 +77,8 @@ The frontend expects API and WebSocket base URLs defined at build time via
 backend URL:
 
 ```bash
-VITE_API_URL=http://82.202.143.172:9000/api
-VITE_WS_URL=ws://82.202.143.172:9000
+VITE_API_URL=https://renpy.asind.online/api
+VITE_WS_URL=wss://renpy.asind.online
 ```
 
 After updating the file, rebuild the frontend service:

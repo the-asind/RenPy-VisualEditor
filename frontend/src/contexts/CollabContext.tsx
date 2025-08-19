@@ -3,7 +3,7 @@ import { createContext, useContext, useState, useEffect, useRef, ReactNode, useC
 import { useAuth } from './AuthContext';
 
 // Define the types of messages we expect to receive
-type MessageTypes = 
+type MessageTypes =
   | 'user_joined_project'
   | 'user_left_project'
   | 'user_joined_script'
@@ -12,6 +12,7 @@ type MessageTypes =
   | 'node_unlocked'
   | 'node_editing'
   | 'node_updated'
+  | 'updateStructure'
   | 'locks_released'
   | 'active_users'
   | 'node_locks'
@@ -43,6 +44,7 @@ type CollabContextType = {
   projectUsers: CollaboratorInfo[];
   scriptUsers: CollaboratorInfo[];
   nodeLocks: NodeLock[];
+  structureUpdate: { script_id: string; tree: any } | null;
   
   // Connection methods
   connectToProject: (projectId: string) => void;
@@ -54,7 +56,6 @@ type CollabContextType = {
   lockNode: (nodeId: string) => Promise<boolean>;
   releaseNodeLock: (nodeId: string) => void;
   startEditingNode: (nodeId: string) => void;
-  updateNode: (nodeId: string, content: string) => void;
   
   // Helper methods
   isNodeLocked: (nodeId: string) => boolean;
@@ -80,6 +81,7 @@ export function CollabProvider({ children }: { children: ReactNode }) {
   const [projectUsers, setProjectUsers] = useState<CollaboratorInfo[]>([]);
   const [scriptUsers, setScriptUsers] = useState<CollaboratorInfo[]>([]);
   const [nodeLocks, setNodeLocks] = useState<NodeLock[]>([]);
+  const [structureUpdate, setStructureUpdate] = useState<{ script_id: string; tree: any } | null>(null);
   
   // Clean up WebSocket connections when component unmounts
   useEffect(() => {
@@ -364,10 +366,15 @@ export function CollabProvider({ children }: { children: ReactNode }) {
         // Handle notification that someone is editing a node
         console.log(`${message.username} is editing node ${message.node_id}`);
         break;
-        
+
       case 'node_updated':
         // Handle node content update
         console.log(`${message.username} updated node ${message.node_id}`);
+        break;
+
+      case 'updateStructure':
+        // Receive updated graph structure from server
+        setStructureUpdate({ script_id: message.script_id, tree: message.tree });
         break;
       
       case 'lock_result':
@@ -388,11 +395,11 @@ export function CollabProvider({ children }: { children: ReactNode }) {
   };
   
   // Request a lock on a node
-  const lockNode = async (nodeId: string): Promise<boolean> => {
+  const lockNode = useCallback(async (nodeId: string): Promise<boolean> => {
     if (!scriptWsRef.current || !user) {
       return false;
     }
-    
+
     const currentWs = scriptWsRef.current;
 
     return new Promise((resolve) => {
@@ -409,61 +416,54 @@ export function CollabProvider({ children }: { children: ReactNode }) {
           resolve(false);
         }
       };
-      
+
       currentWs.addEventListener('message', handleLockResult);
-      
-      currentWs.send(JSON.stringify({
-        type: 'lock_node',
-        node_id: nodeId,
-        timestamp: new Date().toISOString()
-      }));
-      
+
+      currentWs.send(
+        JSON.stringify({
+          type: 'lock_node',
+          node_id: nodeId,
+          timestamp: new Date().toISOString(),
+        }),
+      );
+
       setTimeout(() => {
         currentWs?.removeEventListener('message', handleLockResult);
-        resolve(false); 
+        resolve(false);
       }, 5000);
     });
-  };
-  
+  }, [user]);
+
   // Release a lock on a node
-  const releaseNodeLock = (nodeId: string) => {
+  const releaseNodeLock = useCallback((nodeId: string) => {
     if (!scriptWsRef.current || !user) {
       return;
     }
-    
-    scriptWsRef.current.send(JSON.stringify({
-      type: 'unlock_node',
-      node_id: nodeId,
-      timestamp: new Date().toISOString()
-    }));
-  };
-  
+
+    scriptWsRef.current.send(
+      JSON.stringify({
+        type: 'unlock_node',
+        node_id: nodeId,
+        timestamp: new Date().toISOString(),
+      }),
+    );
+  }, [user]);
+
   // Notify others that you're editing a node
-  const startEditingNode = (nodeId: string) => {
+  const startEditingNode = useCallback((nodeId: string) => {
     if (!scriptWsRef.current || !user) {
       return;
     }
-    
-    scriptWsRef.current.send(JSON.stringify({
-      type: 'start_editing',
-      node_id: nodeId,
-      timestamp: new Date().toISOString()
-    }));
-  };
-  
-  // Update node content
-  const updateNode = (nodeId: string, content: string) => {
-    if (!scriptWsRef.current || !user) {
-      return;
-    }
-    
-    scriptWsRef.current.send(JSON.stringify({
-      type: 'update_node',
-      node_id: nodeId,
-      content,
-      timestamp: new Date().toISOString()
-    }));
-  };
+
+    scriptWsRef.current.send(
+      JSON.stringify({
+        type: 'start_editing',
+        node_id: nodeId,
+        timestamp: new Date().toISOString(),
+      }),
+    );
+  }, [user]);
+
   
   // Check if a node is locked
   const isNodeLocked = (nodeId: string): boolean => {
@@ -498,9 +498,9 @@ export function CollabProvider({ children }: { children: ReactNode }) {
       lockNode,
       releaseNodeLock,
       startEditingNode,
-      updateNode,
       isNodeLocked,
-      getNodeLocker
+      getNodeLocker,
+      structureUpdate
     }),
     [
       connected,
@@ -515,9 +515,9 @@ export function CollabProvider({ children }: { children: ReactNode }) {
       lockNode,
       releaseNodeLock,
       startEditingNode,
-      updateNode,
       isNodeLocked,
-      getNodeLocker
+      getNodeLocker,
+      structureUpdate
     ]
   );
 

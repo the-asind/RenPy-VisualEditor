@@ -133,6 +133,23 @@ class RenPyParser:
             raise IOError(f"Error reading script file: {e}")
 
         return self._parse_labels()
+
+    def parse_text(self, content: str) -> ChoiceNode:
+        """Parse RenPy script content provided as a string.
+
+        This helper avoids having to write the content to a temporary file
+        when we already have the full script in memory (for example after a
+        node update). It mirrors :meth:`parse_async` but operates on the
+        supplied text directly.
+
+        Args:
+            content: Full script content to parse.
+
+        Returns:
+            The root choice node of the parsed script.
+        """
+        self.lines = content.splitlines()
+        return self._parse_labels()
     
     def _parse_labels(self) -> ChoiceNode:
         """

@@ -17,3 +17,5 @@ backend/uploads/
 debug_temp*
 *.db
 .notes/
+.env
+s.sh

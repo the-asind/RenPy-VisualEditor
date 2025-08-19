@@ -1,589 +1,599 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { useTranslation } from 'react-i18next';
-import Editor from '@monaco-editor/react';
-import { Theme } from '@mui/material/styles';
+import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import {
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  Button,
-  Box,
-  Typography,
-  CircularProgress,
-  Alert,
-  useTheme,
-  IconButton,
-  Tooltip,
+  Dialog, DialogTitle, DialogContent, Box, Stack, IconButton, Button, TextField,
+  Select, MenuItem, Typography, GlobalStyles, useTheme, Alert
 } from '@mui/material';
+import CloseIcon from '@mui/icons-material/Close';
 import SaveIcon from '@mui/icons-material/Save';
-import CancelIcon from '@mui/icons-material/Cancel';
-import OpenInNewIcon from '@mui/icons-material/OpenInNew';
-import WarningAmberIcon from '@mui/icons-material/WarningAmber';
-import { useCollab } from '../contexts/CollabContext';
+import Editor, { OnMount } from '@monaco-editor/react';
+import type { Node } from 'reactflow';
 
-interface NodeOriginalData {
-  start_line?: number;
-  end_line?: number;
-  node_type?: string;
-}
-
-interface NodeData {
-  label?: string;
-  id?: string;
-  originalData?: NodeOriginalData;
-  data?: {
-    originalData?: NodeOriginalData;
-  };
-}
-
+// ---------- Props ----------
 interface NodeEditorPopupProps {
   open: boolean;
   onClose: () => void;
-  nodeData: NodeData;
+  nodeData: Node | null;
   initialContent: string;
   scriptId: string;
-  onSave: (startLine: number, endLine: number, newContent: string) => Promise<void>;
+  onSave: (startLine: number, endLine: number, newContent: string) => Promise<void> | void;
   onSwitchToGlobal: () => void;
-  isLoading: boolean;
+  isLoading?: boolean;
 }
 
+// ---------- Ren'Py dialogue helpers ----------
+interface DialogueItem { name: string; text: string; startLine: number; endLine: number; }
+
+// Parse Ren'Py dialogues (supports extend, escaped quotes, skips if/elif/else)
+function parseDialoguesWithMap(text: string): DialogueItem[] {
+  const lines = text.split(/\r?\n/);
+  const result: DialogueItem[] = [];
+  let last: DialogueItem | null = null;
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i];
+    const trimmed = raw.trim();
+    if (!trimmed) continue;
+    if (/^if\b|^elif\b|^else\b/.test(trimmed)) continue;
+
+    // extend "..."
+    let m = raw.match(/^\s*extend\s+\"((?:[^"\\]|\\.)*)\"/);
+    if (m) {
+      const piece = m[1].replace(/\\(["\\])/g, '$1');
+      if (last) { last.text += piece; last.endLine = i + 1; }
+      else { last = { name: '', text: piece, startLine: i + 1, endLine: i + 1 }; result.push(last); }
+      continue;
+    }
+    // Name "text"
+    m = raw.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s+\"((?:[^"\\]|\\.)*)\"/);
+    if (m) {
+      last = { name: m[1], text: m[2].replace(/\\(["\\])/g, '$1'), startLine: i + 1, endLine: i + 1 };
+      result.push(last); continue;
+    }
+    // "text"
+    m = raw.match(/^\s*\"((?:[^"\\]|\\.)*)\"/);
+    if (m) {
+      last = { name: '', text: m[1].replace(/\\(["\\])/g, '$1'), startLine: i + 1, endLine: i + 1 };
+      result.push(last); continue;
+    }
+  }
+  return result;
+}
+
+// Render safe subset of Ren'Py text tags -> HTML
+function renderTextTags(src: string): string {
+  const escapeHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const sanitizeColor = (v: string) => (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(v) ? v : null);
+  let out = ''; let i = 0; const stack: string[] = [];
+  const open = (style: string) => { out += `<span style="${style}">`; stack.push('</span>'); };
+  const close = () => { if (stack.length) out += stack.pop(); };
+  while (i < src.length) {
+    const m = src.slice(i).match(/^\{\/?(b|i|u|color|size|alpha)(?:=([^}]+))?\}/);
+    if (m) {
+      const full = m[0], tag = m[1], val = (m[2] || '').trim();
+      i += full.length;
+      const closing = /^\{\//.test(full);
+      if (closing) { close(); continue; }
+      if (tag === 'b') open('font-weight:700');
+      else if (tag === 'i') open('font-style:italic');
+      else if (tag === 'u') open('text-decoration:underline');
+      else if (tag === 'color') { const c = sanitizeColor(val); if (c) open(`color:${c}`); }
+      else if (tag === 'size') {
+        let sz: string | null = null;
+        if (/^[+\-]?\d+$/.test(val)) { const n = parseInt(val, 10); sz = val.startsWith('+') || val.startsWith('-') ? `calc(1em + ${n}px)` : `${n}px`; }
+        if (sz) open(`font-size:${sz}`);
+      } else if (tag === 'alpha') { if (/^0(\.\d+)?|1(\.0+)?$/.test(val)) open(`opacity:${val}`); }
+      continue;
+    }
+    out += escapeHtml(src[i++]);
+  }
+  while (stack.length) out += stack.pop();
+  return out;
+}
+
+// Bubble color: light/dark aware
+function bubbleColor(name: string, dark: boolean) {
+  if (!name) return dark ? '#1a1d24' : '#f3f4f6';
+  let h = 0; for (const ch of name) h = ch.charCodeAt(0) + ((h << 5) - h);
+  return dark ? `hsl(${h % 360}, 32%, 22%)` : `hsl(${h % 360}, 70%, 95%)`;
+}
+
+// ---------- Indentation helpers (strip + restore) ----------
+interface IndentInfo { indent: string; stripped: boolean; error?: string }
+function analyzeAndStripIndent(text: string): IndentInfo & { strippedText: string } {
+  const lines = text.split(/\r?\n/);
+  const firstIdx = lines.findIndex(l => l.trim().length > 0);
+  if (firstIdx === -1) return { indent: '', stripped: false, strippedText: text };
+  const first = lines[firstIdx];
+  const indentMatch = first.match(/^[\t ]*/);
+  const indent = indentMatch ? indentMatch[0] : '';
+  if (!indent) return { indent: '', stripped: false, strippedText: text };
+
+  // Validate: any non-empty line with smaller indent -> error
+  const baseLen = indent.length;
+  for (let i = firstIdx + 1; i < lines.length; i++) {
+    const l = lines[i];
+    if (!l.trim()) continue;
+    const cur = (l.match(/^[\t ]*/) || [''])[0];
+    if (cur.length < baseLen) {
+      return { indent: '', stripped: false, strippedText: text, error: `Найдена строка с меньшим отступом (строка ${i+1}). Отступы не изменены.` };
+    }
+  }
+
+  // Safe: strip same indent from lines that have it
+  const strippedLines = lines.map(l => l.startsWith(indent) ? l.slice(baseLen) : l);
+  return { indent, stripped: true, strippedText: strippedLines.join('\n') };
+}
+
+function restoreIndent(text: string, indent: string): string {
+  if (!indent) return text;
+  const lines = text.split(/\r?\n/);
+  // Добавляем одинаковый отступ в каждую НЕ пустую строку
+  const out = lines.map(l => (l.trim().length ? indent + l : l)).join('\n');
+  return out;
+}
+
+const CONTROL_HEIGHT = 36; // px
+
 const NodeEditorPopup: React.FC<NodeEditorPopupProps> = ({
-  open,
-  onClose,
-  nodeData,
-  initialContent,
-  scriptId,
-  onSave,
-  onSwitchToGlobal,
-  isLoading,
-}) => {  const { t } = useTranslation();
-  const theme = useTheme() as Theme;
-  const { lockNode, releaseNodeLock, startEditingNode, updateNode } = useCollab();
+  open, onClose, nodeData, initialContent, scriptId, onSave, onSwitchToGlobal, isLoading
+}) => {
+  const theme = useTheme();
+  const isDark = theme.palette.mode === 'dark';
 
+  // ----- indentation memory -----
+  const indentRef = useRef<IndentInfo>({ indent: '', stripped: false });
+  const [indentError, setIndentError] = useState<string | null>(null);
 
-  const [value, setValue] = useState<string>(initialContent);
-  const [isSaving, setIsSaving] = useState<boolean>(false);
-  const [hasLock, setHasLock] = useState<boolean>(false);
-  const [readOnly, setReadOnly] = useState<boolean>(true);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState<boolean>(false);
-  const [hasReturnWarning, setHasReturnWarning] = useState<boolean>(false);
-  const [baseIndent, setBaseIndent] = useState<string>('');
-  const [confirmDialog, setConfirmDialog] = useState<{ open: boolean; type: 'discard' | 'switch' | null }>({ open: false, type: null });
+  const [value, setValue] = useState<string>('');
+  const monacoRef = useRef<any>(null);
+  const editorRef = useRef<any>(null);
+  const decorationsRef = useRef<string[]>([]);
 
-  
-  const removeBaseIndent = (content: string): string => {
-    if (!content) return '';
-    
-    const lines = content.split('\n');
-    if (lines.length === 0) return '';
-    
-    
-    let firstNonEmptyLine = lines.find(line => line.trim().length > 0);
-    if (!firstNonEmptyLine) return content;
-    
-    const indentMatch = firstNonEmptyLine.match(/^(\s+)/);
-    const indentString = indentMatch ? indentMatch[1] : '';
-    
-    
-    const invalidLine = lines.find(line => {
-      
-      if (line.trim().length === 0) return false;
-      
-      
-      return !line.startsWith(indentString);
-    });
-    
-    if (invalidLine) {
-      throw new Error(t('nodeEditor.errorInvalidIndent', 'Обнаружена строка с отступом меньше, чем в первой строке'));
-    }
-    
-    
-    setBaseIndent(indentString);
-    
-    
-    return lines.map(line => {
-      if (line.trim().length === 0) return line;
-      return line.replace(new RegExp(`^${indentString}`), '');
-    }).join('\n');
-  };
+  const [dialogs, setDialogs] = useState<DialogueItem[]>([]);
+  const [activeMsgIdx, setActiveMsgIdx] = useState<number | null>(null);
+  const [activeSepIdx, setActiveSepIdx] = useState<number | null>(null); // 0..n
 
-  
-  const addBaseIndent = (content: string): string => {
-    if (!content) return '';
-    if (!baseIndent) return content;
-    
-    const lines = content.split('\n');
-    
-    return lines.map(line => {
-      
-      if (line.trim().length > 0) {
-        return baseIndent + line;
-      }
-      
-      return line;
-    }).join('\n');
-  };
+  const startLine = (nodeData as any)?.data?.originalData?.start_line ?? 1;
+  const endLine = (nodeData as any)?.data?.originalData?.end_line ?? 1;
 
-  
+  // Split state (left %)
+  const [split, setSplit] = useState<number>(() => {
+    const saved = localStorage.getItem('renpy_node_editor_split');
+    const n = saved ? Number(saved) : 60;
+    return Number.isFinite(n) ? Math.min(80, Math.max(20, n)) : 60;
+  });
+  const gridRef = useRef<HTMLDivElement>(null);
+  const draggingRef = useRef(false);
+
+  // Prepare content on open: analyze indent and strip
   useEffect(() => {
-    if (open) {
-      try {
-        
-        const contentWithoutIndent = removeBaseIndent(initialContent);
-        setValue(contentWithoutIndent);
-        setHasUnsavedChanges(false);
-        setSaveError(null);
-        setIsSaving(false);
-        setHasReturnWarning(false);
-      } catch (error: any) {
-        
-        console.error("Ошибка обработки отступов:", error);
-        setValue(initialContent);
-        setSaveError(error.message);
-        setHasUnsavedChanges(false);
-        setIsSaving(false);
-        setHasReturnWarning(false);
-      }
-    }
-  }, [open, initialContent]);
+    if (!open) return;
+    const a = analyzeAndStripIndent(initialContent || '');
+    indentRef.current = a;
+    setIndentError(a.error ?? null);
+    setValue(a.strippedText);
+  }, [initialContent, open]);
 
-  // Acquire lock when popup opens
-  useEffect(() => {
-    let isActive = true;
-    if (open && nodeData?.id) {
-      setReadOnly(true);
-      lockNode(nodeData.id).then(success => {
-        if (!isActive) return;
-        setHasLock(success);
-        setReadOnly(!success);
-        if (success) {
-          startEditingNode(nodeData.id);
-        }
-      });
-    }
-    return () => {
-      isActive = false;
-      if (nodeData?.id) {
-        releaseNodeLock(nodeData.id);
-      }
-      setHasLock(false);
-      setReadOnly(true);
-    };
-  }, [open, nodeData?.id, lockNode, releaseNodeLock, startEditingNode]);
-
-  
-  const onChange = useMemo(() => {
-    return (val: string) => {
-      setValue(val);
-      setHasUnsavedChanges(val !== initialContent);
-      setSaveError(null);
-      setHasReturnWarning(/^\s*return\b/gm.test(val));
-    };
-  }, [initialContent]);
-  const handleSave = async () => {
-    const startLine = nodeData?.originalData?.start_line || nodeData?.data?.originalData?.start_line;
-    const endLine = nodeData?.originalData?.end_line || nodeData?.data?.originalData?.end_line;
-    
-    if (!startLine || !endLine) {
-      console.error("Missing line data in node:", nodeData);
-      setSaveError(t('nodeEditor.errorMissingLines', 'Не удалось определить диапазон строк для редактирования'));
-      return;
-    }
-    
-    setIsSaving(true);
-    setSaveError(null);
-    try {
-      const contentWithIndent = addBaseIndent(value);
-      await onSave(startLine, endLine, contentWithIndent);
-      updateNode(nodeData.id!, contentWithIndent);
-      setHasUnsavedChanges(false);
-      if (nodeData.id) {
-        releaseNodeLock(nodeData.id);
-      }
-      onClose();
-    } catch (error: any) {
-      console.error("Error saving node:", error);
-      setSaveError(error.message || t('nodeEditor.errorGenericSave', 'Не удалось сохранить изменения'));
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const handleDiscard = () => {
-    if (hasUnsavedChanges) {
-      setConfirmDialog({ open: true, type: 'discard' });
-      return;
-    }
-    if (nodeData.id) {
-      releaseNodeLock(nodeData.id);
-    }
-    onClose();
-  };
-
-  const handleSwitch = () => {
-    if (hasUnsavedChanges) {
-      setConfirmDialog({ open: true, type: 'switch' });
-      return;
-    }
-    onSwitchToGlobal();
-    if (nodeData.id) {
-      releaseNodeLock(nodeData.id);
-    }
-    onClose();
-  };
-
-  const handleConfirmDialogClose = (confirmed: boolean) => {
-    if (confirmed) {
-      if (confirmDialog.type === 'discard') {
-        if (nodeData.id) releaseNodeLock(nodeData.id);
-        onClose();
-      } else if (confirmDialog.type === 'switch') {
-        onSwitchToGlobal();
-        if (nodeData.id) releaseNodeLock(nodeData.id);
-        onClose();
-      }
-    }
-    setConfirmDialog({ open: false, type: null });
-  };
-
-  
-  const nodeType = nodeData?.originalData?.node_type || nodeData?.data?.originalData?.node_type || 'Action';
-  
-  
-  const getNodeColor = (): string => {
-    if (theme.custom?.nodeColors && nodeType.toLowerCase() in theme.custom.nodeColors) {
-      return theme.custom.nodeColors[nodeType.toLowerCase()];
-    }
-    return theme.palette.primary.main;
-  };
-  
-  const nodeColor = getNodeColor();
-
-
-  // --- Monaco Editor расширения ---
-  const handleMonacoMount = useCallback((editor: any, monaco: any) => {
-    // Глобальная настройка языка Ren'Py, выполняется только один раз.
-    if (!monaco.languages.getLanguages().some((l: any) => l.id === 'renpy')) {
-      // 1. Расширенная подсветка Monarch
-      const renpyMonarch = {
-        defaultToken: '',
-        tokenPostfix: '.renpy',
-        keywords: [
-          'label','call','jump','menu','choice','if','elif','else',
-          'screen','return','python','init','define','show','hide'
-        ],
-        tokenizer: {
-          root: [
-            // метки
-            [/^[ \t]*[a-zA-Z_]\w*:/, 'keyword'],
-            // комментарии
-            [/#.*$/,          'comment'],
-            // диалоги  "Mary Hello!"
-            [/\"[^\"]*\"/,     'string'],
-            // имена персонажей перед двоеточием
-            [/^[ \t]*[A-Z][A-Za-z_0-9]*[ \t]+\"/, 'type.identifier' ],
-            // python-блок
-            [/^\s*\$.*$/,     'number'],
-          ]
-        }
-      };
-      monaco.languages.register({ id: 'renpy' });
-      monaco.languages.setMonarchTokensProvider('renpy', renpyMonarch);
-      monaco.languages.setLanguageConfiguration('renpy', {
-        comments: { lineComment: '#' },
-        brackets: [['(', ')'], ['[', ']'], ['{', '}']],
-        autoClosingPairs: [
-          { open: '(', close: ')' },
-          { open: '[', close: ']' },
-          { open: '{', close: '}' },
-          { open: '"', close: '"', notIn: ['string'] }
-        ],
-        indentationRules: {
-          increaseIndentPattern: /^\s*(label|menu|if|elif|else|python|screen).*:\s*$/,
-          decreaseIndentPattern: /^\s*(return|pass)\b/
-        }
-      });
-
-      // 2. Кастомные темы Monaco (тёмная и светлая)
-      monaco.editor.defineTheme('renpyDark', {
-        base: 'vs-dark',
-        inherit: true,
-        rules: [
-          { token: 'keyword',         foreground: 'FF9D00', fontStyle:'bold' },
-          { token: 'comment',         foreground: '6A9955', fontStyle:'italic' },
-          { token: 'string',          foreground: 'CE9178' },
-          { token: 'type.identifier', foreground: '4FC1FF' }
-        ],
-        colors: {
-          'editor.background': '#1e1e1e',
-          'editor.foreground': '#d4d4d4',
-        }
-      });
-      monaco.editor.defineTheme('renpyLight', {
-        base: 'vs',
-        inherit: true,
-        rules: [
-          { token: 'keyword',         foreground: 'b46900', fontStyle:'bold' },
-          { token: 'comment',         foreground: '008000', fontStyle:'italic' },
-          { token: 'string',          foreground: 'a31515' },
-          { token: 'type.identifier', foreground: '267f99' }
-        ],
-        colors: {
-          'editor.background': '#fff',
-          'editor.foreground': '#1e1e1e',
-        }
-      });
-
-      // 3. Автодополнение и сниппеты
-      monaco.languages.registerCompletionItemProvider('renpy', {
-        triggerCharacters: [' ', ':'],
-        provideCompletionItems(model: any, pos: any) {
-          const suggestions: any[] = [];
-          for (const kw of ['label','call','jump','menu','return']) {
-            suggestions.push({
-              label: kw, kind: monaco.languages.CompletionItemKind.Keyword,
-              insertText: kw
-            });
-          }
-          suggestions.push({
-            label: 'menu-snippet',
-            kind: monaco.languages.CompletionItemKind.Snippet,
-            documentation: 'Базовый блок меню',
-            insertText: [
-              'menu:',
-              '\t"{{Вопрос?}}":',
-              '\t\tpass',
-              '\t"Отмена":',
-              '\t\treturn',
-            ].join('\n'),
-            insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet
-          });
-          // Динамические имена персонажей (поиск по тексту)
-          const text = model.getValue();
-          const charNames = Array.from(new Set(
-            (text.match(/^\s*([A-Z][A-Za-z_0-9]*)[ \t]+\"/gm) || [])
-              .map(l => l.match(/^\s*([A-Z][A-Za-z_0-9]*)[ \t]+\"/)?.[1])
-              .filter(Boolean)
-          ));
-          for (const name of charNames) {
-            suggestions.push({
-              label: name,
-              kind: monaco.languages.CompletionItemKind.Variable,
-              insertText: name
-            });
-          }
-          return { suggestions };
-        }
-      });
-
-      // 4. Hover-подсказки
-      monaco.languages.registerHoverProvider('renpy', {
-        provideHover(model: any, position: any) {
-          const word = model.getWordAtPosition(position);
-          if (word?.word === 'menu') {
-            return {
-              contents: [{ value: '**menu** – создаёт выбор игрока' }]
-            };
-          }
-          return null;
-        }
-      });
-    }
-
-
-    // Применить тему сразу при маунте (иначе Monaco иногда стартует с дефолтной)
-    const desiredTheme = theme.palette.mode === 'dark' ? 'renpyDark' : 'renpyLight';
-    if (editor._themeService?._theme !== desiredTheme) {
-      monaco.editor.setTheme(desiredTheme);
-    }
-
-    // 5. Линтинг (минимальный пример)
-    const linter = editor.onDidChangeModelContent(() => {
-      const model = editor.getModel();
-      if (!model) return;
-      const value = model.getValue();
-      const markers: any[] = [];
-      if (!/^label +start:/m.test(value)) {
-        markers.push({
-          severity: monaco.MarkerSeverity.Error,
-          message: 'Пропущен label "start".',
-          startLineNumber: 1, startColumn: 1,
-          endLineNumber: 1, endColumn: 1
+  // Re-parse & decorate
+  const applyDecorations = useCallback(() => {
+    const ed = editorRef.current; const mon = monacoRef.current; if (!ed || !mon) return;
+    const model = ed.getModel(); if (!model) return;
+    const lines = model.getLinesContent();
+    const newDecos = [] as any[];
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (/^\s*\".*\"/.test(line) || /^\s*[A-Za-z_][A-Za-z0-9_]*\s+\".*\"/.test(line) || /^\s*extend\s+\".*\"/.test(line)) {
+        newDecos.push({
+          range: new mon.Range(i + 1, 1, i + 1, line.length + 1),
+          options: { isWholeLine: true, className: 'renpy-dialogue-line', glyphMarginClassName: 'renpy-glyph' }
         });
       }
-      monaco.editor.setModelMarkers(model, 'renpy-linter', markers);
+    }
+    decorationsRef.current = ed.deltaDecorations(decorationsRef.current, newDecos);
+  }, []);
+
+  const setActiveFromEditor = useCallback(() => {
+    const ed = editorRef.current; if (!ed) return;
+    const pos = ed.getPosition();
+    const line = pos?.lineNumber ?? 1;
+    const ds = parseDialoguesWithMap(value);
+    const found = ds.findIndex(d => line >= d.startLine && line <= d.endLine);
+    if (found >= 0) { setActiveMsgIdx(found); setActiveSepIdx(null); }
+    else {
+      let idx = ds.findIndex(d => line <= d.startLine - 1);
+      if (idx === -1) idx = ds.length;
+      setActiveMsgIdx(null); setActiveSepIdx(idx);
+    }
+  }, [value]);
+
+  const fullRefresh = useCallback(() => {
+    const ds = parseDialoguesWithMap(value);
+    setDialogs(ds);
+    applyDecorations();
+    setActiveFromEditor();
+  }, [value, applyDecorations, setActiveFromEditor]);
+
+  useEffect(() => { fullRefresh(); }, [fullRefresh]);
+
+  const setActiveFromChat = useCallback((type: 'dialog' | 'sep', index: number, moveCaret: boolean) => {
+    const ed = editorRef.current; const mon = monacoRef.current; if (!ed || !mon) return;
+    const model = ed.getModel(); if (!model) return;
+    const ds = parseDialoguesWithMap(value);
+    if (type === 'dialog') {
+      setActiveMsgIdx(index); setActiveSepIdx(null);
+      if (moveCaret) {
+        const d = ds[index]; const col = model.getLineMaxColumn(d.endLine);
+        ed.setPosition({ lineNumber: d.endLine, column: col }); ed.focus();
+      }
+    } else {
+      setActiveMsgIdx(null); setActiveSepIdx(index);
+      if (moveCaret) {
+        let target: number;
+        if (index <= 0) target = ds.length ? ds[0].startLine : model.getLineCount();
+        else if (index >= ds.length) target = model.getLineCount();
+        else target = ds[index].startLine;
+        const col = model.getLineFirstNonWhitespaceColumn(target) || 1;
+        ed.setPosition({ lineNumber: target, column: col }); ed.focus();
+      }
+    }
+  }, [value]);
+
+  // Editor mount: language + themes
+  const handleEditorMount: OnMount = (editor, monaco) => {
+    editorRef.current = editor; monacoRef.current = monaco;
+
+    monaco.languages.register({ id: 'renpy' });
+    monaco.languages.setMonarchTokensProvider('renpy', {
+      defaultToken: '', tokenPostfix: '.renpy',
+      keywords: ['label','call','jump','menu','choice','if','elif','else','screen','return','python','init','define','show','hide','play','stop'],
+      tokenizer: { root: [
+        [/^[ \t]*[a-zA-Z_][\w]*:/, 'keyword'],
+        [/#.*$/, 'comment'],
+        [/^[ \t]*[A-Z][A-Za-z_0-9]*[ \t]+\"/, 'type.identifier'],
+        [/\"[^\"]*\"/, 'string'],
+        [/^\s*\$.*$/, 'number'],
+      ] }
+    });
+    monaco.languages.setLanguageConfiguration('renpy', {
+      comments: { lineComment: '#' },
+      brackets: [['(',')'],['[',']'],['{','}']],
+      autoClosingPairs: [
+        {open:'(',close:')'},{open:'[',close:']'},{open:'{',close:'}'},
+        {open:'"', close:'"', notIn:['string']}
+      ],
+      indentationRules: {
+        increaseIndentPattern: /^\s*(label|menu|if|elif|else|python|screen).*:\s*$/,
+        decreaseIndentPattern: /^\s*(return|pass)\b/
+      }
     });
 
-    // 6. Декорации для диалоговых строк
-    let oldDecoIds: string[] = [];
-    function decorateDialogLines() {
-      const model = editor.getModel();
-      if (!model) return;
-      const lines = model.getLinesContent();
-      const decorations: any[] = [];
-      lines.forEach((line: string, i: number) => {
-        if (/^\s*\".*\"/.test(line)) {
-          decorations.push({
-            range: new monaco.Range(i+1,1,i+1,line.length+1),
-            options: {
-              isWholeLine: true,
-              className: 'renpy-dialogue-line',
-              glyphMarginClassName: 'renpy-glyph'
-            }
-          });
-        }
-      });
-      oldDecoIds = editor.deltaDecorations(oldDecoIds, decorations);
-    }
-    const decorator = editor.onDidChangeModelContent(decorateDialogLines);
-    setTimeout(decorateDialogLines, 100); // для первого рендера
+    monaco.editor.defineTheme('renpyLight', {
+      base: 'vs', inherit: true,
+      rules: [
+        { token: 'keyword', foreground: 'b46900', fontStyle: 'bold' },
+        { token: 'comment', foreground: '008000', fontStyle: 'italic' },
+        { token: 'string', foreground: 'a31515' },
+        { token: 'type.identifier', foreground: '267f99' }
+      ],
+      colors: { 'editor.background': '#ffffff', 'editor.foreground': '#1e1e1e' }
+    });
+    monaco.editor.defineTheme('renpyDark', {
+      base: 'vs-dark', inherit: true,
+      rules: [
+        { token: 'keyword', foreground: 'FF9D00', fontStyle: 'bold' },
+        { token: 'comment', foreground: '6A9955', fontStyle: 'italic' },
+        { token: 'string', foreground: 'CE9178' },
+        { token: 'type.identifier', foreground: '4FC1FF' }
+      ],
+      colors: { 'editor.background': '#1e1e1e', 'editor.foreground': '#d4d4d4' }
+    });
 
+    monaco.editor.setTheme(isDark ? 'renpyDark' : 'renpyLight');
+
+    editor.onDidChangeCursorPosition(() => setActiveFromEditor());
+    fullRefresh();
+  };
+
+  // Apply theme changes
+  useEffect(() => {
+    monacoRef.current?.editor?.setTheme(isDark ? 'renpyDark' : 'renpyLight');
+  }, [isDark]);
+
+  // Insert from visual input
+  const insertAtContext = useCallback((lineText: string) => {
+    const ed = editorRef.current; const mon = monacoRef.current; if (!ed || !mon) return;
+    const model = ed.getModel(); if (!model) return;
+    const val = (lineText || '').trim(); if (!val) return;
+    const ds = parseDialoguesWithMap(model.getValue());
+    if (activeMsgIdx !== null) {
+      const d = ds[activeMsgIdx];
+      const col = model.getLineMaxColumn(d.endLine);
+      model.applyEdits([{ range: new mon.Range(d.endLine, col, d.endLine, col), text: `\n${lineText}\n`, forceMoveMarkers: true }]);
+    } else {
+      let targetLine: number;
+      if (!ds.length) targetLine = model.getLineCount();
+      else if ((activeSepIdx ?? ds.length) <= 0) targetLine = ds[0].startLine;
+      else if ((activeSepIdx ?? ds.length) >= ds.length) targetLine = model.getLineCount();
+      else targetLine = ds[activeSepIdx as number].startLine;
+      model.applyEdits([{ range: new mon.Range(targetLine, 1, targetLine, 1), text: `${lineText}\n`, forceMoveMarkers: true }]);
+    }
+    setTimeout(fullRefresh, 0);
+  }, [activeMsgIdx, activeSepIdx, fullRefresh]);
+
+  // Visual input
+  const [newMsg, setNewMsg] = useState('');
+  const [selectedCharacter, setSelectedCharacter] = useState('');
+
+  const characterOptions = useMemo(() => {
+    const uniq = Array.from(new Set(dialogs.filter(d => d.name).map(d => d.name)));
+    return ['', ...uniq];
+  }, [dialogs]);
+
+  const onSend = useCallback(() => {
+    const line = selectedCharacter ? `${selectedCharacter} "${newMsg}"` : `"${newMsg}"`;
+    insertAtContext(line); setNewMsg('');
+  }, [selectedCharacter, newMsg, insertAtContext]);
+
+  const onInputKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+      e.preventDefault();
+      const idx = characterOptions.indexOf(selectedCharacter);
+      const dir = e.key === 'ArrowUp' ? -1 : 1;
+      const n = characterOptions.length;
+      const next = (idx + dir + n) % n;
+      setSelectedCharacter(characterOptions[next]);
+    } else if (e.key === 'Enter') {
+      e.preventDefault(); onSend();
+    }
+  }, [characterOptions, selectedCharacter, onSend]);
+
+  // Drag-resize
+  const onMouseDownResizer = (e: React.MouseEvent) => {
+    draggingRef.current = true;
+    document.body.style.userSelect = 'none';
+  };
+  const onMouseUpWindow = useCallback(() => {
+    if (!draggingRef.current) return;
+    draggingRef.current = false;
+    document.body.style.userSelect = '';
+    localStorage.setItem('renpy_node_editor_split', String(split));
+    setTimeout(() => editorRef.current?.layout?.(), 0);
+  }, [split]);
+  const onMouseMoveWindow = useCallback((e: MouseEvent) => {
+    if (!draggingRef.current || !gridRef.current) return;
+    const rect = gridRef.current.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const percent = (x / rect.width) * 100;
+    const clamped = Math.min(80, Math.max(20, percent));
+    setSplit(clamped);
+  }, []);
+  useEffect(() => {
+    window.addEventListener('mousemove', onMouseMoveWindow);
+    window.addEventListener('mouseup', onMouseUpWindow);
     return () => {
-      linter.dispose();
-      decorator.dispose();
+      window.removeEventListener('mousemove', onMouseMoveWindow);
+      window.removeEventListener('mouseup', onMouseUpWindow);
     };
-  }, [theme.palette.mode]);
+  }, [onMouseMoveWindow, onMouseUpWindow]);
+
+  useEffect(() => { editorRef.current?.layout?.(); }, [split]);
+
+  // ----- SAVE (restore indent & close) -----
+  const handleSave = useCallback(async () => {
+    let finalText = value;
+    if (indentRef.current.stripped) {
+      finalText = restoreIndent(value, indentRef.current.indent);
+    }
+    await onSave(startLine, endLine, finalText);
+    onClose();
+  }, [value, onSave, startLine, endLine, onClose]);
+
+  // Styles
+  const mode = theme.palette.mode;
 
   return (
     <Dialog
       open={open}
-      onClose={(event, reason) => {
-        if (reason === 'backdropClick' && hasUnsavedChanges) {
-          window.alert(t('nodeEditor.alertCloseUnsaved', 'У вас есть несохраненные изменения.'));
-          return;
-        }
-        handleDiscard();
-      }}
-      maxWidth="md"
-      fullWidth
+      onClose={onClose}
+      fullScreen
       PaperProps={{
         sx: {
-          borderTop: `4px solid ${nodeColor}`,
-          borderRadius: '8px',
+          m: 2, // маленькие отступы по краям — видно, что это попап
+          height: 'calc(100vh - 32px)',
+          borderRadius: 2,
+          display: 'flex', flexDirection: 'column',
+          overflow: 'hidden',
         }
       }}
     >
-      <DialogTitle sx={{ display: 'flex', alignItems: 'center', pb: 1 }}>
-        <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
-          {t('nodeEditor.title', 'Редактор узла')} - <span style={{ color: nodeColor, fontWeight: 'bold' }}>{nodeData?.label || nodeData?.id}</span>
-        </Typography>
-        <Tooltip title={t('nodeEditor.discardTooltip', 'Закрыть без сохранения')}>
-          <IconButton onClick={handleDiscard} size="small">
-            <CancelIcon />
-          </IconButton>
-        </Tooltip>
+      <GlobalStyles styles={{
+        body: { backgroundColor: theme.palette.background.default },
+        '.monaco-editor .renpy-dialogue-line': { background: mode === 'dark' ? '#2a2330' : '#fff6da' },
+        '.monaco-editor .renpy-glyph': { background: '#ffc', width: '4px' },
+      }} />
+
+      <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1, flex: '0 0 auto' }}>
+        Редактор узла — строки {startLine}–{endLine}
+        <Box sx={{ flex: 1 }} />
+        <Button
+          variant="contained"
+          size="small"
+          startIcon={<SaveIcon />}
+          onClick={handleSave}
+        >
+          Сохранить
+        </Button>
+        <IconButton onClick={onClose}><CloseIcon /></IconButton>
       </DialogTitle>
-      <DialogContent dividers sx={{ p: 0 }}>
-        {isLoading ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 300 }}>
-            <CircularProgress />
-          </Box>
-        ) : (
-          <Box className="editor-container" sx={{ width: '100%' }}>
+
+      {indentError && (
+        <Box sx={{ px: 2, pt: 1 }}>
+          <Alert severity="warning" onClose={() => setIndentError(null)}>{indentError}</Alert>
+        </Box>
+      )}
+
+      <DialogContent sx={{ p: 0, flex: '1 1 auto', overflow: 'hidden' }}>
+        {/* GRID: editor | resizer | visual */}
+        <Box
+          ref={gridRef}
+          sx={{
+            height: '100%',
+            width: '100%',
+            boxSizing: 'border-box',
+            display: 'grid',
+            gridTemplateColumns: `${split}% 6px ${100 - split}%`,
+            minHeight: 0,
+            overflow: 'hidden',
+          }}
+        >
+          {/* Left: Monaco */}
+          <Box sx={{ minWidth: 0, minHeight: 0, borderRight: `1px solid ${theme.palette.divider}`, boxSizing: 'border-box', overflow: 'hidden' }}>
             <Editor
-              height="400px"
-              language="renpy"
+              height="100%"
+              defaultLanguage="renpy"
               value={value}
-              theme={theme.palette.mode === 'dark' ? 'renpyDark' : 'renpyLight'}
-              options={{
-                tabSize: 4,
-                insertSpaces: true,
-                automaticLayout: true,
-                wordWrap: 'on',
-                minimap: { enabled: false },
-                glyphMargin: true,
-                readOnly: readOnly
+              onChange={(v) => setValue(v ?? '')}
+              onMount={(e, m) => {
+                // mount + set theme
+                handleEditorMount(e, m);
+                // prevent horizontal scrollbar jumps
+                const dom = (e as any)?.getDomNode?.();
+                if (dom) (dom as HTMLElement).style.overflow = 'hidden';
               }}
-              onMount={handleMonacoMount}
-              onChange={(val) => {
-                onChange(val ?? '');
+              options={{
+                minimap: { enabled: false },
+                scrollBeyondLastLine: false,
+                glyphMargin: true,
+                fontSize: 14,
+                automaticLayout: true,
               }}
             />
           </Box>
-        )}
-        {readOnly && (
-          <Alert severity="info" sx={{ mt: 1, mx: 2 }}>
-            {t('nodeEditor.waitLock', 'Ожидание доступа для редактирования...')}
-          </Alert>
-        )}
-        {saveError && (
-          <Alert severity="error" sx={{ mt: 1, mx: 2, mb: 1 }}>{saveError}</Alert>
-        )}
-        {hasReturnWarning && (
-          <Alert severity="warning" sx={{ mt: 1, mx: 2, mb: 1 }}>
-            {t('nodeEditor.warningReturn', 'Обнаружен оператор "return". Последующие блоки могут быть недостижимы.')}
-          </Alert>
-        )}
-      </DialogContent>
-      <DialogActions sx={{ justifyContent: 'space-between', px: 2, py: 1.5 }}>
-        <Box>
-          <Tooltip title={t('nodeEditor.switchToGlobalTooltip', 'Открыть полный редактор файла')}>
-            <Button
-              onClick={handleSwitch}
-              startIcon={<OpenInNewIcon />}
-              variant="outlined"
-              size="small"
-              sx={{ mr: 1 }}
+
+          {/* Resizer */}
+          <Box
+            onMouseDown={onMouseDownResizer}
+            sx={{
+              cursor: 'col-resize',
+              '&:hover': { backgroundColor: theme.palette.action.hover },
+            }}
+          />
+
+          {/* Right: visual chat */}
+          <Box
+            sx={{
+              minWidth: 0, minHeight: 0,
+              display: 'flex', flexDirection: 'column',
+              bgcolor: theme.palette.background.default,
+              color: theme.palette.text.primary,
+              overflow: 'hidden',
+            }}
+          >
+            {/* scroll area */}
+            <Box id="chat" sx={{ flex: 1, minHeight: 0, overflowY: 'auto', p: 1.5 }}>
+              {dialogs.map((d, idx) => (
+                <React.Fragment key={idx}>
+                  <Box
+                    className="message"
+                    sx={{
+                      m: '10px 8px', p: '10px 12px', borderRadius: '10px', lineHeight: 1.35,
+                      border: `1px solid ${theme.palette.divider}`,
+                      bgcolor: bubbleColor(d.name, isDark),
+                      color: theme.palette.text.primary,
+                      outline: activeMsgIdx === idx ? `2px solid ${theme.palette.primary.main}` : 'none',
+                      boxShadow: theme.shadows[1],
+                      wordBreak: 'break-word',
+                    }}
+                    onClick={() => setActiveFromChat('dialog', idx, true)}
+                  >
+                    {d.name && (
+                      <Typography component="span" sx={{ fontWeight: 600, mr: 1, opacity: 0.85 }}>
+                        {d.name}:
+                      </Typography>
+                    )}
+                    <span dangerouslySetInnerHTML={{ __html: renderTextTags(d.text) }} />
+                  </Box>
+
+                  {idx < dialogs.length - 1 && (
+                    <Box
+                      className="separator"
+                      onClick={() => setActiveFromChat('sep', idx + 1, true)}
+                      sx={{ position: 'relative', height: 14, m: '4px 8px', cursor: 'pointer' }}
+                    >
+                      <Box
+                        sx={{
+                          position: 'absolute', left: 8, right: 8, top: 6, height: 2, borderRadius: 2,
+                          bgcolor: (activeSepIdx === idx + 1 && activeMsgIdx === null)
+                            ? theme.palette.primary.main
+                            : theme.palette.divider
+                        }}
+                      />
+                    </Box>
+                  )}
+                </React.Fragment>
+              ))}
+            </Box>
+
+            {/* Input */}
+            <Stack
+              direction="row"
+              spacing={1}
+              sx={{
+                borderTop: `1px solid ${theme.palette.divider}`,
+                p: 1,
+                bgcolor: theme.palette.background.paper,
+                pb: `max(8px, env(safe-area-inset-bottom))`,
+                flex: '0 0 auto',
+              }}
             >
-              {t('nodeEditor.switchToGlobal', 'Перейти в полный редактор')}
-            </Button>
-          </Tooltip>
-          {hasUnsavedChanges && (
-            <Tooltip title={t('nodeEditor.unsavedChangesTooltip', 'У вас есть несохраненные изменения')}>
-              <WarningAmberIcon color="warning" sx={{ verticalAlign: 'middle', ml: 1 }}/>
-            </Tooltip>
-          )}
+              <Select
+                size="small"
+                value={selectedCharacter}
+                onChange={(e) => setSelectedCharacter(e.target.value)}
+                sx={{
+                  minWidth: 180,
+                  height: `${CONTROL_HEIGHT}px`,
+                  '& .MuiOutlinedInput-root': { height: `${CONTROL_HEIGHT}px`, alignItems: 'center' },
+                  '& .MuiSelect-select': { display: 'flex', alignItems: 'center' },
+                }}
+              >
+                <MenuItem value="">Нарратор / Мысли</MenuItem>
+                {Array.from(new Set(dialogs.filter(d => d.name).map(d => d.name))).map((n) => (
+                  <MenuItem key={n} value={n}>{n}</MenuItem>
+                ))}
+              </Select>
+
+              <TextField
+                size="small"
+                fullWidth
+                placeholder="Введите реплику..."
+                value={newMsg}
+                onChange={(e) => setNewMsg(e.target.value)}
+                onKeyDown={onInputKeyDown}
+                multiline
+                minRows={1}
+                maxRows={4}
+                sx={{
+                  '& .MuiInputBase-root': {
+                    minHeight: `${CONTROL_HEIGHT}px`,
+                    alignItems: 'center',
+                  },
+                  '& .MuiInputBase-input': {
+                    py: 0.5,
+                  }
+                }}
+              />
+
+              <Button
+                variant="contained"
+                onClick={onSend}
+                sx={{ height: `${CONTROL_HEIGHT}px`, px: 2 }}
+              >
+                Вставить
+              </Button>
+            </Stack>
+          </Box>
         </Box>
-        <Box>
-          <Button
-            onClick={handleSave}
-            variant="contained"
-            color="primary"
-            disabled={isSaving || !hasUnsavedChanges}
-            startIcon={isSaving ? <CircularProgress size={20} color="inherit" /> : <SaveIcon />}
-            sx={{ mr: 1 }}
-          >
-            {t('nodeEditor.save', 'Сохранить')}
-          </Button>
-          <Button
-            onClick={handleDiscard}
-            variant="outlined"
-            color="secondary"
-            startIcon={<CancelIcon />}
-            disabled={isSaving}
-          >
-            {t('nodeEditor.discard', 'Отмена')}
-          </Button>
-        </Box>
-      </DialogActions>
-      {/* Confirmation Dialog for Discard/Switch */}
-      <Dialog
-        open={confirmDialog.open}
-        onClose={() => handleConfirmDialogClose(false)}
-      >
-        <DialogTitle>
-          {confirmDialog.type === 'discard'
-            ? t('nodeEditor.confirmDiscardTitle', 'Отменить изменения?')
-            : t('nodeEditor.confirmSwitchUnsavedTitle', 'Переключиться с несохранёнными изменениями?')}
-        </DialogTitle>
-        <DialogContent>
-          <Typography>
-            {confirmDialog.type === 'discard'
-              ? t('nodeEditor.confirmDiscard', 'Вы уверены, что хотите отменить несохраненные изменения?')
-              : t('nodeEditor.confirmSwitchUnsaved', 'У вас есть несохраненные изменения. Продолжить переключение на полный редактор?')}
-          </Typography>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => handleConfirmDialogClose(false)} color="secondary">
-            {t('common.cancel', 'Отмена')}
-          </Button>
-          <Button onClick={() => handleConfirmDialogClose(true)} color="primary" autoFocus>
-            {t('common.confirm', 'Подтвердить')}
-          </Button>
-        </DialogActions>
-      </Dialog>
+      </DialogContent>
     </Dialog>
   );
 };

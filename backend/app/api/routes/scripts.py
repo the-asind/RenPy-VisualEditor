@@ -11,6 +11,7 @@ import uuid
 from ...services.parser.renpy_parser import RenPyParser, ChoiceNode, ChoiceNodeType
 from ...services.database import DatabaseService
 from ...models.exceptions import ResourceNotFoundException, DatabaseException
+from ...services.websocket import connection_manager
 from ..routes.auth import get_current_user, oauth2_scheme
 
 # Create router
@@ -235,10 +236,16 @@ async def update_node_content(
         # Update the content
         content_lines[start_line:end_line+1] = new_content_lines
         new_content = "\n".join(content_lines)
-        
+
         # Save changes to database
         db_service.update_script(script_id, new_content, current_user["id"])
-        
+
+        # Parse updated script and broadcast new structure to collaborators
+        parsed_tree = parser.parse_text(new_content)
+        await connection_manager.broadcast_structure_update(
+            script_id, node_to_dict(parsed_tree)
+        )
+
         # Calculate new end line
         new_end_line = start_line + new_line_count - 1
         
@@ -315,13 +322,18 @@ async def insert_node(
         
         with open(temp_file, "w", encoding="utf-8") as f:
             f.write(new_content)
-        
+
         # Parse the updated file
         parsed_tree = await parser.parse_async(str(temp_file))
-        
+
         # Clean up temp file
         shutil.rmtree(temp_dir, ignore_errors=True)
-        
+
+        # Broadcast updated structure to other clients
+        await connection_manager.broadcast_structure_update(
+            script_id, node_to_dict(parsed_tree)
+        )
+
         return {
             "start_line": insertion_line,
             "end_line": insertion_line + len(new_content_lines) - 1,
