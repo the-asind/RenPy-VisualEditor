@@ -23,6 +23,10 @@ const TopBar: React.FC = () => {
   const [langAnchorEl, setLangAnchorEl] = useState<null | HTMLElement>(null);
   const handleLangMenu = (e: React.MouseEvent<HTMLElement>) => setLangAnchorEl(e.currentTarget);
   const handleLangClose = () => setLangAnchorEl(null);
+  const changeLanguage = (lng: string) => {
+    i18n.changeLanguage(lng);
+    handleLangClose();
+  };
   // Settings menu state
   const [settingsAnchorEl, setSettingsAnchorEl] = useState<null | HTMLElement>(null);
   const handleSettingsMenu = (e: React.MouseEvent<HTMLElement>) => setSettingsAnchorEl(e.currentTarget);
@@ -96,8 +100,11 @@ const TopBar: React.FC = () => {
             open={Boolean(langAnchorEl)}
             onClose={handleLangClose}
           >
-            <MenuItem onClick={() => { i18n.changeLanguage('en'); handleLangClose(); }}>{t('language.english')}</MenuItem>
-            <MenuItem onClick={() => { i18n.changeLanguage('ru'); handleLangClose(); }}>{t('language.russian')}</MenuItem>
+            <MenuItem onClick={() => changeLanguage('en')}>{t('language.english')}</MenuItem>
+            <MenuItem onClick={() => changeLanguage('ru')}>{t('language.russian')}</MenuItem>
+            <MenuItem onClick={() => changeLanguage('ja')}>{t('language.japanese')}</MenuItem>
+            <MenuItem onClick={() => changeLanguage('zh')}>{t('language.chinese')}</MenuItem>
+            <MenuItem onClick={() => changeLanguage('de')}>{t('language.german')}</MenuItem>
           </Menu>
           {!isAuthenticated && (
             <>
