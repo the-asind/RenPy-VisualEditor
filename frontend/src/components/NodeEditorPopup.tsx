@@ -7,6 +7,7 @@ import CloseIcon from '@mui/icons-material/Close';
 import SaveIcon from '@mui/icons-material/Save';
 import Editor, { OnMount } from '@monaco-editor/react';
 import type { Node } from 'reactflow';
+import { useTranslation } from 'react-i18next';
 
 // ---------- Props ----------
 interface NodeEditorPopupProps {
@@ -98,7 +99,7 @@ function bubbleColor(name: string, dark: boolean) {
 
 // ---------- Indentation helpers (strip + restore) ----------
 interface IndentInfo { indent: string; stripped: boolean; error?: string }
-function analyzeAndStripIndent(text: string): IndentInfo & { strippedText: string } {
+function analyzeAndStripIndent(text: string, t: (key: string, options?: any) => string): IndentInfo & { strippedText: string } {
   const lines = text.split(/\r?\n/);
   const firstIdx = lines.findIndex(l => l.trim().length > 0);
   if (firstIdx === -1) return { indent: '', stripped: false, strippedText: text };
@@ -114,7 +115,12 @@ function analyzeAndStripIndent(text: string): IndentInfo & { strippedText: strin
     if (!l.trim()) continue;
     const cur = (l.match(/^[\t ]*/) || [''])[0];
     if (cur.length < baseLen) {
-      return { indent: '', stripped: false, strippedText: text, error: `Найдена строка с меньшим отступом (строка ${i+1}). Отступы не изменены.` };
+      return {
+        indent: '',
+        stripped: false,
+        strippedText: text,
+        error: t('editor.indentError', { line: i + 1 })
+      };
     }
   }
 
@@ -138,6 +144,7 @@ const NodeEditorPopup: React.FC<NodeEditorPopupProps> = ({
 }) => {
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
+  const { t } = useTranslation();
 
   // ----- indentation memory -----
   const indentRef = useRef<IndentInfo>({ indent: '', stripped: false });
@@ -167,11 +174,11 @@ const NodeEditorPopup: React.FC<NodeEditorPopupProps> = ({
   // Prepare content on open: analyze indent and strip
   useEffect(() => {
     if (!open) return;
-    const a = analyzeAndStripIndent(initialContent || '');
+    const a = analyzeAndStripIndent(initialContent || '', t);
     indentRef.current = a;
     setIndentError(a.error ?? null);
     setValue(a.strippedText);
-  }, [initialContent, open]);
+  }, [initialContent, open, t]);
 
   // Re-parse & decorate
   const applyDecorations = useCallback(() => {
@@ -316,8 +323,11 @@ const NodeEditorPopup: React.FC<NodeEditorPopupProps> = ({
       else targetLine = ds[activeSepIdx as number].startLine;
       model.applyEdits([{ range: new mon.Range(targetLine, 1, targetLine, 1), text: `${lineText}\n`, forceMoveMarkers: true }]);
     }
-    setTimeout(fullRefresh, 0);
-  }, [activeMsgIdx, activeSepIdx, fullRefresh]);
+    const newValue = model.getValue();
+    setValue(newValue);
+    setDialogs(parseDialoguesWithMap(newValue));
+    applyDecorations();
+  }, [activeMsgIdx, activeSepIdx, applyDecorations]);
 
   // Visual input
   const [newMsg, setNewMsg] = useState('');
@@ -412,7 +422,7 @@ const NodeEditorPopup: React.FC<NodeEditorPopupProps> = ({
       }} />
 
       <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1, flex: '0 0 auto' }}>
-        Редактор узла — строки {startLine}–{endLine}
+        {t('editor.nodeEditor.title', { start: startLine, end: endLine })}
         <Box sx={{ flex: 1 }} />
         <Button
           variant="contained"
@@ -420,7 +430,7 @@ const NodeEditorPopup: React.FC<NodeEditorPopupProps> = ({
           startIcon={<SaveIcon />}
           onClick={handleSave}
         >
-          Сохранить
+          {t('button.save')}
         </Button>
         <IconButton onClick={onClose}><CloseIcon /></IconButton>
       </DialogTitle>
@@ -537,6 +547,7 @@ const NodeEditorPopup: React.FC<NodeEditorPopupProps> = ({
             <Stack
               direction="row"
               spacing={1}
+              alignItems="center"
               sx={{
                 borderTop: `1px solid ${theme.palette.divider}`,
                 p: 1,
@@ -556,7 +567,7 @@ const NodeEditorPopup: React.FC<NodeEditorPopupProps> = ({
                   '& .MuiSelect-select': { display: 'flex', alignItems: 'center' },
                 }}
               >
-                <MenuItem value="">Нарратор / Мысли</MenuItem>
+                <MenuItem value="">{t('editor.nodeEditor.narrator')}</MenuItem>
                 {Array.from(new Set(dialogs.filter(d => d.name).map(d => d.name))).map((n) => (
                   <MenuItem key={n} value={n}>{n}</MenuItem>
                 ))}
@@ -565,7 +576,7 @@ const NodeEditorPopup: React.FC<NodeEditorPopupProps> = ({
               <TextField
                 size="small"
                 fullWidth
-                placeholder="Введите реплику..."
+                placeholder={t('editor.nodeEditor.placeholder')}
                 value={newMsg}
                 onChange={(e) => setNewMsg(e.target.value)}
                 onKeyDown={onInputKeyDown}
@@ -574,7 +585,7 @@ const NodeEditorPopup: React.FC<NodeEditorPopupProps> = ({
                 maxRows={4}
                 sx={{
                   '& .MuiInputBase-root': {
-                    minHeight: `${CONTROL_HEIGHT}px`,
+                    height: `${CONTROL_HEIGHT}px`,
                     alignItems: 'center',
                   },
                   '& .MuiInputBase-input': {
@@ -588,7 +599,7 @@ const NodeEditorPopup: React.FC<NodeEditorPopupProps> = ({
                 onClick={onSend}
                 sx={{ height: `${CONTROL_HEIGHT}px`, px: 2 }}
               >
-                Вставить
+                {t('editor.nodeEditor.insert')}
               </Button>
             </Stack>
           </Box>

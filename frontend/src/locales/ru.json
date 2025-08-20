@@ -98,5 +98,10 @@
   "project.viewer": "Читатель",
   "project.addUserToProject": "Добавить пользователя в проект",
   "project.enterUsername": "Введите имя пользователя",
-  "project.noMembersYet": "Участников пока нет. Добавьте кого-нибудь для совместной работы!"
+  "project.noMembersYet": "Участников пока нет. Добавьте кого-нибудь для совместной работы!",
+  "editor.nodeEditor.title": "Редактор узла — строки {{start}}–{{end}}",
+  "editor.nodeEditor.narrator": "Нарратор / Мысли",
+  "editor.nodeEditor.placeholder": "Введите реплику...",
+  "editor.nodeEditor.insert": "Вставить",
+  "editor.indentError": "Найдена строка с меньшим отступом (строка {{line}}). Отступы не изменены."
 }

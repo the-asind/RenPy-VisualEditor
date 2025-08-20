@@ -96,5 +96,10 @@
   "project.viewer": "Viewer",
   "project.addUserToProject": "Add User to Project",
   "project.enterUsername": "Enter username",
-  "project.noMembersYet": "No members yet. Add someone to collaborate!"
+  "project.noMembersYet": "No members yet. Add someone to collaborate!",
+  "editor.nodeEditor.title": "Node Editor — lines {{start}}–{{end}}",
+  "editor.nodeEditor.narrator": "Narrator / Thoughts",
+  "editor.nodeEditor.placeholder": "Enter a reply...",
+  "editor.nodeEditor.insert": "Insert",
+  "editor.indentError": "Found a line with smaller indent (line {{line}}). Indents not changed."
 }
