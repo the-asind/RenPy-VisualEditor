@@ -197,7 +197,7 @@ const EditorPageInternal: React.FC = () => {
     if (!scriptId) {
       console.error("Cannot fetch node content without scriptId");
       
-      setSnackbarMessage(t('editor.errorNoScriptId', 'Не удалось получить ID скрипта'));
+      setSnackbarMessage(t('editor.errorNoScriptId'));
       setSnackbarSeverity('error');
       setSnackbarOpen(true);
       return;
@@ -208,7 +208,7 @@ const EditorPageInternal: React.FC = () => {
 
     if (startLine === undefined || endLine === undefined) {
       console.error("Node data is missing start_line or end_line:", node.data);
-      setSnackbarMessage(t('editor.errorMissingNodeLines', 'В данных узла отсутствуют строки начала или конца'));
+      setSnackbarMessage(t('editor.errorMissingNodeLines'));
       setSnackbarSeverity('error');
       setSnackbarOpen(true);
       return;
@@ -224,7 +224,7 @@ const EditorPageInternal: React.FC = () => {
       setEditorInitialContent(contentResponse.content);
     } catch (fetchError: any) {
       console.error("Error fetching node content:", fetchError);
-      setSnackbarMessage(fetchError.message || t('editor.errorFetchContent', 'Не удалось получить содержимое узла'));
+      setSnackbarMessage(fetchError.message || t('editor.errorFetchContent'));
       setSnackbarSeverity('error');
       setSnackbarOpen(true);
       setIsEditorPopupOpen(false); 
@@ -259,7 +259,7 @@ const EditorPageInternal: React.FC = () => {
       console.log("Script data fully reloaded after node edit");
     } catch (error) {
       console.error("Failed to reload script data:", error);
-      setSnackbarMessage(t('editor.errorReloadScript', 'Ошибка при обновлении визуального представления'));
+      setSnackbarMessage(t('editor.errorReloadScript'));
       setSnackbarSeverity('error');
       setSnackbarOpen(true);
     } finally {
@@ -270,7 +270,7 @@ const EditorPageInternal: React.FC = () => {
   
   const handleSaveNodeContent = useCallback(async (startLine: number, endLine: number, newContent: string) => {
     if (!scriptId || !selectedNodeForEdit) {
-      throw new Error(t('editor.errorSaveNoContext', 'Не удалось определить контекст для сохранения'));
+      throw new Error(t('editor.errorSaveNoContext'));
     }
 
     
@@ -281,7 +281,7 @@ const EditorPageInternal: React.FC = () => {
     console.log(`Saving node ${selectedNodeForEdit.id} (lines ${nodeStartLine}-${nodeEndLine})`);
     
     if (!nodeStartLine || !nodeEndLine) {
-      throw new Error(t('editor.errorMissingLines', 'Не удалось определить диапазон строк для редактирования'));
+      throw new Error(t('editor.errorMissingLines'));
     }    try {
       
       const updateResponse = await updateNodeContent(scriptId, nodeStartLine, nodeEndLine, newContent);
@@ -292,13 +292,13 @@ const EditorPageInternal: React.FC = () => {
       await reloadScriptData();
 
       
-      setSnackbarMessage(t('editor.saveSuccess', 'Изменения сохранены'));
+      setSnackbarMessage(t('editor.saveSuccess'));
       setSnackbarSeverity('success');
       setSnackbarOpen(true);
 
     } catch (saveError: any) {
       console.error("Error saving node content:", saveError);
-      setSnackbarMessage(saveError.message || t('editor.errorSaveGeneric', 'Ошибка при сохранении изменений'));
+      setSnackbarMessage(saveError.message || t('editor.errorSaveGeneric'));
       setSnackbarSeverity('error');
       setSnackbarOpen(true);
       throw saveError; 
@@ -308,7 +308,7 @@ const EditorPageInternal: React.FC = () => {
   
   const handleDownloadScript = useCallback(async () => {
     if (!scriptId || !fileName) {
-      setSnackbarMessage(t('editor.errorNoFileToSave', 'Нет файла для сохранения'));
+      setSnackbarMessage(t('editor.errorNoFileToSave'));
       setSnackbarSeverity('error');
       setSnackbarOpen(true);
       return;
@@ -338,12 +338,12 @@ const EditorPageInternal: React.FC = () => {
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
       
-      setSnackbarMessage(t('editor.saveToLocalSuccess', 'Файл успешно сохранен на диск'));
+      setSnackbarMessage(t('editor.saveToLocalSuccess'));
       setSnackbarSeverity('success');
       setSnackbarOpen(true);
     } catch (error: any) {
       console.error('Error downloading script:', error);
-      setSnackbarMessage(error.message || t('editor.saveToLocalError', 'Ошибка при сохранении файла'));
+      setSnackbarMessage(error.message || t('editor.saveToLocalError'));
       setSnackbarSeverity('error');
       setSnackbarOpen(true);
     } finally {
@@ -355,7 +355,7 @@ const EditorPageInternal: React.FC = () => {
   const handleSwitchToGlobalEditor = useCallback(() => {
     console.log("Switching to global editor...");
     
-    setSnackbarMessage(t('editor.globalEditorNotImplemented', 'Функция глобального редактора пока не реализована'));
+    setSnackbarMessage(t('editor.globalEditorNotImplemented'));
     setSnackbarSeverity('warning');
     setSnackbarOpen(true);
   }, [t]);
@@ -549,7 +549,7 @@ const EditorPageInternal: React.FC = () => {
 
     // Ensure we have a valid project before uploading
     if (!currentProject || !currentProject.id) {
-      setError(t('editor.noProjectSelected', 'No project selected. Please select a project first.'));
+      setError(t('editor.noProjectSelected'));
       return;
     }
 
@@ -578,7 +578,7 @@ const EditorPageInternal: React.FC = () => {
   }, [setNodes, setEdges, t, currentProject, captureViewport]);
   const handleCreateNew = useCallback(async () => {
     if (!currentProject || !currentProject.id) {
-      setError(t('editor.noProjectSelected', 'No project selected. Please select a project first.'));
+      setError(t('editor.noProjectSelected'));
       return;
     }
 
@@ -665,7 +665,7 @@ const EditorPageInternal: React.FC = () => {
       console.log(`Loaded project from URL: ${project.name} (${projectId})`);
     } catch (error) {
       console.error('Failed to load project from URL:', error);
-      setError(t('editor.projectNotFound', 'Project not found or access denied'));    } finally {
+      setError(t('editor.projectNotFound'));    } finally {
       setIsLoadingProject(false);
     }
   }, [t]);
@@ -673,7 +673,7 @@ const EditorPageInternal: React.FC = () => {
   // Check URL parameters and load project (required)
   useEffect(() => {
     if (!projectId) {
-      setError(t('editor.missingProjectId', 'Project ID is required. Please access editor from project page.'));
+      setError(t('editor.missingProjectId'));
       return;
     }    
     loadProjectFromUrl(projectId);
@@ -718,7 +718,7 @@ const EditorPageInternal: React.FC = () => {
       setParsedData(data.tree);
       console.log('Loaded existing script:', data);
     } catch (err: any) {
-      setError(err.detail || err.message || t('editor.loadScriptError', 'Failed to load script'));
+      setError(err.detail || err.message || t('editor.loadScriptError'));
       setScriptId(null);
       setFileName('');
       setParsedData(null);
@@ -775,9 +775,9 @@ const EditorPageInternal: React.FC = () => {
           </Box>          {scriptId && (
             <Box sx={{ display: 'flex', alignItems: 'center' }}>
               <Typography variant="subtitle2" color="text.secondary" sx={{ opacity: 0.7, mr: 2 }}>
-                Editing: {fileName} (ID: {scriptId})
+                {t('editor.editingFile', { fileName, scriptId })}
               </Typography>
-              <Tooltip title={t('editor.saveToLocal', 'Сохранить на диск')}>
+              <Tooltip title={t('editor.saveToLocal')}>
                 <Button
                   variant="outlined"
                   size="small"
@@ -785,7 +785,7 @@ const EditorPageInternal: React.FC = () => {
                   startIcon={<SaveIcon />}
                   sx={{ ml: 1 }}
                 >
-                  {t('editor.saveToLocal', 'Сохранить на диск')}
+                  {t('editor.saveToLocal')}
                 </Button>
               </Tooltip>
             </Box>
@@ -980,7 +980,7 @@ const EditorPageInternal: React.FC = () => {
               fontWeight: 500,
             }}
           >
-            {expandedDrawer ? 'Active Users' : 'Users'}
+            {expandedDrawer ? t('sidebar.activeUsers') : t('nav.users')}
           </Typography>
 
           <List sx={{ py: 0 }}>
@@ -1097,7 +1097,7 @@ const EditorPageInternal: React.FC = () => {
             >
               <CircularProgress size={60} sx={{ mb: 2 }} />
               <Typography variant="h6">
-                {t('editor.loadingProject', 'Loading project...')}
+                {t('editor.loadingProject')}
               </Typography>
             </Box>
           )}
@@ -1129,7 +1129,7 @@ const EditorPageInternal: React.FC = () => {
               {currentProject.scripts && currentProject.scripts.length > 0 && (
                 <Box sx={{ mb: 4, width: '100%' }}>
                   <Typography variant="h6" sx={{ mb: 2 }}>
-                    {t('editor.existingScripts', 'Existing Scripts')}
+                    {t('editor.existingScripts')}
                   </Typography>
                   <Grid container spacing={2}>
                     {currentProject.scripts.map((script: any) => (
@@ -1152,7 +1152,7 @@ const EditorPageInternal: React.FC = () => {
                               {script.filename}
                             </Typography>
                             <Typography variant="body2" color="text.secondary">
-                              {t('editor.clickToOpen', 'Click to open')}
+                              {t('editor.clickToOpen')}
                             </Typography>
                           </CardContent>
                         </Card>
@@ -1171,7 +1171,7 @@ const EditorPageInternal: React.FC = () => {
                     size="large"
                     sx={{ px: 3, py: 1.5 }}
                   >
-                    {t('editor.uploadScript', 'Upload Script')}
+                    {t('editor.uploadScript')}
                     <input
                       type="file"
                       accept=".rpy"
@@ -1187,7 +1187,7 @@ const EditorPageInternal: React.FC = () => {
                     onClick={handleCreateNew}
                     sx={{ px: 3, py: 1.5 }}
                   >
-                    {t('editor.createNewScript', 'Create New Script')}
+                    {t('editor.createNewScript')}
                   </Button>
                 </motion.div>
               </Box>
@@ -1214,8 +1214,8 @@ const EditorPageInternal: React.FC = () => {
                 {t('editor.getStarted')}
               </Typography>              <Typography variant="body1" sx={{ mb: 4, maxWidth: 500, textAlign: 'center' }}>
                 {currentProject ? 
-                  t('editor.workingWithProject', `Working with project: ${currentProject.name}`) :
-                  t('editor.loadingProject', 'Loading project...')
+                  t('editor.workingWithProject', { projectName: currentProject.name }) :
+                  t('editor.loadingProject')
                 }
               </Typography>
               
@@ -1223,7 +1223,7 @@ const EditorPageInternal: React.FC = () => {
               {currentProject?.scripts && currentProject.scripts.length > 0 && (
                 <Box sx={{ mb: 3, minWidth: 400 }}>
                   <Typography variant="h6" sx={{ mb: 2 }}>
-                    {t('editor.existingScripts', 'Existing Scripts')}
+                    {t('editor.existingScripts')}
                   </Typography>
                   <List sx={{ maxHeight: 200, overflow: 'auto' }}>
                     {currentProject.scripts.map((script) => (

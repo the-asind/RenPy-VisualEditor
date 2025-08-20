@@ -103,5 +103,21 @@
   "editor.nodeEditor.narrator": "Нарратор / Мысли",
   "editor.nodeEditor.placeholder": "Введите реплику...",
   "editor.nodeEditor.insert": "Вставить",
-  "editor.indentError": "Найдена строка с меньшим отступом (строка {{line}}). Отступы не изменены."
+  "editor.indentError": "Найдена строка с меньшим отступом (строка {{line}}). Отступы не изменены.",
+  "editor.errorNoScriptId": "Не удалось получить ID скрипта",
+  "editor.errorMissingNodeLines": "В данных узла отсутствуют строки начала или конца",
+  "editor.errorFetchContent": "Не удалось получить содержимое узла",
+  "editor.errorReloadScript": "Ошибка при обновлении визуального представления",
+  "editor.errorSaveNoContext": "Не удалось определить контекст для сохранения",
+  "editor.errorMissingLines": "Не удалось определить диапазон строк для редактирования",
+  "editor.saveSuccess": "Изменения сохранены",
+  "editor.errorSaveGeneric": "Ошибка при сохранении изменений",
+  "editor.errorNoFileToSave": "Нет файла для сохранения",
+  "editor.saveToLocalSuccess": "Файл успешно сохранен на диск",
+  "editor.saveToLocalError": "Ошибка при сохранении файла",
+  "editor.globalEditorNotImplemented": "Функция глобального редактора пока не реализована",
+  "editor.saveToLocal": "Сохранить на диск",
+  "editor.loading": "Загрузка...",
+  "editor.error": "Ошибка: {{error}}",
+  "editor.editingFile": "Редактирование: {{fileName}} (ID: {{scriptId}})"
 }

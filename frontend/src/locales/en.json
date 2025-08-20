@@ -101,5 +101,21 @@
   "editor.nodeEditor.narrator": "Narrator / Thoughts",
   "editor.nodeEditor.placeholder": "Enter a reply...",
   "editor.nodeEditor.insert": "Insert",
-  "editor.indentError": "Found a line with smaller indent (line {{line}}). Indents not changed."
+  "editor.indentError": "Found a line with smaller indent (line {{line}}). Indents not changed.",
+  "editor.errorNoScriptId": "Failed to get script ID",
+  "editor.errorMissingNodeLines": "Node data is missing start or end lines",
+  "editor.errorFetchContent": "Failed to fetch node content",
+  "editor.errorReloadScript": "Error updating visual representation",
+  "editor.errorSaveNoContext": "Failed to determine context for saving",
+  "editor.errorMissingLines": "Failed to determine line range for editing",
+  "editor.saveSuccess": "Changes saved",
+  "editor.errorSaveGeneric": "Error saving changes",
+  "editor.errorNoFileToSave": "No file to save",
+  "editor.saveToLocalSuccess": "File saved to disk successfully",
+  "editor.saveToLocalError": "Error saving file",
+  "editor.globalEditorNotImplemented": "Global editor functionality not yet implemented",
+  "editor.saveToLocal": "Save to disk",
+  "editor.loading": "Loading...",
+  "editor.error": "Error: {{error}}",
+  "editor.editingFile": "Editing: {{fileName}} (ID: {{scriptId}})"
 }
