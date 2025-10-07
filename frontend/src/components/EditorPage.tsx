@@ -33,7 +33,7 @@ import {  Box,
   Tab,
   Paper,
   Snackbar,
-  Alert,     
+  Alert,
   FormControl,
   InputLabel,
   Select,
@@ -43,7 +43,14 @@ import {  Box,
   Grid,
   Card,
   CardContent,
-  ListItemText
+  ListItemText,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
+  InputAdornment,
+  ListItemButton
 } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import MenuIcon from '@mui/icons-material/Menu';
@@ -54,6 +61,7 @@ import ViewComfyIcon from '@mui/icons-material/ViewComfy';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import SaveIcon from '@mui/icons-material/Save';
+import SearchIcon from '@mui/icons-material/Search';
 import 'reactflow/dist/style.css';
 import { motion } from 'framer-motion';
 
@@ -105,6 +113,23 @@ const EditorContainer = styled(Box)(({ theme }) => ({
   zIndex: 1, // Base layer
 }));
 
+interface ScriptNodeIndexEntry {
+  nodeId: string;
+  nodeType: string;
+  labelId: string | null;
+  labelName: string;
+  startLine: number | null;
+  endLine: number | null;
+}
+
+interface SearchResultEntry {
+  nodeId: string;
+  labelId: string | null;
+  labelName: string;
+  lineNumber: number;
+  text: string;
+}
+
 const EditorPageInternal: React.FC = () => {
   const { t } = useTranslation();
   const theme = useTheme();
@@ -133,7 +158,13 @@ const EditorPageInternal: React.FC = () => {
   const [drawerOpen, setDrawerOpen] = useState<boolean>(true); // Changed to true by default
   const [expandedDrawer, setExpandedDrawer] = useState<boolean>(false);
   const [sideMenuVisible, setSideMenuVisible] = useState<boolean>(true); // New state for completely hiding/showing the drawer
-  
+  const [isSearchDialogOpen, setIsSearchDialogOpen] = useState<boolean>(false);
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [pendingNodeFocus, setPendingNodeFocus] = useState<string | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const manualNodeFocusRef = useRef<boolean>(false);
+  const [scriptLines, setScriptLines] = useState<string[]>([]);
+
   // State for LabelBlocks and tabs
   const [labelBlocks, setLabelBlocks] = useState<Array<{ id: string, name: string }>>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
@@ -162,6 +193,154 @@ const EditorPageInternal: React.FC = () => {
   const [activeLabelName, setActiveLabelName] = useState<string | null>(null);
   // --- END ---
 
+  const scriptNodeIndex = React.useMemo<ScriptNodeIndexEntry[]>(() => {
+    if (!parsedData) {
+      return [];
+    }
+
+    const entries: ScriptNodeIndexEntry[] = [];
+
+    const traverse = (node: any, currentLabelId: string | null, currentLabelName: string): void => {
+      if (!node || typeof node !== 'object') {
+        return;
+      }
+
+      const nodeId: string = node.id ?? '';
+      const nodeType: string = node.node_type ?? '';
+      const labelName: string = node.label_name ?? currentLabelName ?? '';
+      let nextLabelId = currentLabelId;
+      let nextLabelName = currentLabelName;
+
+      if (nodeType === 'LabelBlock') {
+        nextLabelId = nodeId || node.label_name || null;
+        nextLabelName = node.label_name ?? currentLabelName ?? '';
+      }
+
+      const startLine = typeof node.start_line === 'number' ? node.start_line : null;
+      const endLine = typeof node.end_line === 'number' ? node.end_line : null;
+
+      if (nodeType === 'LabelBlock') {
+        entries.push({
+          nodeId: nodeId,
+          nodeType,
+          labelId: nextLabelId,
+          labelName: nextLabelName ?? '',
+          startLine,
+          endLine
+        });
+      } else if (nextLabelId) {
+        entries.push({
+          nodeId: nodeId,
+          nodeType,
+          labelId: nextLabelId,
+          labelName: nextLabelName ?? labelName ?? '',
+          startLine,
+          endLine
+        });
+      }
+
+      if (Array.isArray(node.children)) {
+        node.children.forEach((child: any) => traverse(child, nextLabelId ?? currentLabelId ?? null, nextLabelName ?? labelName ?? ''));
+      }
+
+      if (Array.isArray(node.false_branch)) {
+        node.false_branch.forEach((child: any) => traverse(child, nextLabelId ?? currentLabelId ?? null, nextLabelName ?? labelName ?? ''));
+      }
+    };
+
+    traverse(parsedData, null, '');
+
+    return entries;
+  }, [parsedData]);
+
+  const lineToNodeMap = React.useMemo(() => {
+    const map = new Map<number, ScriptNodeIndexEntry>();
+
+    const sortedEntries = [...scriptNodeIndex].sort((a, b) => {
+      const aLength = (a.endLine ?? a.startLine ?? 0) - (a.startLine ?? 0);
+      const bLength = (b.endLine ?? b.startLine ?? 0) - (b.startLine ?? 0);
+      return aLength - bLength;
+    });
+
+    sortedEntries.forEach(entry => {
+      if (entry.startLine === null || entry.endLine === null) {
+        return;
+      }
+      const start = Math.max(entry.startLine, 0);
+      const end = Math.max(entry.endLine, entry.startLine);
+
+      for (let i = start; i <= end; i += 1) {
+        if (!map.has(i)) {
+          map.set(i, entry);
+        }
+      }
+    });
+
+    return map;
+  }, [scriptNodeIndex]);
+
+  const searchResults = React.useMemo<SearchResultEntry[]>(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) {
+      return [];
+    }
+
+    const results: SearchResultEntry[] = [];
+
+    scriptLines.forEach((line, index) => {
+      if (!line || !line.toLowerCase().includes(query)) {
+        return;
+      }
+
+      const nodeEntry = lineToNodeMap.get(index);
+      if (!nodeEntry) {
+        return;
+      }
+
+      results.push({
+        nodeId: nodeEntry.nodeId,
+        labelId: nodeEntry.labelId,
+        labelName: nodeEntry.labelName,
+        lineNumber: index,
+        text: line.trim()
+      });
+    });
+
+    return results;
+  }, [lineToNodeMap, scriptLines, searchQuery]);
+
+  useEffect(() => {
+    if (isSearchDialogOpen && searchInputRef.current) {
+      searchInputRef.current.focus();
+    }
+  }, [isSearchDialogOpen]);
+
+  useEffect(() => {
+    if (!scriptId) {
+      setScriptLines([]);
+      return;
+    }
+
+    let isMounted = true;
+
+    const fetchScriptContent = async () => {
+      try {
+        const content = await getScriptContent(scriptId);
+        if (isMounted) {
+          setScriptLines(content.split(/\r?\n/));
+        }
+      } catch (fetchError) {
+        console.error('Failed to fetch script content for search:', fetchError);
+      }
+    };
+
+    fetchScriptContent();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [scriptId]);
+
   // Function to toggle the editor toolbar drawer
   const toggleDrawer = () => {
     setDrawerOpen(!drawerOpen);
@@ -174,6 +353,14 @@ const EditorPageInternal: React.FC = () => {
 
   const toggleDrawerExpansion = () => {
     setExpandedDrawer(!expandedDrawer);
+  };
+  const handleOpenSearchDialog = () => {
+    setIsSearchDialogOpen(true);
+  };
+
+  const handleCloseSearchDialog = () => {
+    setIsSearchDialogOpen(false);
+    setSearchQuery('');
   };
   // State for Node Editor Popup
   const [selectedNodeForEdit, setSelectedNodeForEdit] = useState<Node | null>(null);
@@ -244,9 +431,10 @@ const EditorPageInternal: React.FC = () => {
 
     setIsLoading(true);
     try {
-      
-      
+
+
       const scriptContent = await getScriptContent(scriptId);
+      setScriptLines(scriptContent.split(/\r?\n/));
       const blob = new Blob([scriptContent], { type: 'text/plain' });
       const file = new File([blob], fileName, { type: 'text/plain' });
         console.log("Re-parsing script to get updated nodes and edges");
@@ -504,6 +692,10 @@ const EditorPageInternal: React.FC = () => {
     const tabChanged = prevActiveTabId.current !== activeTabId;
     prevActiveTabId.current = activeTabId;
 
+    if (manualNodeFocusRef.current) {
+      return;
+    }
+
     if (tabChanged && activeTabId && reactFlowInstance) {
         setTimeout(() => {
           const currentNodes = reactFlowInstance.getNodes();
@@ -637,6 +829,67 @@ const EditorPageInternal: React.FC = () => {
   const toggleMinimap = () => {
     setShowMinimap(!showMinimap);
   };
+
+  const handleSearchResultClick = useCallback((result: SearchResultEntry) => {
+    if (!result || !result.nodeId) {
+      setIsSearchDialogOpen(false);
+      setSearchQuery('');
+      manualNodeFocusRef.current = false;
+      return;
+    }
+
+    manualNodeFocusRef.current = true;
+    setPendingNodeFocus(result.nodeId);
+
+    if (result.labelId) {
+      if (result.labelId !== activeTabId) {
+        const matchingLabel = labelBlocks.find((lb) => lb.id === result.labelId);
+        if (matchingLabel) {
+          setActiveLabelName(matchingLabel.name);
+        } else if (result.labelName) {
+          setActiveLabelName(result.labelName);
+        }
+        setActiveTabId(result.labelId);
+      } else if (result.labelName) {
+        setActiveLabelName(result.labelName);
+      }
+    }
+
+    setIsSearchDialogOpen(false);
+    setSearchQuery('');
+  }, [activeTabId, labelBlocks, setActiveTabId, setActiveLabelName]);
+
+  useEffect(() => {
+    if (!pendingNodeFocus || !reactFlowInstance) {
+      return;
+    }
+
+    const node = reactFlowInstance.getNode(pendingNodeFocus);
+    if (!node) {
+      return;
+    }
+
+    const width = typeof node.width === 'number'
+      ? node.width
+      : typeof node.style?.width === 'number'
+        ? node.style.width as number
+        : 250;
+
+    const height = typeof node.height === 'number'
+      ? node.height
+      : typeof node.style?.height === 'number'
+        ? node.style.height as number
+        : 50;
+
+    reactFlowInstance.setCenter(
+      node.position.x + width / 2,
+      node.position.y + height / 2,
+      { zoom: 1, duration: 800 }
+    );
+
+    manualNodeFocusRef.current = false;
+    setPendingNodeFocus(null);
+  }, [nodes, pendingNodeFocus, reactFlowInstance]);
 
   // Handle tab change with smooth centering
   const handleTabChange = (event: React.SyntheticEvent, newTabId: string) => {
@@ -895,17 +1148,35 @@ const EditorPageInternal: React.FC = () => {
             
             <Divider sx={{ my: 1, borderColor: theme.palette.divider }} />            {/* Zoom and Pan Controls */}
             <Box
-              sx={{ 
-                display: 'flex', 
+              sx={{
+                display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'stretch',
-                px: 1, 
+                px: 1,
                 mb: 2,
                 gap: 0.5
               }}
             >
+              <Tooltip title={t('editor.search')} placement="right">
+                <span>
+                  <Button
+                    onClick={handleOpenSearchDialog}
+                    variant="outlined"
+                    size="small"
+                    disabled={!scriptId || nodes.length === 0 || scriptLines.length === 0}
+                    sx={{
+                      justifyContent: expandedDrawer ? 'flex-start' : 'center',
+                      minWidth: expandedDrawer ? 'auto' : 40,
+                      width: '100%'
+                    }}
+                  >
+                    <SearchIcon fontSize="small" />
+                    {expandedDrawer && <Typography sx={{ ml: 1 }}>{t('editor.search')}</Typography>}
+                  </Button>
+                </span>
+              </Tooltip>
               <Tooltip title={t('editor.zoomIn')} placement="right">
-                <Button 
+                <Button
                   onClick={handleZoomIn}
                   variant="outlined"
                   size="small"
@@ -1365,6 +1636,56 @@ const EditorPageInternal: React.FC = () => {
           )}
         </EditorContainer>
       </Box>
+
+      <Dialog
+        open={isSearchDialogOpen}
+        onClose={handleCloseSearchDialog}
+        fullWidth
+        maxWidth="sm"
+      >
+        <DialogTitle>{t('editor.search')}</DialogTitle>
+        <DialogContent dividers>
+          <TextField
+            inputRef={searchInputRef}
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            placeholder={t('editor.searchPlaceholder')}
+            fullWidth
+            margin="dense"
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon fontSize="small" />
+                </InputAdornment>
+              ),
+            }}
+          />
+          <List sx={{ mt: 2, maxHeight: 320, overflowY: 'auto' }}>
+            {searchQuery.trim() && searchResults.length === 0 && (
+              <ListItem>
+                <ListItemText primary={t('editor.searchNoResults')} />
+              </ListItem>
+            )}
+            {searchResults.map((result) => (
+              <ListItemButton
+                key={`${result.nodeId}-${result.lineNumber}`}
+                onClick={() => handleSearchResultClick(result)}
+              >
+                <ListItemText
+                  primary={result.text}
+                  secondary={t('editor.searchResultInfo', {
+                    line: result.lineNumber + 1,
+                    label: result.labelName || t('editor.defaultLabel')
+                  })}
+                />
+              </ListItemButton>
+            ))}
+          </List>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseSearchDialog}>{t('button.close')}</Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Node Editor Popup */}
       {selectedNodeForEdit && scriptId && (
