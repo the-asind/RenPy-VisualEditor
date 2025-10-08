@@ -1,5 +1,6 @@
+import { createElement, type ReactNode } from 'react';
 import { MarkerType, Node, Edge } from 'reactflow';
-import { Theme } from '@mui/material/styles'; 
+import { Theme } from '@mui/material/styles';
 
 export interface FlowTransformerResult {
   initialNodes: Node[];
@@ -11,6 +12,8 @@ interface NodeData {
   node_type?: string;
   label_name?: string;
   content?: string;
+  start_line?: number;
+  end_line?: number;
   next_id?: string;
   condition?: string;
   children?: any[];
@@ -37,8 +40,88 @@ interface MenuOptionProcessResult {
 // --- Configuration ---
 const NODE_WIDTH = 250;
 const NODE_HEIGHT_BASE = 50; // Base height, can increase with content
+const ACTION_LINE_HEIGHT = 1.5;
 const VERTICAL_SPACING = 80;
 const HORIZONTAL_SPACING_BASE = 20;
+
+const ROOT_FONT_SIZE_PX = 16;
+const DEFAULT_FONT_SIZE_PX = 14;
+
+const parseCssSize = (
+  value: string | number | undefined,
+  relativeToPx: number
+): number | null => {
+  if (value === undefined || value === null) {
+    return null;
+  }
+
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null;
+  }
+
+  const trimmed = value.trim();
+
+  if (trimmed.length === 0) {
+    return null;
+  }
+
+  if (trimmed.endsWith('px')) {
+    const parsed = parseFloat(trimmed);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  if (trimmed.endsWith('rem')) {
+    const parsed = parseFloat(trimmed);
+    return Number.isFinite(parsed) ? parsed * ROOT_FONT_SIZE_PX : null;
+  }
+
+  if (trimmed.endsWith('em')) {
+    const parsed = parseFloat(trimmed);
+    return Number.isFinite(parsed) ? parsed * relativeToPx : null;
+  }
+
+  if (trimmed.endsWith('%')) {
+    const parsed = parseFloat(trimmed);
+    return Number.isFinite(parsed) ? (parsed / 100) * relativeToPx : null;
+  }
+
+  const numeric = Number(trimmed);
+  if (!Number.isNaN(numeric)) {
+    return numeric * relativeToPx;
+  }
+
+  return null;
+};
+
+const getActionFontSizePx = (theme: Theme): number => {
+  const body2FontSize = parseCssSize(theme.typography.body2?.fontSize, ROOT_FONT_SIZE_PX);
+  if (body2FontSize !== null) {
+    return body2FontSize;
+  }
+
+  const body1FontSize = parseCssSize(theme.typography.body1?.fontSize, ROOT_FONT_SIZE_PX);
+  if (body1FontSize !== null) {
+    return body1FontSize;
+  }
+
+  return DEFAULT_FONT_SIZE_PX;
+};
+
+const getActionLineHeightPx = (theme: Theme, fontSizePx?: number): number => {
+  const resolvedFontSizePx = fontSizePx ?? getActionFontSizePx(theme);
+
+  const body2LineHeight = parseCssSize(theme.typography.body2?.lineHeight, resolvedFontSizePx);
+  if (body2LineHeight !== null) {
+    return body2LineHeight;
+  }
+
+  const body1LineHeight = parseCssSize(theme.typography.body1?.lineHeight, resolvedFontSizePx);
+  if (body1LineHeight !== null) {
+    return body1LineHeight;
+  }
+
+  return ACTION_LINE_HEIGHT * resolvedFontSizePx;
+};
 
 // --- Helper Functions ---
 
@@ -52,10 +135,10 @@ const createEdgeId = (sourceId: string, targetId: string, label = ''): string =>
  * Creates a standard React Flow node object using theme colors.
  */
 const createFlowNode = (
-  id: string, 
-  type: string, 
-  data: NodeData, 
-  position: { x: number, y: number }, 
+  id: string,
+  type: string,
+  data: NodeData,
+  position: { x: number, y: number },
   theme: Theme,
   style: Record<string, any> = {}
 ): Node => {  // Determine node color from theme based on node_type
@@ -78,11 +161,50 @@ const createFlowNode = (
       break;
   }
 
+  const labelSource = typeof data.label_name === 'string' && data.label_name.length > 0
+    ? data.label_name
+    : typeof data.content === 'string'
+      ? data.content
+      : Array.isArray(data.content)
+        ? data.content.join('\n')
+        : `Node ${id}`;
+
+  const actionNodeFontSizePx = data.node_type === 'Action' ? getActionFontSizePx(theme) : null;
+  const actionNodeLineHeightPx = data.node_type === 'Action'
+    ? getActionLineHeightPx(theme, actionNodeFontSizePx ?? undefined)
+    : null;
+
+  const actionNodeLabel: ReactNode | null = data.node_type === 'Action'
+    ? createElement(
+        'div',
+        {
+          style: {
+            whiteSpace: 'pre',
+            lineHeight: actionNodeLineHeightPx ? `${actionNodeLineHeightPx}px` : undefined,
+            fontFamily: theme.typography.fontFamily,
+            fontSize: theme.typography.body2?.fontSize
+              || theme.typography.body1?.fontSize
+              || (actionNodeFontSizePx ? `${actionNodeFontSizePx}px` : undefined),
+            letterSpacing: theme.typography.body2?.letterSpacing,
+          },
+        },
+        labelSource
+      )
+    : null;
+
+  const actionNodeTypography = data.node_type === 'Action'
+    ? {
+        overflowWrap: 'normal' as const,
+        wordBreak: 'normal' as const,
+        lineHeight: actionNodeLineHeightPx ? `${actionNodeLineHeightPx}px` : undefined,
+      }
+    : {};
+
   return {
     id,
-    type: 'default', 
-    data: { 
-      label: data.label_name || data.content || `Node ${id}`, 
+    type: 'default',
+    data: {
+      label: actionNodeLabel ?? labelSource,
       originalData: { ...data }  // Store original data for reference
     },
     position,
@@ -94,9 +216,40 @@ const createFlowNode = (
       padding: '10px',
       textAlign: 'center',
       color: theme.palette.getContrastText(backgroundColor),
+      ...actionNodeTypography,
       ...style,
     }
   };
+};
+
+const getNodeHeight = (data: NodeData, theme: Theme): number => {
+  if (data?.node_type === 'Action') {
+    const actionFontSizePx = getActionFontSizePx(theme);
+    const actionLineHeightPx = getActionLineHeightPx(theme, actionFontSizePx);
+
+    const startLine = typeof data.start_line === 'number' ? data.start_line : null;
+    const endLine = typeof data.end_line === 'number' ? data.end_line : null;
+
+    if (startLine !== null && endLine !== null && endLine >= startLine) {
+      const lineCount = Math.max(1, endLine - startLine + 1);
+      return NODE_HEIGHT_BASE + (lineCount - 1) * actionLineHeightPx;
+    }
+
+    const contentSource = typeof data.content === 'string'
+      ? data.content
+      : Array.isArray(data.content)
+        ? data.content.join('\n')
+        : typeof data.label_name === 'string'
+          ? data.label_name
+          : '';
+
+    const normalizedContent = contentSource.replace(/\r\n/g, '\n');
+    const lineCount = Math.max(1, normalizedContent.split('\n').length);
+
+    return NODE_HEIGHT_BASE + (lineCount - 1) * actionLineHeightPx;
+  }
+
+  return NODE_HEIGHT_BASE;
 };
 
 /**
@@ -108,7 +261,7 @@ const createFlowEdge = (
   target: string,
   theme: Theme,
   label: string = '',
-  type: string = 'default',
+  type: string = 'vertical-turn',
   animated: boolean = false
 ): Edge => {
   const isEndBlockEdge = target.startsWith('end-');
@@ -160,8 +313,16 @@ function processNodeRecursive(
   const nodeId = apiNode.id || `node-${Math.random().toString(16).slice(2)}`;
   const nodeType = apiNode.node_type || 'Default';
   const nodePosition = { x: startX, y: startY };
+  const nodeHeight = getNodeHeight(apiNode, theme);
 
-  const flowNode = createFlowNode(nodeId, nodeType, apiNode, nodePosition, theme);
+  const flowNode = createFlowNode(
+    nodeId,
+    nodeType,
+    apiNode,
+    nodePosition,
+    theme,
+    { minHeight: nodeHeight, height: nodeHeight }
+  );
   let currentNodes: Node[] = [flowNode];
   let currentEdges: Edge[] = [];
 
@@ -175,7 +336,7 @@ function processNodeRecursive(
     ));
   }
 
-  let currentY = startY + NODE_HEIGHT_BASE + VERTICAL_SPACING;
+  let currentY = startY + nodeHeight + VERTICAL_SPACING;
   let childrenMinX = startX;
   let childrenMaxX = startX + NODE_WIDTH;
   const nextParentInfo = { id: nodeId, type: nodeType };
@@ -292,7 +453,7 @@ function processNodeRecursive(
       deltaX_false = targetFalseBranchMinX - falseBranchResult.horizontalBounds.minX;
       deltaX_true = targetTrueBranchMinX - trueBranchResult.horizontalBounds.minX;
     } else if (trueBranchExists) {
-      targetTrueBranchMinX = startX + NODE_WIDTH / 2 - trueWidth / 2;
+      targetTrueBranchMinX = startX + NODE_WIDTH + HORIZONTAL_SPACING_BASE;
       deltaX_true = targetTrueBranchMinX - trueBranchResult.horizontalBounds.minX;
     } else if (falseBranchExists) {
       targetFalseBranchMinX = startX + NODE_WIDTH / 2 - falseWidth / 2;
@@ -595,12 +756,15 @@ export const transformTreeToFlow = (
                      (blockResult.horizontalBounds.maxX - 
                       blockResult.horizontalBounds.minX - NODE_WIDTH) / 2;
       
+      const endNodeHeight = getNodeHeight({ label_name: 'End', node_type: 'EndBlock' }, theme);
+
       const endNode = createFlowNode(
         endNodeId,
         'EndBlock',
         { label_name: 'End', node_type: 'EndBlock' },
         { x: endNodeX, y: endNodeY },
-        theme
+        theme,
+        { minHeight: endNodeHeight, height: endNodeHeight }
       );
       
       // Add nodes
@@ -642,7 +806,7 @@ export const transformTreeToFlow = (
       allEdges = allEdges.concat(blockEdges);
       
       // Update Y position for next label block with spacing
-      currentY = endNodeY + NODE_HEIGHT_BASE + VERTICAL_SPACING * 3;
+      currentY = endNodeY + endNodeHeight + VERTICAL_SPACING * 3;
     }
     
     // Remove duplicate edges

@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useRef, useLayoutEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef, useLayoutEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import ReactFlow, {
@@ -70,6 +70,7 @@ import projectService, { Project } from '../services/projectService';
 import { transformTreeToFlow } from '../utils/flowTransformer';
 import NodeEditorPopup from './NodeEditorPopup';
 import './EditorPage.css';
+import VerticalTurnEdge from './edges/VerticalTurnEdge';
 
 // Width for the editor toolbar drawer
 const drawerWidth = 60;
@@ -176,6 +177,7 @@ const EditorPageInternal: React.FC = () => {
   const [isPanMode, setIsPanMode] = useState<boolean>(false);
   const [showMinimap, setShowMinimap] = useState<boolean>(true);
   const reactFlowInstance = useReactFlow(); // Add ReactFlow instance ref
+  const edgeTypes = useMemo(() => ({ 'vertical-turn': VerticalTurnEdge }), []);
 
   // --- NEW: viewport ref and helpers ---
   const savedViewportRef = useRef<Viewport | null>(null);
@@ -1617,8 +1619,9 @@ const EditorPageInternal: React.FC = () => {
                 onConnect={onConnect}
                 onNodeClick={onNodeClick}
                 className="flow-canvas"
+                edgeTypes={edgeTypes}
                 nodesConnectable={false}
-                nodesDraggable={true} 
+                nodesDraggable={true}
                 defaultViewport={{ x: 0, y: 0, zoom: zoom }}
                 minZoom={0.05} // Set minimum zoom to 0.05 (much more zoomed out)
                 maxZoom={10}   // Allow a bit more zoom in too
