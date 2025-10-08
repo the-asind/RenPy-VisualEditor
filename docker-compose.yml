@@ -21,10 +21,11 @@ services:
     ports:
       - "9000:9000"
     volumes:
-      - db-data:/data
+      - db-data:/app/database
     environment:
       - DATABASE_PATH=/app/database/renpy_editor.db
       - LOG_LEVEL=info
 
 volumes:
   db-data:
+    name: renpy_editor_db

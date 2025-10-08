@@ -19,3 +19,6 @@ debug_temp*
 .notes/
 .env
 s.sh
+
+# DB backups
+*.db.bak*
