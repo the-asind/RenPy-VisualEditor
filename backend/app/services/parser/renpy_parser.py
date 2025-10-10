@@ -179,14 +179,12 @@ class RenPyParser:
                     result, index = self._parse_block(index, 1, label_child_node)
                     if not result:
                         break
-                    label_child_node.label_name = self._get_label_name(label_child_node)
                     label_node.children.append(label_child_node)
                     index += 1
                     label_child_node = ChoiceNode(start_line=index, node_type=ChoiceNodeType.ACTION)
-                
+
                 # add check before label_child_node
                 if label_child_node.end_line >= label_child_node.start_line:
-                    label_child_node.label_name = self._get_label_name(label_child_node)
                     label_node.children.append(label_child_node)
                 
                 label_node.end_line = index - 1
@@ -270,16 +268,14 @@ class RenPyParser:
           # Parse the 'true' branch
         while True:
             temp, index = self._parse_block(index, current_indent + 1, statement_node)
-            
-            statement_node.label_name = self._get_label_name(statement_node)
-            
+
             # Only append nodes with valid content
             if statement_node.start_line <= statement_node.end_line:
                 current_node.children.append(statement_node)
-            
+
             if not temp:
                 break
-                
+
             index += 1
             statement_node = ChoiceNode(start_line=index, node_type=ChoiceNodeType.ACTION)
         
@@ -292,6 +288,9 @@ class RenPyParser:
             
             if not next_line.strip():
                 continue
+
+            if next_line_trimmed.startswith('#'):
+                continue
             
             if next_indent != current_indent:
                 index -= 1
@@ -301,10 +300,11 @@ class RenPyParser:
                 # Parse 'elif' as FalseBranch
                 false_branch_node = ChoiceNode(start_line=index)
                 index = self._parse_statement(index, false_branch_node, current_indent, ChoiceNodeType.IF_BLOCK)
-                false_branch_node.label_name = self._get_label_name(false_branch_node)
                 # Append to false_branch list instead of direct assignment
                 current_node.false_branch.append(false_branch_node)
-                return index              # Handle 'else' statement
+                return index
+
+            # Handle 'else' statement
             if self._is_else_statement(next_line_trimmed):
                 # Process all nodes in else branch
                 index += 1
@@ -313,7 +313,6 @@ class RenPyParser:
                     result, index = self._parse_block(index, current_indent + 1, false_branch_node)
                     
                     if false_branch_node.end_line >= false_branch_node.start_line:
-                        false_branch_node.label_name = self._get_label_name(false_branch_node)
                         current_node.false_branch.append(false_branch_node)
                     
                     if not result:

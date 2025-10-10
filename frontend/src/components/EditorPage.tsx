@@ -68,6 +68,8 @@ import { motion } from 'framer-motion';
 import { parseScript, createNewScript, getNodeContent, updateNodeContent, getScriptContent, loadExistingScript } from '../services/api';
 import projectService, { Project } from '../services/projectService';
 import { transformTreeToFlow } from '../utils/flowTransformer';
+import { visualNodeTypes } from './nodes/nodeTypes';
+import { buildNodeDisplayInfo } from '../utils/nodeMetadata';
 import NodeEditorPopup from './NodeEditorPopup';
 import './EditorPage.css';
 import VerticalTurnEdge from './edges/VerticalTurnEdge';
@@ -209,7 +211,8 @@ const EditorPageInternal: React.FC = () => {
 
       const nodeId: string = node.id ?? '';
       const nodeType: string = node.node_type ?? '';
-      const labelName: string = node.label_name ?? currentLabelName ?? '';
+      const displayInfo = buildNodeDisplayInfo(scriptLines, node);
+      const computedTitle: string = displayInfo.title || node.label_name || currentLabelName || '';
       let nextLabelId = currentLabelId;
       let nextLabelName = currentLabelName;
 
@@ -226,7 +229,7 @@ const EditorPageInternal: React.FC = () => {
           nodeId: nodeId,
           nodeType,
           labelId: nextLabelId,
-          labelName: nextLabelName ?? '',
+          labelName: nextLabelName ?? computedTitle ?? '',
           startLine,
           endLine
         });
@@ -235,7 +238,7 @@ const EditorPageInternal: React.FC = () => {
           nodeId: nodeId,
           nodeType,
           labelId: nextLabelId,
-          labelName: nextLabelName ?? labelName ?? '',
+          labelName: computedTitle,
           startLine,
           endLine
         });
@@ -253,7 +256,7 @@ const EditorPageInternal: React.FC = () => {
     traverse(parsedData, null, '');
 
     return entries;
-  }, [parsedData]);
+  }, [parsedData, scriptLines]);
 
   const lineToNodeMap = React.useMemo(() => {
     const map = new Map<number, ScriptNodeIndexEntry>();
@@ -660,7 +663,7 @@ const EditorPageInternal: React.FC = () => {
     if (parsedData && activeTabId) {
       try {
         // Pass activeTabId to transformTreeToFlow to filter nodes
-        const { initialNodes, initialEdges } = transformTreeToFlow(parsedData, theme, activeTabId);
+        const { initialNodes, initialEdges } = transformTreeToFlow(parsedData, theme, activeTabId, scriptLines);
         console.log("Generated Nodes for tab:", activeTabId, initialNodes);
         console.log("Generated Edges for tab:", activeTabId, initialEdges);
         setNodes(initialNodes);
@@ -676,7 +679,7 @@ const EditorPageInternal: React.FC = () => {
       setNodes([]);
       setEdges([]);
     }
-  }, [parsedData, activeTabId, setNodes, setEdges, theme]);
+  }, [parsedData, activeTabId, setNodes, setEdges, theme, scriptLines]);
 
   // Effect to handle viewport: restore on graph update, or center on tab change
   useLayoutEffect(() => {
@@ -1620,6 +1623,7 @@ const EditorPageInternal: React.FC = () => {
                 onNodeClick={onNodeClick}
                 className="flow-canvas"
                 edgeTypes={edgeTypes}
+                nodeTypes={visualNodeTypes}
                 nodesConnectable={false}
                 nodesDraggable={true}
                 defaultViewport={{ x: 0, y: 0, zoom: zoom }}
@@ -1634,7 +1638,19 @@ const EditorPageInternal: React.FC = () => {
               >
                 <Background color={theme.palette.divider} />
                 <Controls />
-                {showMinimap && <MiniMap nodeColor={(node) => theme.custom.nodeColors[node.data?.originalData?.node_type] || theme.custom.nodeColors.action} />}
+                {showMinimap && (
+                  <MiniMap
+                    nodeColor={(node) => {
+                      const customColors = theme.custom?.nodeColors ?? {};
+                      return (
+                        (node.data as any)?.display?.accentColor
+                        || customColors[node.data?.originalData?.node_type]
+                        || customColors.action
+                        || theme.palette.primary.main
+                      );
+                    }}
+                  />
+                )}
               </ReactFlow>            </Box>
           )}
         </EditorContainer>

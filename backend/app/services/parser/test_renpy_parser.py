@@ -105,16 +105,46 @@ async def test_parse_if_else_structure(sample_renpy_script):
             break
 
     assert if_node is not None
-    assert if_node.label_name.startswith("if condition")
-
     # Check if else branch exists - false_branch is now a list
     assert if_node.false_branch is not None
     assert len(if_node.false_branch) > 0
-    
+
     # Get the first node in the false branch
     false_branch_node = if_node.false_branch[0]
     assert false_branch_node.node_type == ChoiceNodeType.ACTION
-    assert "Что-то происходит, если условие не выполнено" in false_branch_node.label_name
+
+
+def test_comment_before_else_does_not_break_false_branch():
+    parser = RenPyParser()
+    script_content = textwrap.dedent(
+        """
+        label comment_if:
+            if condition:
+                "True branch"
+            # some note about the branch
+            else:
+                "False branch"
+        """
+    )
+
+    root_node = parser.parse_text(script_content)
+
+    label_node = next(
+        (child for child in root_node.children if child.label_name == "comment_if"),
+        None
+    )
+    assert label_node is not None
+
+    if_node = next(
+        (child for child in label_node.children if child.node_type == ChoiceNodeType.IF_BLOCK),
+        None
+    )
+    assert if_node is not None
+
+    assert isinstance(if_node.false_branch, list)
+    assert len(if_node.false_branch) == 1
+    false_branch_node = if_node.false_branch[0]
+    assert false_branch_node.node_type == ChoiceNodeType.ACTION
 
 @pytest.mark.asyncio
 async def test_label_with_only_actions_no_extra_node():

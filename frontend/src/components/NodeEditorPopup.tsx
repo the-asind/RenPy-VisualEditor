@@ -1,13 +1,24 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import {
   Dialog, DialogTitle, DialogContent, Box, Stack, IconButton, Button, TextField,
-  Select, MenuItem, Typography, GlobalStyles, useTheme, Alert
+  Select, MenuItem, Typography, GlobalStyles, useTheme, Alert, Chip
 } from '@mui/material';
+import type { SelectChangeEvent } from '@mui/material/Select';
 import CloseIcon from '@mui/icons-material/Close';
 import SaveIcon from '@mui/icons-material/Save';
 import Editor, { OnMount } from '@monaco-editor/react';
 import type { Node } from 'reactflow';
 import { useTranslation } from 'react-i18next';
+import { useAuth } from '../contexts/AuthContext';
+import {
+  formatMetadataComment,
+  NODE_METADATA_PREFIX,
+  NODE_STATUS_VALUES,
+  NODE_STATUS_TRANSLATION_KEYS,
+  parseMetadataComment,
+  type NodeStatus,
+  type NodeMetadata,
+} from '../utils/nodeMetadata';
 
 // ---------- Props ----------
 interface NodeEditorPopupProps {
@@ -137,6 +148,21 @@ function restoreIndent(text: string, indent: string): string {
   return out;
 }
 
+const extractMetadataFromContent = (content: string): NodeMetadata => {
+  const lines = content.split(/\r?\n/);
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      continue;
+    }
+    if (trimmed.startsWith(NODE_METADATA_PREFIX)) {
+      return parseMetadataComment(trimmed);
+    }
+    break;
+  }
+  return {};
+};
+
 const CONTROL_HEIGHT = 36; // px
 
 const NodeEditorPopup: React.FC<NodeEditorPopupProps> = ({
@@ -145,6 +171,23 @@ const NodeEditorPopup: React.FC<NodeEditorPopupProps> = ({
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
   const { t } = useTranslation();
+  const { user } = useAuth();
+  const currentUsername = user?.username?.trim() ?? '';
+  const isActionNode = (nodeData as any)?.data?.originalData?.node_type === 'Action';
+  const statusOptions = NODE_STATUS_VALUES;
+  const statusLabelMap = useMemo(() => {
+    const entries = statusOptions.map((status) => [
+      status,
+      t(NODE_STATUS_TRANSLATION_KEYS[status], status),
+    ] as const);
+    return Object.fromEntries(entries) as Record<NodeStatus, string>;
+  }, [statusOptions, t]);
+
+  const [nodeName, setNodeName] = useState<string>('');
+  const [nodeStatus, setNodeStatus] = useState<NodeStatus | ''>('');
+  const [nodeAuthor, setNodeAuthor] = useState<string>('');
+  const [isEditingName, setIsEditingName] = useState<boolean>(false);
+  const nameBeforeEditRef = useRef<string>('');
 
   // ----- indentation memory -----
   const indentRef = useRef<IndentInfo>({ indent: '', stripped: false });
@@ -179,6 +222,54 @@ const NodeEditorPopup: React.FC<NodeEditorPopupProps> = ({
     setIndentError(a.error ?? null);
     setValue(a.strippedText);
   }, [initialContent, open, t]);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    if (!isActionNode) {
+      setNodeName('');
+      setNodeStatus('');
+      setNodeAuthor('');
+      setIsEditingName(false);
+      return;
+    }
+
+    const metadata = extractMetadataFromContent(initialContent || '');
+    setNodeName(metadata.name ?? '');
+    setNodeStatus(metadata.status ?? '');
+    setNodeAuthor(metadata.author ?? '');
+    setIsEditingName(false);
+  }, [initialContent, isActionNode, open]);
+
+  const handleStartEditingName = useCallback(() => {
+    if (!isActionNode) {
+      return;
+    }
+    nameBeforeEditRef.current = nodeName;
+    setIsEditingName(true);
+  }, [isActionNode, nodeName]);
+
+  const handleNameKeyDown = useCallback((event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      setIsEditingName(false);
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      setNodeName(nameBeforeEditRef.current);
+      setIsEditingName(false);
+    }
+  }, []);
+
+  const handleNameBlur = useCallback(() => {
+    setIsEditingName(false);
+  }, []);
+
+  const handleStatusChange = useCallback((event: SelectChangeEvent<string>) => {
+    const value = event.target.value || '';
+    setNodeStatus(value as NodeStatus | '');
+  }, []);
 
   // Re-parse & decorate
   const applyDecorations = useCallback(() => {
@@ -389,13 +480,74 @@ const NodeEditorPopup: React.FC<NodeEditorPopupProps> = ({
 
   // ----- SAVE (restore indent & close) -----
   const handleSave = useCallback(async () => {
-    let finalText = value;
+    let updatedText = value;
+
+    if (isActionNode) {
+      const trimmedName = nodeName.trim();
+      const metadata: NodeMetadata = {};
+      if (trimmedName) {
+        metadata.name = trimmedName;
+      }
+      if (nodeStatus) {
+        metadata.status = nodeStatus;
+      }
+      const authorName = currentUsername || nodeAuthor.trim();
+      if (authorName) {
+        metadata.author = authorName;
+      }
+
+      const lines = value.split(/\r?\n/);
+      let insertionIndex = 0;
+      for (let i = 0; i < lines.length; i++) {
+        const trimmed = lines[i].trim();
+        if (!trimmed) {
+          continue;
+        }
+        insertionIndex = i;
+        if (trimmed.startsWith(NODE_METADATA_PREFIX)) {
+          lines.splice(i, 1);
+        }
+        break;
+      }
+
+      const metadataComment = formatMetadataComment(metadata);
+      if (metadataComment) {
+        lines.splice(insertionIndex, 0, metadataComment);
+      }
+
+      updatedText = lines.join('\n');
+
+      if (metadata.author) {
+        setNodeAuthor(metadata.author);
+      } else if (!authorName) {
+        setNodeAuthor('');
+      }
+
+      if (metadata.name !== undefined) {
+        setNodeName(metadata.name);
+      } else if (!trimmedName) {
+        setNodeName('');
+      }
+    }
+
+    let finalText = updatedText;
     if (indentRef.current.stripped) {
-      finalText = restoreIndent(value, indentRef.current.indent);
+      finalText = restoreIndent(updatedText, indentRef.current.indent);
     }
     await onSave(startLine, endLine, finalText);
     onClose();
-  }, [value, onSave, startLine, endLine, onClose]);
+  }, [
+    value,
+    onSave,
+    startLine,
+    endLine,
+    onClose,
+    isActionNode,
+    nodeName,
+    nodeStatus,
+    currentUsername,
+    nodeAuthor,
+  ]);
 
   // Styles
   const mode = theme.palette.mode;
@@ -421,18 +573,108 @@ const NodeEditorPopup: React.FC<NodeEditorPopupProps> = ({
         '.monaco-editor .renpy-glyph': { background: '#ffc', width: '4px' },
       }} />
 
-      <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1, flex: '0 0 auto' }}>
-        {t('editor.nodeEditor.title', { start: startLine, end: endLine })}
-        <Box sx={{ flex: 1 }} />
-        <Button
-          variant="contained"
-          size="small"
-          startIcon={<SaveIcon />}
-          onClick={handleSave}
-        >
-          {t('button.save')}
-        </Button>
-        <IconButton onClick={onClose}><CloseIcon /></IconButton>
+      <DialogTitle sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, flex: '0 0 auto' }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Typography variant="h6">
+            {t('editor.nodeEditor.title', { start: startLine, end: endLine })}
+          </Typography>
+          <Box sx={{ flex: 1 }} />
+          <Button
+            variant="contained"
+            size="small"
+            startIcon={<SaveIcon />}
+            onClick={handleSave}
+          >
+            {t('button.save')}
+          </Button>
+          <IconButton onClick={onClose}><CloseIcon /></IconButton>
+        </Box>
+
+        {isActionNode && (
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              gap: 1.5,
+            }}
+          >
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
+              <Typography variant="caption" color="text.secondary">
+                {t('editor.nodeEditor.nodeName', 'Node name')}
+              </Typography>
+              {isEditingName ? (
+                <TextField
+                  variant="standard"
+                  value={nodeName}
+                  onChange={(event) => setNodeName(event.target.value)}
+                  onBlur={handleNameBlur}
+                  onKeyDown={handleNameKeyDown}
+                  autoFocus
+                  sx={{ minWidth: 160 }}
+                />
+              ) : (
+                <Typography
+                  variant="subtitle1"
+                  sx={{
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    maxWidth: 240,
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                  }}
+                  onClick={handleStartEditingName}
+                >
+                  {nodeName || t('editor.nodeEditor.unnamed', 'Unnamed node')}
+                </Typography>
+              )}
+            </Box>
+
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+              <Typography variant="caption" color="text.secondary">
+                {t('editor.nodeEditor.statusPlaceholder', 'Status')}
+              </Typography>
+              <Select
+                size="small"
+                value={nodeStatus || ''}
+                displayEmpty
+                onChange={handleStatusChange}
+                renderValue={(value) => {
+                  if (!value) {
+                    return t('editor.nodeEditor.noStatus', 'No status');
+                  }
+                  const status = value as NodeStatus;
+                  return statusLabelMap[status] ?? status;
+                }}
+                sx={{ minWidth: 160 }}
+              >
+                <MenuItem value="">
+                  <Typography variant="body2" color="text.secondary">
+                    {t('editor.nodeEditor.noStatus', 'No status')}
+                  </Typography>
+                </MenuItem>
+                {statusOptions.map((status) => (
+                  <MenuItem key={status} value={status}>
+                    {statusLabelMap[status] ?? status}
+                  </MenuItem>
+                ))}
+              </Select>
+            </Box>
+
+            {nodeAuthor && (
+              <Chip
+                size="small"
+                variant="outlined"
+                label={`${t('editor.nodeEditor.authorChipPrefix', 'by')} ${nodeAuthor}`}
+                sx={{
+                  borderColor: theme.palette.divider,
+                  color: theme.palette.text.secondary,
+                }}
+              />
+            )}
+          </Box>
+        )}
       </DialogTitle>
 
       {indentError && (

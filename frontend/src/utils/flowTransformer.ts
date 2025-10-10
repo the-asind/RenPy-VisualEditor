@@ -1,24 +1,36 @@
 import { createElement, type ReactNode } from 'react';
 import { MarkerType, Node, Edge } from 'reactflow';
-import { Theme } from '@mui/material/styles';
+import { Theme, alpha } from '@mui/material/styles';
+import type { ParsedNodeData } from './parsedNodeTypes';
+import {
+  buildNodeDisplayInfo,
+  extractNodeMetadata,
+  type NodeMetadata,
+  type NodeStatus,
+} from './nodeMetadata';
 
 export interface FlowTransformerResult {
   initialNodes: Node[];
   initialEdges: Edge[];
 }
 
-interface NodeData {
-  id?: string;
-  node_type?: string;
-  label_name?: string;
-  content?: string;
-  start_line?: number;
-  end_line?: number;
-  next_id?: string;
-  condition?: string;
-  children?: any[];
-  false_branch?: any[];
-  [key: string]: any;
+export type VisualNodeType = 'label' | 'action' | 'if' | 'menu' | 'menuOption' | 'end';
+
+export interface FlowNodeDisplay {
+  title: string;
+  summary: string;
+  status?: NodeStatus;
+  author?: string;
+  type: VisualNodeType;
+  typeLabel: string;
+  accentColor: string;
+}
+
+export interface FlowNodeDataPayload {
+  label?: ReactNode;
+  originalData: ParsedNodeData;
+  display: FlowNodeDisplay;
+  metadata?: NodeMetadata;
 }
 
 interface NodeProcessResult {
@@ -32,16 +44,16 @@ interface NodeProcessResult {
 }
 
 interface MenuOptionProcessResult {
-  node: NodeData;
+  node: ParsedNodeData;
   result: NodeProcessResult;
   width: number;
 }
 
 // --- Configuration ---
-const NODE_WIDTH = 250;
+const NODE_WIDTH = 320;
 const NODE_HEIGHT_BASE = 50; // Base height, can increase with content
 const ACTION_LINE_HEIGHT = 1.5;
-const VERTICAL_SPACING = 80;
+const VERTICAL_SPACING = 140;
 const HORIZONTAL_SPACING_BASE = 20;
 
 const ROOT_FONT_SIZE_PX = 16;
@@ -136,39 +148,13 @@ const createEdgeId = (sourceId: string, targetId: string, label = ''): string =>
  */
 const createFlowNode = (
   id: string,
-  type: string,
-  data: NodeData,
-  position: { x: number, y: number },
+  data: ParsedNodeData,
+  position: { x: number; y: number },
   theme: Theme,
-  style: Record<string, any> = {}
-): Node => {  // Determine node color from theme based on node_type
-  let backgroundColor = theme.custom?.nodeColors?.action || theme.palette.primary.main;
-  switch (data.node_type) {
-    case 'LabelBlock':
-      backgroundColor = theme.custom?.nodeColors?.label || theme.palette.primary.main;
-      break;
-    case 'IfBlock':
-      backgroundColor = theme.custom?.nodeColors?.if || theme.palette.success.main;
-      break;
-    case 'MenuBlock':
-      backgroundColor = theme.custom?.nodeColors?.menu || theme.palette.error.main;
-      break;
-    case 'MenuOption':
-      backgroundColor = theme.custom?.nodeColors?.menuOption || theme.palette.warning.main;
-      break;
-    case 'EndBlock':
-      backgroundColor = theme.custom?.nodeColors?.end || theme.palette.grey[500];
-      break;
-  }
-
-  const labelSource = typeof data.label_name === 'string' && data.label_name.length > 0
-    ? data.label_name
-    : typeof data.content === 'string'
-      ? data.content
-      : Array.isArray(data.content)
-        ? data.content.join('\n')
-        : `Node ${id}`;
-
+  style: Record<string, any> = {},
+  display: FlowNodeDisplay,
+  metadata?: NodeMetadata,
+): Node => {
   const actionNodeFontSizePx = data.node_type === 'Action' ? getActionFontSizePx(theme) : null;
   const actionNodeLineHeightPx = data.node_type === 'Action'
     ? getActionLineHeightPx(theme, actionNodeFontSizePx ?? undefined)
@@ -188,41 +174,169 @@ const createFlowNode = (
             letterSpacing: theme.typography.body2?.letterSpacing,
           },
         },
-        labelSource
+        display.summary,
       )
     : null;
 
-  const actionNodeTypography = data.node_type === 'Action'
-    ? {
-        overflowWrap: 'normal' as const,
-        wordBreak: 'normal' as const,
-        lineHeight: actionNodeLineHeightPx ? `${actionNodeLineHeightPx}px` : undefined,
-      }
-    : {};
-
   return {
     id,
-    type: 'default',
+    type: 'visualNode',
     data: {
-      label: actionNodeLabel ?? labelSource,
-      originalData: { ...data }  // Store original data for reference
+      label: actionNodeLabel ?? display.summary,
+      originalData: { ...data },
+      display,
+      metadata,
     },
     position,
     style: {
-      background: backgroundColor,
       width: NODE_WIDTH,
-      border: `1px solid ${theme.palette.divider}`,
-      borderRadius: '4px',
-      padding: '10px',
-      textAlign: 'center',
-      color: theme.palette.getContrastText(backgroundColor),
-      ...actionNodeTypography,
+      background: 'transparent',
+      border: 'none',
+      padding: 0,
       ...style,
-    }
+    },
   };
 };
 
-const getNodeHeight = (data: NodeData, theme: Theme): number => {
+const resolveVisualType = (nodeType?: string): VisualNodeType => {
+  switch (nodeType) {
+    case 'LabelBlock':
+      return 'label';
+    case 'IfBlock':
+      return 'if';
+    case 'MenuBlock':
+      return 'menu';
+    case 'MenuOption':
+      return 'menuOption';
+    case 'EndBlock':
+      return 'end';
+    default:
+      return 'action';
+  }
+};
+
+const resolveTypeLabel = (type: VisualNodeType): string => {
+  switch (type) {
+    case 'label':
+      return 'Label';
+    case 'if':
+      return 'If';
+    case 'menu':
+      return 'Menu';
+    case 'menuOption':
+      return 'Choice';
+    case 'end':
+      return 'End';
+    default:
+      return 'Action';
+  }
+};
+
+const ACTION_ACCENT_COLORS = [
+  '#4C6EF5',
+  '#F76707',
+  '#12B886',
+  '#BE4BDB',
+  '#FD7E14',
+  '#228BE6',
+  '#FF6B6B',
+  '#15AABF',
+];
+
+const stringToIndex = (input: string): number => {
+  let hash = 0;
+  for (let i = 0; i < input.length; i += 1) {
+    hash = (hash << 5) - hash + input.charCodeAt(i);
+    hash |= 0; // Convert to 32-bit integer
+  }
+  return Math.abs(hash);
+};
+
+const resolveActionAccentColor = (node: ParsedNodeData, theme: Theme): string => {
+  const colors = theme.custom?.nodeColors ?? {};
+  if (colors.action) {
+    return colors.action;
+  }
+
+  const reference = typeof node.label_name === 'string' && node.label_name.trim().length > 0
+    ? node.label_name.trim()
+    : typeof node.id === 'string'
+      ? node.id
+      : typeof node.id === 'number'
+        ? node.id.toString()
+        : node.node_type || 'action';
+
+  const index = stringToIndex(reference) % ACTION_ACCENT_COLORS.length;
+  return ACTION_ACCENT_COLORS[index];
+};
+
+const resolveAccentColor = (type: VisualNodeType, theme: Theme, node: ParsedNodeData): string => {
+  const colors = theme.custom?.nodeColors ?? {};
+  switch (type) {
+    case 'label':
+      return colors.label || theme.palette.primary.main;
+    case 'if':
+      return colors.if || theme.palette.success.main;
+    case 'menu':
+      return colors.menu || theme.palette.info.main;
+    case 'menuOption':
+      return colors.menuOption || theme.palette.warning.main;
+    case 'end':
+      return colors.end || theme.palette.grey[500];
+    default:
+      return resolveActionAccentColor(node, theme);
+  }
+};
+
+const buildDisplayForNode = (
+  node: ParsedNodeData,
+  scriptLines: string[],
+  theme: Theme,
+): { display: FlowNodeDisplay; metadata?: NodeMetadata } => {
+  const visualType = resolveVisualType(node.node_type);
+  const baseInfo = buildNodeDisplayInfo(scriptLines, node);
+  const metadata = visualType === 'action' ? extractNodeMetadata(scriptLines, node) : undefined;
+
+  let title = baseInfo.title?.trim() || '';
+  let summary = baseInfo.summary?.trim() || '';
+
+  if (visualType === 'label') {
+    title = node.label_name || title || 'Label';
+    summary = node.label_name || summary || title;
+  } else if (visualType === 'menuOption') {
+    const optionTitle = node.label_name || title;
+    title = optionTitle || 'Choice';
+    summary = summary || optionTitle || 'Choice';
+  } else if (visualType === 'end') {
+    title = 'End';
+    summary = 'End';
+  } else if (visualType === 'if') {
+    title = summary.split('\n')[0] || 'If';
+  }
+
+  if (!title) {
+    title = summary.split('\n')[0] || node.node_type || 'Node';
+  }
+
+  if (!summary) {
+    summary = title;
+  }
+
+  return {
+    display: {
+      title,
+      summary,
+      status: visualType === 'action' ? metadata?.status : undefined,
+      author: visualType === 'action' ? metadata?.author : undefined,
+      type: visualType,
+      typeLabel: resolveTypeLabel(visualType),
+      accentColor: resolveAccentColor(visualType, theme, node),
+    },
+    metadata,
+  };
+};
+
+const getNodeHeight = (data: ParsedNodeData, theme: Theme): number => {
   if (data?.node_type === 'Action') {
     const actionFontSizePx = getActionFontSizePx(theme);
     const actionLineHeightPx = getActionLineHeightPx(theme, actionFontSizePx);
@@ -255,6 +369,49 @@ const getNodeHeight = (data: NodeData, theme: Theme): number => {
 /**
  * Creates a standard React Flow edge object.
  */
+type EdgeLabelVariant = 'if-true' | 'if-false';
+
+interface CreateEdgeOptions {
+  labelVariant?: EdgeLabelVariant;
+  hideLabel?: boolean;
+}
+
+const resolveLabelStyles = (
+  variant: EdgeLabelVariant | undefined,
+  theme: Theme
+): { background: string; color: string; borderColor?: string } => {
+  if (variant === 'if-true') {
+    const base = theme.palette.success.main;
+    return {
+      background: alpha(base, theme.palette.mode === 'dark' ? 0.35 : 0.2),
+      color: theme.palette.success.contrastText
+        || (theme.palette.mode === 'dark' ? theme.palette.success.light : theme.palette.success.dark),
+      borderColor: alpha(base, theme.palette.mode === 'dark' ? 0.6 : 0.35),
+    };
+  }
+
+  if (variant === 'if-false') {
+    const base = theme.palette.error.main;
+    return {
+      background: alpha(base, theme.palette.mode === 'dark' ? 0.35 : 0.2),
+      color: theme.palette.error.contrastText
+        || (theme.palette.mode === 'dark' ? theme.palette.error.light : theme.palette.error.dark),
+      borderColor: alpha(base, theme.palette.mode === 'dark' ? 0.6 : 0.35),
+    };
+  }
+
+  const neutral = theme.palette.mode === 'dark'
+    ? alpha(theme.palette.common.black, 0.5)
+    : theme.palette.common.white;
+  return {
+    background: neutral,
+    color: theme.palette.text.primary,
+    borderColor: theme.palette.mode === 'dark'
+      ? alpha(theme.palette.common.white, 0.12)
+      : alpha(theme.palette.common.black, 0.08),
+  };
+};
+
 const createFlowEdge = (
   id: string,
   source: string,
@@ -262,19 +419,23 @@ const createFlowEdge = (
   theme: Theme,
   label: string = '',
   type: string = 'vertical-turn',
-  animated: boolean = false
+  animated: boolean = false,
+  options: CreateEdgeOptions = {}
 ): Edge => {
   const isEndBlockEdge = target.startsWith('end-');
+  const hasLabel = Boolean(label && label.trim().length > 0 && !options.hideLabel);
+  const labelStyles = hasLabel ? resolveLabelStyles(options.labelVariant, theme) : null;
 
   return {
     id,
     source,
     target,
-    label,
+    label: hasLabel ? label : undefined,
     type,
-    animated,    style: {
+    animated,
+    style: {
       strokeWidth: 2,
-      stroke: isEndBlockEdge 
+      stroke: isEndBlockEdge
         ? theme.custom?.nodeColors?.end || theme.palette.divider
         : theme.custom?.edgeColor || theme.palette.divider,
     },
@@ -282,10 +443,28 @@ const createFlowEdge = (
       type: MarkerType.ArrowClosed,
       width: 15,
       height: 15,
-      color: isEndBlockEdge 
+      color: isEndBlockEdge
         ? theme.custom?.nodeColors?.end || theme.palette.divider
         : theme.custom?.edgeColor || theme.palette.divider,
     },
+    ...(labelStyles
+      ? {
+          labelBgPadding: [4, 8],
+          labelBgBorderRadius: 999,
+          labelStyle: {
+            fill: labelStyles.color,
+            fontWeight: 700,
+            fontSize: 12,
+            textTransform: options.labelVariant ? 'uppercase' : 'none',
+            letterSpacing: options.labelVariant ? 0.5 : undefined,
+          },
+          labelBgStyle: {
+            fill: labelStyles.background,
+            stroke: labelStyles.borderColor,
+            strokeWidth: labelStyles.borderColor ? 1 : undefined,
+          },
+        }
+      : {}),
   };
 };
 
@@ -293,8 +472,9 @@ const createFlowEdge = (
  * Recursively processes the API node tree to generate React Flow nodes and edges.
  */
 function processNodeRecursive(
-  apiNode: NodeData,
+  apiNode: ParsedNodeData,
   theme: Theme,
+  scriptLines: string[],
   parentInfo: { id: string, type: string } | null = null,
   startX: number = 0,
   startY: number = 0,
@@ -314,14 +494,16 @@ function processNodeRecursive(
   const nodeType = apiNode.node_type || 'Default';
   const nodePosition = { x: startX, y: startY };
   const nodeHeight = getNodeHeight(apiNode, theme);
+  const { display, metadata } = buildDisplayForNode(apiNode, scriptLines, theme);
 
   const flowNode = createFlowNode(
     nodeId,
-    nodeType,
     apiNode,
     nodePosition,
     theme,
-    { minHeight: nodeHeight, height: nodeHeight }
+    { minHeight: nodeHeight, height: nodeHeight },
+    display,
+    metadata,
   );
   let currentNodes: Node[] = [flowNode];
   let currentEdges: Edge[] = [];
@@ -362,7 +544,7 @@ function processNodeRecursive(
         const parentInfoForTrue = { id: lastTrueNodeId, type: lastTrueNodeType };
         
         const trueNodeResult = processNodeRecursive(
-          trueNode, theme, parentInfoForTrue, startX, currentTrueY, 
+          trueNode, theme, scriptLines, parentInfoForTrue, startX, currentTrueY,
           level + 1, nextTrueNodeId
         );
         
@@ -404,7 +586,7 @@ function processNodeRecursive(
         const parentInfoForFalse = { id: lastFalseNodeId, type: lastFalseNodeType };
         
         const falseNodeResult = processNodeRecursive(
-          falseNode, theme, parentInfoForFalse, startX, currentFalseY, 
+          falseNode, theme, scriptLines, parentInfoForFalse, startX, currentFalseY,
           level + 1, nextFalseNodeId
         );
         
@@ -480,7 +662,10 @@ function processNodeRecursive(
         nodeId,
         firstTrueNodeId as string,
         theme,
-        'True'
+        'True',
+        'vertical-turn',
+        false,
+        { labelVariant: 'if-true' }
       ));
       
       trueBranchResult.edges = trueBranchResult.edges.filter(
@@ -492,7 +677,10 @@ function processNodeRecursive(
         nodeId,
         nextSequentialNodeId,
         theme,
-        'True'
+        'True',
+        'vertical-turn',
+        false,
+        { labelVariant: 'if-true' }
       ));
     }
 
@@ -503,7 +691,10 @@ function processNodeRecursive(
         nodeId,
         firstFalseNodeId as string,
         theme,
-        'False'
+        'False',
+        'vertical-turn',
+        false,
+        { labelVariant: 'if-false' }
       ));
       
       falseBranchResult.edges = falseBranchResult.edges.filter(
@@ -515,7 +706,10 @@ function processNodeRecursive(
         nodeId,
         nextSequentialNodeId,
         theme,
-        'False'
+        'False',
+        'vertical-turn',
+        false,
+        { labelVariant: 'if-false' }
       ));
     }
 
@@ -549,7 +743,7 @@ function processNodeRecursive(
       // Process each option
       for (const optionNode of apiNode.children) {
         const optionResult = processNodeRecursive(
-          optionNode, theme, nextParentInfo, tempX, currentY, level + 1, nextSequentialNodeId
+          optionNode, theme, scriptLines, nextParentInfo, tempX, currentY, level + 1, nextSequentialNodeId
         );
         
         optionResults.push({
@@ -589,7 +783,10 @@ function processNodeRecursive(
           nodeId,
           optionStartNodeId,
           theme,
-          optionNode.label_name || `Option ${optionNode.id}`
+          '',
+          'vertical-turn',
+          false,
+          { hideLabel: true }
         ));
         
         // Remove default edge possibly created by the child's recursive call
@@ -632,7 +829,7 @@ function processNodeRecursive(
       const parentInfoForChild = { id: lastChildNodeId, type: lastChildNodeType };
 
       const childResult = processNodeRecursive(
-        childNode, theme, parentInfoForChild, startX, currentY, level, nextChildId
+        childNode, theme, scriptLines, parentInfoForChild, startX, currentY, level, nextChildId
       );
       
       currentNodes = currentNodes.concat(childResult.nodes);
@@ -677,9 +874,10 @@ function processNodeRecursive(
  * Processes the API tree and returns React Flow compatible nodes and edges.
  */
 export const transformTreeToFlow = (
-  parsedData: any, 
-  theme: Theme, 
-  activeTabId?: string | null
+  parsedData: any,
+  theme: Theme,
+  activeTabId: string | null = null,
+  scriptLines: string[] = []
 ): FlowTransformerResult => {
   try {
     console.log('TransformTreeToFlow input:', parsedData, 'activeTabId:', activeTabId);
@@ -747,7 +945,7 @@ export const transformTreeToFlow = (
     
     for (const labelBlock of labelBlocks) {
       // Process this label block
-      const blockResult = processNodeRecursive(labelBlock, theme, null, initialX, currentY, 0, null);
+      const blockResult = processNodeRecursive(labelBlock, theme, scriptLines, null, initialX, currentY, 0, null);
       
       // Create a dedicated EndBlock for this label
       const endNodeId = `end-${labelBlock.id || `label-${labelBlocks.indexOf(labelBlock)}`}`;
@@ -756,15 +954,17 @@ export const transformTreeToFlow = (
                      (blockResult.horizontalBounds.maxX - 
                       blockResult.horizontalBounds.minX - NODE_WIDTH) / 2;
       
-      const endNodeHeight = getNodeHeight({ label_name: 'End', node_type: 'EndBlock' }, theme);
+      const endNodeData: ParsedNodeData = { label_name: 'End', node_type: 'EndBlock' };
+      const endNodeHeight = getNodeHeight(endNodeData, theme);
+      const { display: endDisplay } = buildDisplayForNode(endNodeData, scriptLines, theme);
 
       const endNode = createFlowNode(
         endNodeId,
-        'EndBlock',
-        { label_name: 'End', node_type: 'EndBlock' },
+        endNodeData,
         { x: endNodeX, y: endNodeY },
         theme,
-        { minHeight: endNodeHeight, height: endNodeHeight }
+        { minHeight: endNodeHeight, height: endNodeHeight },
+        endDisplay,
       );
       
       // Add nodes

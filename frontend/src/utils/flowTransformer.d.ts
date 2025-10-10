@@ -1,7 +1,10 @@
 // Type declarations for the flowTransformer utility
 
+import * as React from 'react';
 import { Node, Edge } from 'reactflow';
 import { Theme } from '@mui/material/styles';
+import type { ParsedNodeData } from './parsedNodeTypes';
+import type { NodeMetadata, NodeStatus } from './nodeMetadata';
 
 /**
  * The result of transforming parsed Ren'Py script to React Flow data structure
@@ -9,6 +12,25 @@ import { Theme } from '@mui/material/styles';
 export interface FlowTransformerResult {
   initialNodes: Node[];
   initialEdges: Edge[];
+}
+
+export type VisualNodeType = 'label' | 'action' | 'if' | 'menu' | 'menuOption' | 'end';
+
+export interface FlowNodeDisplay {
+  title: string;
+  summary: string;
+  status?: NodeStatus;
+  author?: string;
+  type: VisualNodeType;
+  typeLabel: string;
+  accentColor: string;
+}
+
+export interface FlowNodeDataPayload {
+  label?: React.ReactNode;
+  originalData: ParsedNodeData;
+  display: FlowNodeDisplay;
+  metadata?: NodeMetadata;
 }
 
 /**
@@ -31,7 +53,8 @@ export interface NodeProcessResult {
  * @param activeTabId Optional ID of the active tab/LabelBlock to filter nodes
  */
 export function transformTreeToFlow(
-  parsedData: any, 
-  theme: Theme, 
-  activeTabId?: string | null
+  parsedData: any,
+  theme: Theme,
+  activeTabId?: string | null,
+  scriptLines?: string[]
 ): FlowTransformerResult;
