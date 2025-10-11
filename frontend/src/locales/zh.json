@@ -112,7 +112,7 @@
   "editor.nodeEditor.unnamed": "未命名节点",
   "editor.nodeEditor.statusPlaceholder": "状态",
   "editor.nodeEditor.noStatus": "无状态",
-  "editor.nodeEditor.authorChipPrefix": "作者",
+  "editor.nodeEditor.authorChipPrefix": "",
   "editor.nodeStatus.done": "已完成",
   "editor.nodeStatus.inProgress": "进行中",
   "editor.nodeStatus.toDo": "待办",

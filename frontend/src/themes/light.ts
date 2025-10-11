@@ -61,31 +61,37 @@ const lightTheme = createTheme({
     },
   },
   typography: {
-    fontFamily: '"Inter", "Roboto", "Helvetica", "Arial", sans-serif',
+    fontFamily: '"Manrope", "Segoe UI", "Roboto", "Helvetica", "Arial", sans-serif',
     fontSize: 18, // Base font size increased to match dark theme
     h1: {
       fontSize: '3rem',
       fontWeight: 600,
+      fontFamily: '"Space Grotesk", "Manrope", "Segoe UI", sans-serif',
     },
     h2: {
       fontSize: '2.5rem',
       fontWeight: 600,
+      fontFamily: '"Space Grotesk", "Manrope", "Segoe UI", sans-serif',
     },
     h3: {
       fontSize: '2.25rem',
       fontWeight: 600,
+      fontFamily: '"Space Grotesk", "Manrope", "Segoe UI", sans-serif',
     },
     h4: {
       fontSize: '2rem', // Increased for "My Projects" heading
       fontWeight: 700,
+      fontFamily: '"Space Grotesk", "Manrope", "Segoe UI", sans-serif',
     },
     h5: {
       fontSize: '1.5rem',
       fontWeight: 600,
+      fontFamily: '"Space Grotesk", "Manrope", "Segoe UI", sans-serif',
     },
     h6: {
       fontSize: '1.25rem',
       fontWeight: 600,
+      fontFamily: '"Space Grotesk", "Manrope", "Segoe UI", sans-serif',
     },
     body1: {
       fontSize: '1.125rem',

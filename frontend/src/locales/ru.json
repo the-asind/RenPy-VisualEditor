@@ -114,7 +114,7 @@
   "editor.nodeEditor.unnamed": "Без названия",
   "editor.nodeEditor.statusPlaceholder": "Статус",
   "editor.nodeEditor.noStatus": "Без статуса",
-  "editor.nodeEditor.authorChipPrefix": "от",
+  "editor.nodeEditor.authorChipPrefix": "",
   "editor.nodeStatus.done": "Готово",
   "editor.nodeStatus.inProgress": "В процессе",
   "editor.nodeStatus.toDo": "К выполнению",

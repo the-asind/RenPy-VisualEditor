@@ -112,7 +112,7 @@
   "editor.nodeEditor.unnamed": "Unnamed node",
   "editor.nodeEditor.statusPlaceholder": "Status",
   "editor.nodeEditor.noStatus": "No status",
-  "editor.nodeEditor.authorChipPrefix": "by",
+  "editor.nodeEditor.authorChipPrefix": "",
   "editor.nodeStatus.done": "Done",
   "editor.nodeStatus.inProgress": "In progress",
   "editor.nodeStatus.toDo": "To Do",

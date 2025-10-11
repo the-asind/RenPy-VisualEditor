@@ -1,5 +1,5 @@
-/* Import Inter font from Google Fonts */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+/* Import project typography families */
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap');
 
 /* Global styles following Frontend Visual Guidelines */
 :root {
@@ -18,10 +18,9 @@
 
 body {
   margin: 0;
-  /* Primary font is Inter with system font fallbacks */
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
+  /* Primary font family */
+  font-family: 'Manrope', 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell',
+    'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   
@@ -34,14 +33,22 @@ body {
 }
 
 /* Heading scale as specified in guidelines */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: 'Space Grotesk', 'Manrope', 'Segoe UI', 'Roboto', sans-serif;
+  font-weight: 600;
+}
+
 h1 {
   font-size: 3.2rem;
-  font-weight: 600;
 }
 
 h2 {
   font-size: 2.4rem;
-  font-weight: 600;
 }
 
 h3 {

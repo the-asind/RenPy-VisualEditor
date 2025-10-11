@@ -8,6 +8,8 @@ export interface NodeMetadata {
   author?: string;
   accentColor?: string;
   commentLineIndex?: number;
+  tag?: string;
+  tagColor?: string;
 }
 
 export interface NodeDisplayInfo {
@@ -15,6 +17,8 @@ export interface NodeDisplayInfo {
   summary: string;
   status?: NodeStatus;
   author?: string;
+  tag?: string;
+  tagColor?: string;
 }
 
 export const NODE_METADATA_PREFIX = '# @NODE';
@@ -106,6 +110,10 @@ export const parseMetadataComment = (line: string): NodeMetadata => {
       metadata.author = value;
     } else if (key === 'color' || key === 'accent') {
       metadata.accentColor = value;
+    } else if (key === 'tag') {
+      metadata.tag = value;
+    } else if (key === 'tagcolor' || key === 'tag_color') {
+      metadata.tagColor = value;
     }
   }
 
@@ -148,6 +156,8 @@ export const extractNodeMetadata = (
       metadata.author = parsed.author;
       metadata.commentLineIndex = index;
       metadata.accentColor = parsed.accentColor;
+      metadata.tag = parsed.tag;
+      metadata.tagColor = parsed.tagColor;
       break;
     }
 
@@ -321,6 +331,14 @@ export const formatMetadataComment = (metadata: NodeMetadata): string | null => 
     parts.push(`color="${escapeValue(metadata.accentColor.trim())}"`);
   }
 
+  if (metadata.tag && metadata.tag.trim()) {
+    parts.push(`tag="${escapeValue(metadata.tag.trim())}"`);
+  }
+
+  if (metadata.tagColor && metadata.tagColor.trim()) {
+    parts.push(`tagColor="${escapeValue(metadata.tagColor.trim())}"`);
+  }
+
   if (parts.length === 0) {
     return null;
   }
@@ -343,5 +361,7 @@ export const buildNodeDisplayInfo = (
     summary,
     status: metadata.status,
     author: metadata.author,
+    tag: metadata.tag,
+    tagColor: metadata.tagColor,
   };
 };

@@ -73,6 +73,12 @@ import { buildNodeDisplayInfo } from '../utils/nodeMetadata';
 import NodeEditorPopup from './NodeEditorPopup';
 import './EditorPage.css';
 import VerticalTurnEdge from './edges/VerticalTurnEdge';
+import {
+  type ProjectTag,
+  loadProjectTags,
+  persistProjectTags,
+  sortProjectTags,
+} from '../utils/projectTags';
 
 // Width for the editor toolbar drawer
 const drawerWidth = 60;
@@ -166,7 +172,9 @@ const EditorPageInternal: React.FC = () => {
   const [pendingNodeFocus, setPendingNodeFocus] = useState<string | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const manualNodeFocusRef = useRef<boolean>(false);
+  const focusNodeAfterReloadRef = useRef<string | null>(null);
   const [scriptLines, setScriptLines] = useState<string[]>([]);
+  const [projectTags, setProjectTags] = useState<ProjectTag[]>([]);
 
   // State for LabelBlocks and tabs
   const [labelBlocks, setLabelBlocks] = useState<Array<{ id: string, name: string }>>([]);
@@ -432,7 +440,11 @@ const EditorPageInternal: React.FC = () => {
     }
 
     isGraphReloading.current = true;
-    captureViewport(); // <-- capture before reload
+    if (!focusNodeAfterReloadRef.current) {
+      captureViewport(); // <-- capture before reload
+    } else {
+      savedViewportRef.current = null;
+    }
 
     setIsLoading(true);
     try {
@@ -455,6 +467,9 @@ const EditorPageInternal: React.FC = () => {
       setSnackbarMessage(t('editor.errorReloadScript'));
       setSnackbarSeverity('error');
       setSnackbarOpen(true);
+      isGraphReloading.current = false;
+      focusNodeAfterReloadRef.current = null;
+      manualNodeFocusRef.current = false;
     } finally {
       setIsLoading(false);
     }
@@ -466,37 +481,43 @@ const EditorPageInternal: React.FC = () => {
       throw new Error(t('editor.errorSaveNoContext'));
     }
 
-    
-    
     const nodeStartLine = selectedNodeForEdit.data?.originalData?.start_line;
     const nodeEndLine = selectedNodeForEdit.data?.originalData?.end_line;
-    
+
     console.log(`Saving node ${selectedNodeForEdit.id} (lines ${nodeStartLine}-${nodeEndLine})`);
-    
+
     if (!nodeStartLine || !nodeEndLine) {
       throw new Error(t('editor.errorMissingLines'));
-    }    try {
-      
+    }
+
+    const targetNodeId = String(selectedNodeForEdit.id);
+    focusNodeAfterReloadRef.current = targetNodeId;
+    manualNodeFocusRef.current = true;
+
+    try {
       const updateResponse = await updateNodeContent(scriptId, nodeStartLine, nodeEndLine, newContent);
       console.log('Node update response:', updateResponse);
-      
+
       // Always reload script data to refresh the graph after any content change
       console.log('Reloading script data to refresh graph after node content update');
       await reloadScriptData();
 
-      
+      setPendingNodeFocus(targetNodeId);
+      focusNodeAfterReloadRef.current = null;
+
       setSnackbarMessage(t('editor.saveSuccess'));
       setSnackbarSeverity('success');
       setSnackbarOpen(true);
-
     } catch (saveError: any) {
       console.error("Error saving node content:", saveError);
       setSnackbarMessage(saveError.message || t('editor.errorSaveGeneric'));
       setSnackbarSeverity('error');
       setSnackbarOpen(true);
-      throw saveError; 
+      focusNodeAfterReloadRef.current = null;
+      manualNodeFocusRef.current = false;
+      throw saveError;
     }
-  }, [scriptId, selectedNodeForEdit, t, reloadScriptData]);
+  }, [scriptId, selectedNodeForEdit, t, reloadScriptData, setPendingNodeFocus]);
 
   
   const handleDownloadScript = useCallback(async () => {
@@ -683,14 +704,19 @@ const EditorPageInternal: React.FC = () => {
 
   // Effect to handle viewport: restore on graph update, or center on tab change
   useLayoutEffect(() => {
-    // If a reload was triggered, the priority is to restore the viewport.
+    // If a reload was triggered, restore the viewport when needed.
     if (isGraphReloading.current) {
-        if (reactFlowInstance && nodes.length > 0 && savedViewportRef.current) {
-            reactFlowInstance.setViewport({ ...savedViewportRef.current });
-            savedViewportRef.current = null; // Consume the saved viewport
-            isGraphReloading.current = false; // Reset the flag, the restoration is done
+      if (savedViewportRef.current) {
+        if (reactFlowInstance && nodes.length > 0) {
+          reactFlowInstance.setViewport({ ...savedViewportRef.current });
+          savedViewportRef.current = null; // Consume the saved viewport
+          isGraphReloading.current = false; // Reset the flag, the restoration is done
         }
         return; // Prevent centering logic from running during a reload
+      }
+
+      // No saved viewport means we can resume normal behaviour immediately
+      isGraphReloading.current = false;
     }
 
     // This logic now only runs for manual tab changes, not for reloads.
@@ -912,6 +938,11 @@ const EditorPageInternal: React.FC = () => {
     }
   }, []);
 
+  const handleProjectTagsChange = useCallback((tags: ProjectTag[]) => {
+    setProjectTags(tags);
+    persistProjectTags(projectId, tags);
+  }, [projectId]);
+
   // Load specific project from URL parameter
   const loadProjectFromUrl = useCallback(async (projectId: string) => {
     setIsLoadingProject(true);
@@ -957,6 +988,15 @@ const EditorPageInternal: React.FC = () => {
       disconnectFromScript();
     };
   }, [scriptId, connectToScript, disconnectFromScript]);
+
+  useEffect(() => {
+    if (projectId) {
+      const storedTags = loadProjectTags(projectId);
+      setProjectTags(sortProjectTags(storedTags));
+    } else {
+      setProjectTags([]);
+    }
+  }, [projectId]);
 
   // Handle loading existing script
   const handleLoadExistingScript = useCallback(async (scriptId: string, filename: string) => {
@@ -1717,6 +1757,8 @@ const EditorPageInternal: React.FC = () => {
           onSave={handleSaveNodeContent}
           onSwitchToGlobal={handleSwitchToGlobalEditor}
           isLoading={isFetchingNodeContent}
+          projectTags={projectTags}
+          onProjectTagsChange={handleProjectTagsChange}
         />
       )}
 

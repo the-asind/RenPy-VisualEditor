@@ -112,7 +112,7 @@
   "editor.nodeEditor.unnamed": "名称未設定のノード",
   "editor.nodeEditor.statusPlaceholder": "ステータス",
   "editor.nodeEditor.noStatus": "ステータスなし",
-  "editor.nodeEditor.authorChipPrefix": "by",
+  "editor.nodeEditor.authorChipPrefix": "",
   "editor.nodeStatus.done": "完了",
   "editor.nodeStatus.inProgress": "進行中",
   "editor.nodeStatus.toDo": "未着手",

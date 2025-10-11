@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import {
   Dialog, DialogTitle, DialogContent, Box, Stack, IconButton, Button, TextField,
-  Select, MenuItem, Typography, GlobalStyles, useTheme, Alert, Chip, ButtonBase, Tooltip
+  Select, MenuItem, Typography, GlobalStyles, useTheme, Alert, Chip, ButtonBase, Tooltip,
+  Autocomplete
 } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import type { SelectChangeEvent } from '@mui/material/Select';
@@ -20,6 +21,14 @@ import {
   type NodeStatus,
   type NodeMetadata,
 } from '../utils/nodeMetadata';
+import {
+  DEFAULT_TAG_COLOR,
+  TAG_COLOR_OPTIONS,
+  type ProjectTag,
+  sortProjectTags,
+  upsertProjectTag,
+  MAX_TAG_LENGTH,
+} from '../utils/projectTags';
 
 // ---------- Props ----------
 interface NodeEditorPopupProps {
@@ -31,6 +40,8 @@ interface NodeEditorPopupProps {
   onSave: (startLine: number, endLine: number, newContent: string) => Promise<void> | void;
   onSwitchToGlobal: () => void;
   isLoading?: boolean;
+  projectTags: ProjectTag[];
+  onProjectTagsChange: (tags: ProjectTag[]) => void;
 }
 
 // ---------- Ren'Py dialogue helpers ----------
@@ -108,17 +119,6 @@ function bubbleColor(name: string, dark: boolean) {
   let h = 0; for (const ch of name) h = ch.charCodeAt(0) + ((h << 5) - h);
   return dark ? `hsl(${h % 360}, 32%, 22%)` : `hsl(${h % 360}, 70%, 95%)`;
 }
-
-const ACTION_NODE_COLORS = [
-  '#5E60CE',
-  '#48BFE3',
-  '#56CFE1',
-  '#80FF72',
-  '#FFD166',
-  '#FF6B6B',
-  '#FF9F9C',
-  '#C77DFF',
-];
 
 // ---------- Indentation helpers (strip + restore) ----------
 interface IndentInfo { indent: string; stripped: boolean; error?: string }
@@ -199,9 +199,20 @@ const extractMetadataFromContent = (content: string): NodeMetadata => {
 };
 
 const CONTROL_HEIGHT = 36; // px
+const clampTagInput = (value: string) => value.slice(0, MAX_TAG_LENGTH);
+const clampTagMetadata = (value: string) => value.trim().slice(0, MAX_TAG_LENGTH);
 
 const NodeEditorPopup: React.FC<NodeEditorPopupProps> = ({
-  open, onClose, nodeData, initialContent, scriptId, onSave, onSwitchToGlobal, isLoading
+  open,
+  onClose,
+  nodeData,
+  initialContent,
+  scriptId,
+  onSave,
+  onSwitchToGlobal,
+  isLoading,
+  projectTags,
+  onProjectTagsChange,
 }) => {
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
@@ -217,13 +228,20 @@ const NodeEditorPopup: React.FC<NodeEditorPopupProps> = ({
     ] as const);
     return Object.fromEntries(entries) as Record<NodeStatus, string>;
   }, [statusOptions, t]);
+  const sortedProjectTags = useMemo(() => sortProjectTags(projectTags), [projectTags]);
+  const tagOptions = useMemo(
+    () => sortedProjectTags.map((tag) => tag.name),
+    [sortedProjectTags],
+  );
 
   const [nodeName, setNodeName] = useState<string>('');
   const [nodeStatus, setNodeStatus] = useState<NodeStatus | ''>('');
   const [nodeAuthor, setNodeAuthor] = useState<string>('');
-  const [nodeColor, setNodeColor] = useState<string>('');
+  const [nodeTagName, setNodeTagName] = useState<string>('');
+  const [nodeTagColor, setNodeTagColor] = useState<string>('');
   const [isEditingName, setIsEditingName] = useState<boolean>(false);
   const nameBeforeEditRef = useRef<string>('');
+  const tagColorManuallySetRef = useRef<boolean>(false);
 
   // ----- indentation memory -----
   const indentRef = useRef<IndentInfo>({ indent: '', stripped: false });
@@ -270,7 +288,8 @@ const NodeEditorPopup: React.FC<NodeEditorPopupProps> = ({
       setNodeName('');
       setNodeStatus('');
       setNodeAuthor('');
-      setNodeColor('');
+      setNodeTagName('');
+      setNodeTagColor('');
       setIsEditingName(false);
       return;
     }
@@ -279,9 +298,45 @@ const NodeEditorPopup: React.FC<NodeEditorPopupProps> = ({
     setNodeName(metadata.name ?? '');
     setNodeStatus(metadata.status ?? '');
     setNodeAuthor(metadata.author ?? '');
-    setNodeColor(metadata.accentColor ?? '');
+    setNodeTagName(metadata.tag ? clampTagInput(metadata.tag) : '');
+    setNodeTagColor(metadata.tagColor ?? '');
+    tagColorManuallySetRef.current = false;
     setIsEditingName(false);
   }, [initialContent, isActionNode, open]);
+
+  useEffect(() => {
+    if (!isActionNode) {
+      return;
+    }
+
+    const trimmed = nodeTagName.trim();
+    if (!trimmed) {
+      if (nodeTagColor) {
+        setNodeTagColor('');
+      }
+      tagColorManuallySetRef.current = false;
+      return;
+    }
+
+    const normalized = trimmed.toLowerCase();
+    const existing = sortedProjectTags.find((tag) => tag.name.toLowerCase() === normalized);
+
+    if (existing) {
+      if (
+        existing.color !== nodeTagColor &&
+        (!tagColorManuallySetRef.current || existing.name.toLowerCase() !== normalized)
+      ) {
+        setNodeTagColor(existing.color);
+        tagColorManuallySetRef.current = false;
+      }
+      return;
+    }
+
+    if (!nodeTagColor) {
+      setNodeTagColor(DEFAULT_TAG_COLOR);
+      tagColorManuallySetRef.current = false;
+    }
+  }, [isActionNode, nodeTagName, nodeTagColor, sortedProjectTags]);
 
   const handleStartEditingName = useCallback(() => {
     if (!isActionNode) {
@@ -309,6 +364,11 @@ const NodeEditorPopup: React.FC<NodeEditorPopupProps> = ({
   const handleStatusChange = useCallback((event: SelectChangeEvent<string>) => {
     const value = event.target.value || '';
     setNodeStatus(value as NodeStatus | '');
+  }, []);
+
+  const handleSelectTagColor = useCallback((color: string) => {
+    setNodeTagColor(color);
+    tagColorManuallySetRef.current = true;
   }, []);
 
   // Re-parse & decorate
@@ -535,8 +595,34 @@ const NodeEditorPopup: React.FC<NodeEditorPopupProps> = ({
       if (authorName) {
         metadata.author = authorName;
       }
-      if (nodeColor) {
-        metadata.accentColor = nodeColor;
+
+      const trimmedTag = clampTagMetadata(nodeTagName);
+      if (trimmedTag) {
+        const resolvedTagColor = nodeTagColor?.trim() || DEFAULT_TAG_COLOR;
+        metadata.tag = trimmedTag;
+        metadata.tagColor = resolvedTagColor;
+
+        const existingTag = projectTags.find(
+          (tag) => tag.name.trim().toLowerCase() === trimmedTag.toLowerCase(),
+        );
+        if (
+          !existingTag ||
+          existingTag.color !== resolvedTagColor ||
+          existingTag.name.trim() !== trimmedTag
+        ) {
+          const updatedTags = sortProjectTags(
+            upsertProjectTag(projectTags, { name: trimmedTag, color: resolvedTagColor }),
+          );
+          onProjectTagsChange(updatedTags);
+        }
+
+        setNodeTagName(clampTagInput(trimmedTag));
+        setNodeTagColor(resolvedTagColor);
+        tagColorManuallySetRef.current = false;
+      } else {
+        setNodeTagName('');
+        setNodeTagColor('');
+        tagColorManuallySetRef.current = false;
       }
 
       const lines = value.split(/\r?\n/);
@@ -572,10 +658,14 @@ const NodeEditorPopup: React.FC<NodeEditorPopupProps> = ({
         setNodeName('');
       }
 
-      if (metadata.accentColor) {
-        setNodeColor(metadata.accentColor);
-      } else if (!nodeColor) {
-        setNodeColor('');
+      if (metadata.tag) {
+        setNodeTagName(clampTagInput(metadata.tag));
+      }
+
+      if (metadata.tagColor) {
+        setNodeTagColor(metadata.tagColor);
+      } else if (!trimmedTag) {
+        setNodeTagColor('');
       }
     }
 
@@ -596,11 +686,16 @@ const NodeEditorPopup: React.FC<NodeEditorPopupProps> = ({
     nodeStatus,
     currentUsername,
     nodeAuthor,
-    nodeColor,
+    nodeTagName,
+    nodeTagColor,
+    projectTags,
+    onProjectTagsChange,
   ]);
 
   // Styles
   const mode = theme.palette.mode;
+  const trimmedTagName = nodeTagName.trim();
+  const isTagActive = trimmedTagName.length > 0;
 
   return (
     <Dialog
@@ -712,47 +807,83 @@ const NodeEditorPopup: React.FC<NodeEditorPopupProps> = ({
               </Select>
             </Box>
 
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap', minWidth: 0 }}>
               <Typography variant="caption" color="text.secondary">
-                {t('editor.nodeEditor.colorLabel', 'Color')}
+                {t('editor.nodeEditor.tagLabel', 'Tag')}
               </Typography>
-              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
-                <Tooltip title={t('editor.nodeEditor.defaultColor', 'Automatic')}>
-                  <ButtonBase
-                    onClick={() => setNodeColor('')}
-                    sx={{
-                      width: 28,
-                      height: 28,
-                      borderRadius: '50%',
-                      border: nodeColor
-                        ? `1px dashed ${theme.palette.divider}`
-                        : `2px solid ${theme.palette.text.primary}`,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      color: theme.palette.text.secondary,
+              <Autocomplete
+                size="small"
+                freeSolo
+                options={tagOptions}
+                value={nodeTagName}
+                onInputChange={(_, newValue, reason) => {
+                  if (reason === 'input' || reason === 'clear') {
+                    const limited = clampTagInput(newValue ?? '');
+                    tagColorManuallySetRef.current = false;
+                    setNodeTagName(limited);
+                  }
+                }}
+                onChange={(_, newValue) => {
+                  const raw = typeof newValue === 'string' ? newValue : newValue ?? '';
+                  const limited = clampTagInput(raw);
+                  tagColorManuallySetRef.current = false;
+                  setNodeTagName(limited);
+                }}
+                clearOnBlur={false}
+                renderOption={(props, option) => {
+                  const matched = sortedProjectTags.find((tag) => tag.name === option);
+                  const optionColor = matched?.color ?? DEFAULT_TAG_COLOR;
+                  return (
+                    <Box
+                      component="li"
+                      {...props}
+                      sx={{ display: 'flex', alignItems: 'center', gap: 1 }}
+                    >
+                      <Box
+                        sx={{
+                          width: 10,
+                          height: 10,
+                          borderRadius: '50%',
+                          backgroundColor: optionColor,
+                          boxShadow: `0 0 0 1px ${alpha(optionColor, 0.4)}`,
+                        }}
+                      />
+                      <Typography variant="body2">{option}</Typography>
+                    </Box>
+                  );
+                }}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    variant="outlined"
+                    placeholder={t('editor.nodeEditor.tagPlaceholder', 'Tag name')}
+                    inputProps={{
+                      ...params.inputProps,
+                      maxLength: MAX_TAG_LENGTH,
                     }}
-                  >
-                    <Typography variant="caption" sx={{ fontWeight: 700, fontSize: 10 }}>
-                      Ø
-                    </Typography>
-                  </ButtonBase>
-                </Tooltip>
-                {ACTION_NODE_COLORS.map((color) => {
-                  const isSelected = nodeColor === color;
+                    sx={{ minWidth: 180 }}
+                  />
+                )}
+                sx={{ minWidth: 220, flexShrink: 1 }}
+              />
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                {TAG_COLOR_OPTIONS.map((color) => {
+                  const isSelected = nodeTagColor === color;
                   return (
                     <Tooltip key={color} title={color}>
                       <ButtonBase
-                        onClick={() => setNodeColor(color)}
+                        onClick={() => handleSelectTagColor(color)}
                         sx={{
-                          width: 28,
-                          height: 28,
+                          width: 26,
+                          height: 26,
                           borderRadius: '50%',
                           border: isSelected
                             ? `2px solid ${theme.palette.getContrastText(color)}`
                             : `1px solid ${alpha(color, 0.6)}`,
                           boxShadow: isSelected ? `0 0 0 3px ${alpha(color, 0.25)}` : 'none',
-                          transition: theme.transitions.create(['box-shadow', 'transform'], {
+                          opacity: isTagActive ? 1 : 0.35,
+                          pointerEvents: isTagActive ? 'auto' : 'none',
+                          transition: theme.transitions.create(['box-shadow', 'transform', 'opacity'], {
                             duration: theme.transitions.duration.shortest,
                           }),
                           transform: isSelected ? 'scale(1.05)' : 'scale(1)',
@@ -777,7 +908,7 @@ const NodeEditorPopup: React.FC<NodeEditorPopupProps> = ({
               <Chip
                 size="small"
                 variant="outlined"
-                label={`${t('editor.nodeEditor.authorChipPrefix', 'by')} ${nodeAuthor}`}
+                label={nodeAuthor}
                 sx={{
                   borderColor: theme.palette.divider,
                   color: theme.palette.text.secondary,

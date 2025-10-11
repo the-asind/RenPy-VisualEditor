@@ -35,12 +35,14 @@ const VisualNode = memo<NodeProps<FlowNodeDataPayload>>(({ data, selected }) => 
     return null;
   }
 
-  const accent = display.accentColor || theme.palette.primary.main;
+  const accent = display.tagColor?.trim() || display.accentColor || theme.palette.primary.main;
   const statusColor = display.status ? statusColorMap[display.status]?.(theme.palette) : undefined;
   const statusLabel = display.status
     ? t(NODE_STATUS_TRANSLATION_KEYS[display.status], display.status)
     : undefined;
-  const authorPrefix = t('editor.nodeEditor.authorChipPrefix', 'by');
+  const tagLabel = display.tag?.trim() ? display.tag.trim() : undefined;
+  const tagAccent = tagLabel ? (display.tagColor?.trim() || accent) : undefined;
+  const isActionNode = display.type === 'action';
   const showFullDetails = zoom >= 0.55;
   const showTitleText = zoom >= 0.35;
   const isUltraCompact = zoom < 0.2;
@@ -64,11 +66,13 @@ const VisualNode = memo<NodeProps<FlowNodeDataPayload>>(({ data, selected }) => 
   const skeletonPrimary = alpha(skeletonBase, 0.55);
   const skeletonSecondary = alpha(skeletonBase, 0.35);
   const titleColor = theme.palette.mode === 'dark'
-    ? alpha(theme.palette.common.white, showFullDetails ? 0.94 : 0.85)
-    : alpha(theme.palette.common.black, showFullDetails ? 0.9 : 0.78);
-  const verticalPadding = showFullDetails ? 18 : 14;
-  const horizontalPadding = showFullDetails ? 20 : 16;
-  const contentLeftPadding = statusColor ? horizontalPadding + 14 : horizontalPadding;
+    ? alpha(theme.palette.common.white, showFullDetails ? 0.95 : 0.85)
+    : alpha(theme.palette.common.black, showFullDetails ? 0.9 : 0.8);
+  const verticalPadding = showFullDetails ? (isActionNode ? 16 : 18) : (isActionNode ? 12 : 14);
+  const baseHorizontalPadding = showFullDetails ? (isActionNode ? 12 : 20) : (isActionNode ? 10 : 16);
+  const contentRightPadding = showFullDetails ? (isActionNode ? 14 : 20) : (isActionNode ? 12 : 16);
+  const statusGutter = statusColor ? (isActionNode ? 6 : 12) : 0;
+  const contentLeftPadding = baseHorizontalPadding + statusGutter;
   const handleShadow = showFullDetails ? `0 0 0 3px ${alpha(accent, 0.12)}` : 'none';
   const handleBorder = alpha(accent, theme.palette.mode === 'dark' ? 0.5 : 0.25);
   const authorChipBorder = theme.palette.mode === 'dark'
@@ -80,6 +84,114 @@ const VisualNode = memo<NodeProps<FlowNodeDataPayload>>(({ data, selected }) => 
   const authorChipBackground = theme.palette.mode === 'dark'
     ? alpha(theme.palette.common.white, 0.08)
     : alpha(theme.palette.common.white, 0.6);
+  const tagChipBorder = tagAccent ? alpha(tagAccent, theme.palette.mode === 'dark' ? 0.85 : 0.5) : undefined;
+  const tagChipBackground = tagAccent ? alpha(tagAccent, theme.palette.mode === 'dark' ? 0.38 : 0.16) : undefined;
+  const statusChipBorder = statusColor ? alpha(statusColor, theme.palette.mode === 'dark' ? 0.7 : 0.45) : undefined;
+  const statusChipBackground = statusColor ? alpha(statusColor, theme.palette.mode === 'dark' ? 0.5 : 0.2) : undefined;
+
+  const authorChipElement = showFullDetails && display.author
+    ? (
+        <Chip
+          size="small"
+          variant="outlined"
+          label={display.author}
+          title={display.author}
+          sx={{
+            px: 0.55,
+            height: 22,
+            borderColor: authorChipBorder,
+            color: authorChipColor,
+            fontWeight: 600,
+            backgroundColor: authorChipBackground,
+            backdropFilter: 'blur(4px)',
+            maxWidth: '100%',
+            '& .MuiChip-label': {
+              px: 0.3,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            },
+          }}
+        />
+      )
+    : null;
+
+  const tagChipElement = showFullDetails && tagLabel
+    ? (
+        <Chip
+          size="small"
+          variant="outlined"
+          label={tagLabel}
+          title={tagLabel}
+          icon={(
+            <Box
+              component="span"
+              sx={{
+                width: 8,
+                height: 8,
+                borderRadius: '50%',
+                backgroundColor: tagAccent,
+                boxShadow: `0 0 0 1px ${alpha(tagAccent ?? accent, 0.6)}`,
+              }}
+            />
+          )}
+          sx={{
+            px: 0.85,
+            height: 22,
+            fontWeight: 600,
+            borderRadius: 999,
+            borderColor: tagChipBorder,
+            backgroundColor: tagChipBackground,
+            color: theme.palette.mode === 'dark'
+              ? alpha(theme.palette.common.white, 0.92)
+              : alpha(theme.palette.common.black, 0.82),
+            letterSpacing: 0.25,
+            textTransform: 'none',
+            maxWidth: 120,
+            flexShrink: 1,
+            '& .MuiChip-icon': {
+              ml: 0,
+              mr: 0.75,
+            },
+            '& .MuiChip-label': {
+              px: 0.5,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            },
+          }}
+        />
+      )
+    : null;
+
+  const statusChipElement = showFullDetails && statusColor && statusLabel
+    ? (
+        <Chip
+          size="small"
+          variant="outlined"
+          label={statusLabel}
+          sx={{
+            px: 0.9,
+            height: 18,
+            fontSize: 9,
+            fontWeight: 700,
+            letterSpacing: 0.6,
+            textTransform: 'uppercase',
+            borderRadius: 999,
+            borderColor: statusChipBorder,
+            backgroundColor: statusChipBackground,
+            color: theme.palette.getContrastText(statusColor),
+            boxShadow: `0 4px 12px ${alpha(statusColor, 0.2)}`,
+            '& .MuiChip-label': {
+              px: 0.4,
+              lineHeight: '16px',
+            },
+          }}
+        />
+      )
+    : null;
+
+  const showMetaRow = Boolean(isActionNode && (authorChipElement || tagChipElement || statusChipElement));
 
   return (
     <Box sx={{ position: 'relative', width: '100%' }}>
@@ -150,53 +262,47 @@ const VisualNode = memo<NodeProps<FlowNodeDataPayload>>(({ data, selected }) => 
           />
         )}
 
-        {statusColor && statusLabel && showTitleText && (
-          <Box
-            sx={{
-              position: 'absolute',
-              top: 12,
-              right: 12,
-              px: 1.25,
-              py: 0.4,
-              borderRadius: 999,
-              background: `linear-gradient(90deg, ${alpha(statusColor, 0.85)} 0%, ${alpha(statusColor, 0.55)} 100%)`,
-              color: theme.palette.getContrastText(statusColor),
-              fontSize: 11,
-              fontWeight: 700,
-              letterSpacing: 0.8,
-              textTransform: 'uppercase',
-              boxShadow: `0 10px 18px ${alpha(statusColor, 0.35)}`,
-            }}
-          >
-            {statusLabel}
-          </Box>
-        )}
-
         <Box
           sx={{
             position: 'relative',
             display: 'flex',
             flexDirection: 'column',
-            gap: showFullDetails ? 1 : 0.75,
-            justifyContent: showTitleText ? 'flex-start' : 'center',
+          gap: showTitleText
+            ? (showFullDetails ? (isActionNode ? 0.9 : 1.15) : 0.6)
+            : 0.6,
+            justifyContent: showTitleText
+              ? (isActionNode ? 'flex-start' : 'center')
+              : 'center',
+            alignItems: showTitleText
+              ? (isActionNode ? 'flex-start' : 'center')
+              : 'center',
+            textAlign: showTitleText && !isActionNode ? 'center' : 'left',
             py: `${verticalPadding}px`,
-            pr: `${horizontalPadding}px`,
+            pr: `${contentRightPadding}px`,
             pl: `${contentLeftPadding}px`,
             minHeight: 88,
           }}
         >
           {showTitleText ? (
             <Typography
-              variant={showFullDetails ? 'subtitle1' : 'body2'}
+              variant="body1"
               sx={{
-                fontWeight: 700,
+                fontWeight: isActionNode ? 700 : 600,
                 lineHeight: 1.25,
                 color: titleColor,
-                textTransform: showFullDetails ? 'none' : 'uppercase',
-                letterSpacing: showFullDetails ? 0.3 : 1.1,
+                fontSize: showFullDetails
+                  ? (isActionNode ? 16 : 18)
+                  : isActionNode
+                    ? 13
+                    : 14,
+                letterSpacing: showFullDetails
+                  ? (isActionNode ? 0.2 : 0.25)
+                  : (isActionNode ? 0.35 : 0.3),
                 whiteSpace: 'nowrap',
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
+                textAlign: isActionNode ? 'left' : 'center',
+                width: '100%',
               }}
             >
               {display.title}
@@ -208,6 +314,7 @@ const VisualNode = memo<NodeProps<FlowNodeDataPayload>>(({ data, selected }) => 
                 display: 'flex',
                 flexDirection: 'column',
                 gap: 0.5,
+                alignItems: isActionNode ? 'flex-start' : 'center',
               }}
             >
               <Box
@@ -230,22 +337,28 @@ const VisualNode = memo<NodeProps<FlowNodeDataPayload>>(({ data, selected }) => 
               )}
             </Box>
           )}
-
-          {showFullDetails && display.author && (
-            <Chip
-              size="small"
-              variant="outlined"
-              label={`${authorPrefix} ${display.author}`}
+          {showMetaRow && (
+            <Box
               sx={{
-                mt: 0.75,
-                alignSelf: 'flex-start',
-                borderColor: authorChipBorder,
-                color: authorChipColor,
-                fontWeight: 600,
-                backgroundColor: authorChipBackground,
-                backdropFilter: 'blur(4px)',
+                display: 'grid',
+                gridTemplateColumns: 'minmax(0, auto) minmax(0, 1fr) minmax(0, auto)',
+                alignItems: 'flex-end',
+                columnGap: 0.5,
+                width: '100%',
+                pt: showFullDetails ? 0.4 : 0.2,
+                mt: 'auto',
               }}
-            />
+            >
+              <Box sx={{ minWidth: 0, display: 'flex', justifyContent: 'flex-start' }}>
+                {authorChipElement}
+              </Box>
+              <Box sx={{ minWidth: 0, display: 'flex', justifyContent: 'center' }}>
+                {tagChipElement}
+              </Box>
+              <Box sx={{ minWidth: 0, display: 'flex', justifyContent: 'flex-end' }}>
+                {statusChipElement}
+              </Box>
+            </Box>
           )}
         </Box>
       </Box>

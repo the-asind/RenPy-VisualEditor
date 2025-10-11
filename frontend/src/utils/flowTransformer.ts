@@ -21,6 +21,8 @@ export interface FlowNodeDisplay {
   summary: string;
   status?: NodeStatus;
   author?: string;
+  tag?: string;
+  tagColor?: string;
   type: VisualNodeType;
   typeLabel: string;
   accentColor: string;
@@ -53,7 +55,7 @@ interface MenuOptionProcessResult {
 const NODE_WIDTH = 320;
 const NODE_HEIGHT_BASE = 88; // Unified node height matching single-header layout
 const ACTION_LINE_HEIGHT = 1.5;
-const VERTICAL_SPACING = 140;
+const VERTICAL_SPACING = 110;
 const HORIZONTAL_SPACING_BASE = 20;
 
 const ROOT_FONT_SIZE_PX = 16;
@@ -296,8 +298,8 @@ const buildDisplayForNode = (
   const visualType = resolveVisualType(node.node_type);
   const baseInfo = buildNodeDisplayInfo(scriptLines, node);
   const metadata = visualType === 'action' ? extractNodeMetadata(scriptLines, node) : undefined;
-  const accentOverride = visualType === 'action'
-    ? metadata?.accentColor?.trim() || undefined
+  const tagDrivenAccent = visualType === 'action'
+    ? metadata?.tagColor?.trim() || undefined
     : undefined;
 
   let title = baseInfo.title?.trim() || '';
@@ -331,9 +333,11 @@ const buildDisplayForNode = (
       summary,
       status: visualType === 'action' ? metadata?.status : undefined,
       author: visualType === 'action' ? metadata?.author : undefined,
+      tag: visualType === 'action' ? metadata?.tag : undefined,
+      tagColor: visualType === 'action' ? metadata?.tagColor : undefined,
       type: visualType,
       typeLabel: resolveTypeLabel(visualType),
-      accentColor: accentOverride || resolveAccentColor(visualType, theme, node),
+      accentColor: tagDrivenAccent || resolveAccentColor(visualType, theme, node),
     },
     metadata,
   };
