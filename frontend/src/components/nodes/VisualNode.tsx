@@ -1,5 +1,5 @@
 import { memo, useMemo } from 'react';
-import { Handle, Position, type NodeProps } from 'reactflow';
+import { Handle, Position, type NodeProps, useStore } from 'reactflow';
 import { alpha, useTheme, type Theme } from '@mui/material/styles';
 import { Box, Chip, Typography } from '@mui/material';
 import { useTranslation } from 'react-i18next';
@@ -10,50 +10,76 @@ import { NODE_STATUS_TRANSLATION_KEYS } from '../../utils/nodeMetadata';
 const statusColorMap: Record<NodeStatus, (palette: Theme['palette']) => string> = {
   Done: (palette) => palette.success.main,
   'In progress': (palette) => palette.warning.main,
-  'To Do': (palette) => palette.info.main,
+  'To Do': (palette) => palette.error.main,
 };
+
+const zoomSelector = (state: any) => state.transform?.[2] ?? 1;
 
 const VisualNode = memo<NodeProps<FlowNodeDataPayload>>(({ data, selected }) => {
   const theme = useTheme();
   const { t } = useTranslation();
   const display = data?.display;
+  const zoom = useStore(zoomSelector);
 
-  const baseStyles = useMemo(() => {
-    if (!display) {
-      return null;
-    }
-
-    const accent = display.accentColor || theme.palette.primary.main;
-    const headerBg = theme.palette.mode === 'dark'
-      ? alpha(accent, 0.25)
-      : alpha(accent, 0.12);
-    const border = alpha(accent, 0.8);
-    const panelGradientStart = theme.palette.mode === 'dark'
-      ? alpha(accent, 0.18)
-      : alpha(accent, 0.06);
-    const panelGradientEnd = theme.palette.mode === 'dark'
-      ? alpha(accent, 0.08)
-      : alpha(accent, 0.02);
-
+  const skeletonWidths = useMemo(() => {
+    const length = display?.title?.length ?? 0;
+    const clamped = Math.min(Math.max(length, 6), 28);
+    const ratio = clamped / 28;
     return {
-      accent,
-      headerBg,
-      border,
-      panelGradientStart,
-      panelGradientEnd,
+      primary: 45 + ratio * 35,
+      secondary: 30 + ratio * 25,
     };
-  }, [display, theme]);
+  }, [display?.title]);
 
-  if (!display || !baseStyles) {
+  if (!display) {
     return null;
   }
 
-  const { accent, headerBg, border, panelGradientStart, panelGradientEnd } = baseStyles;
+  const accent = display.accentColor || theme.palette.primary.main;
   const statusColor = display.status ? statusColorMap[display.status]?.(theme.palette) : undefined;
   const statusLabel = display.status
     ? t(NODE_STATUS_TRANSLATION_KEYS[display.status], display.status)
     : undefined;
   const authorPrefix = t('editor.nodeEditor.authorChipPrefix', 'by');
+  const showFullDetails = zoom >= 0.55;
+  const showTitleText = zoom >= 0.35;
+  const isUltraCompact = zoom < 0.2;
+  const baseBackground = theme.palette.mode === 'dark'
+    ? alpha(accent, showFullDetails ? 0.26 : 0.18)
+    : alpha(accent, showFullDetails ? 0.16 : 0.1);
+  const backgroundGradient = showFullDetails
+    ? `linear-gradient(135deg, ${alpha(accent, 0.32)} 0%, ${alpha(accent, 0.08)} 100%)`
+    : 'none';
+  const borderColor = alpha(accent, showFullDetails ? 0.95 : 0.65);
+  const restingShadow = showFullDetails
+    ? (selected
+        ? `0 18px 40px ${alpha(accent, 0.32)}`
+        : `0 12px 28px ${alpha(accent, 0.18)}`
+      )
+    : 'none';
+  const hoverShadow = `0 20px 44px ${alpha(accent, 0.28)}`;
+  const skeletonBase = theme.palette.mode === 'dark'
+    ? theme.palette.common.white
+    : theme.palette.common.black;
+  const skeletonPrimary = alpha(skeletonBase, 0.55);
+  const skeletonSecondary = alpha(skeletonBase, 0.35);
+  const titleColor = theme.palette.mode === 'dark'
+    ? alpha(theme.palette.common.white, showFullDetails ? 0.94 : 0.85)
+    : alpha(theme.palette.common.black, showFullDetails ? 0.9 : 0.78);
+  const verticalPadding = showFullDetails ? 18 : 14;
+  const horizontalPadding = showFullDetails ? 20 : 16;
+  const contentLeftPadding = statusColor ? horizontalPadding + 14 : horizontalPadding;
+  const handleShadow = showFullDetails ? `0 0 0 3px ${alpha(accent, 0.12)}` : 'none';
+  const handleBorder = alpha(accent, theme.palette.mode === 'dark' ? 0.5 : 0.25);
+  const authorChipBorder = theme.palette.mode === 'dark'
+    ? alpha(theme.palette.common.white, 0.25)
+    : alpha(theme.palette.common.black, 0.2);
+  const authorChipColor = theme.palette.mode === 'dark'
+    ? alpha(theme.palette.common.white, 0.75)
+    : alpha(theme.palette.common.black, 0.7);
+  const authorChipBackground = theme.palette.mode === 'dark'
+    ? alpha(theme.palette.common.white, 0.08)
+    : alpha(theme.palette.common.white, 0.6);
 
   return (
     <Box sx={{ position: 'relative', width: '100%' }}>
@@ -64,9 +90,9 @@ const VisualNode = memo<NodeProps<FlowNodeDataPayload>>(({ data, selected }) => 
           width: 12,
           height: 12,
           borderRadius: '50%',
-          background: alpha(accent, 0.9),
-          border: `2px solid ${alpha(accent, theme.palette.mode === 'dark' ? 0.4 : 0.2)}`,
-          boxShadow: `0 0 0 3px ${alpha(accent, 0.12)}`,
+          background: alpha(accent, 0.85),
+          border: `2px solid ${handleBorder}`,
+          boxShadow: handleShadow,
         }}
       />
 
@@ -74,140 +100,154 @@ const VisualNode = memo<NodeProps<FlowNodeDataPayload>>(({ data, selected }) => 
         sx={{
           position: 'relative',
           borderRadius: 2,
-          border: `1.5px solid ${border}`,
-          backgroundImage: `linear-gradient(180deg, ${panelGradientStart} 0%, ${panelGradientEnd} 100%)`,
-          backdropFilter: 'blur(2px)',
-          boxShadow: selected
-            ? `0 18px 38px ${alpha(accent, 0.35)}`
-            : `0 10px 28px ${alpha(accent, 0.18)}`,
+          border: `2px solid ${borderColor}`,
+          backgroundColor: baseBackground,
+          backgroundImage: backgroundGradient,
+          boxShadow: restingShadow,
           overflow: 'hidden',
-          minHeight: 120,
-          transform: selected ? 'translateY(-2px)' : 'translateY(0)',
-          transition: theme.transitions.create(['box-shadow', 'transform', 'border-color'], {
+          minHeight: 88,
+          transform: showFullDetails && selected ? 'translateY(-2px)' : 'translateY(0)',
+          transition: theme.transitions.create(['box-shadow', 'transform', 'border-color', 'background-color'], {
             duration: theme.transitions.duration.shorter,
           }),
           '&::after': {
             content: '""',
             position: 'absolute',
-            inset: -2,
+            inset: -3,
             borderRadius: 'inherit',
             pointerEvents: 'none',
-            boxShadow: selected
-              ? `0 0 0 2px ${alpha(accent, 0.4)}`
-              : `0 0 0 0 ${alpha(accent, 0.25)}`,
+            border: `2px solid ${alpha(accent, 0.55)}`,
+            boxShadow: `0 0 0 4px ${alpha(accent, 0.18)}`,
             opacity: selected ? 1 : 0,
-            transition: theme.transitions.create(['box-shadow', 'opacity'], {
+            transition: theme.transitions.create(['opacity'], {
               duration: theme.transitions.duration.shorter,
             }),
           },
-          '&:hover': {
-            boxShadow: `0 20px 44px ${alpha(accent, 0.28)}`,
-            borderColor: accent,
-            transform: 'translateY(-4px)',
-          },
-          '&:hover::after': {
-            opacity: 1,
-            boxShadow: `0 0 0 3px ${alpha(accent, 0.3)}`,
-          },
+          '&:hover': showFullDetails
+            ? {
+                boxShadow: hoverShadow,
+                borderColor: accent,
+                transform: 'translateY(-4px)',
+              }
+            : undefined,
+          '&:hover::after': showFullDetails
+            ? {
+                opacity: 1,
+              }
+            : undefined,
         }}
       >
-        <Box
-          sx={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 1,
-            px: 1.5,
-            py: 1,
-            background: headerBg,
-          }}
-        >
+        {statusColor && (
           <Box
             sx={{
-              width: 10,
-              height: 10,
-              borderRadius: '50%',
-              backgroundColor: accent,
-              flexShrink: 0,
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              bottom: 0,
+              width: 6,
+              background: `linear-gradient(180deg, ${alpha(statusColor, 0.95)} 0%, ${alpha(statusColor, 0.5)} 100%)`,
             }}
           />
-          <Typography
-            variant="subtitle2"
-            sx={{
-              fontWeight: 600,
-              flex: 1,
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              color: theme.palette.getContrastText(headerBg),
-            }}
-          >
-            {display.title}
-          </Typography>
-          <Typography
-            variant="caption"
-            sx={{
-              px: 0.75,
-              py: 0.25,
-              borderRadius: 1,
-              backgroundColor: alpha(accent, theme.palette.mode === 'dark' ? 0.35 : 0.2),
-              color: theme.palette.getContrastText(accent),
-              fontWeight: 700,
-              textTransform: 'uppercase',
-              letterSpacing: 0.75,
-            }}
-          >
-            {display.typeLabel}
-          </Typography>
-        </Box>
+        )}
 
-        <Box sx={{ px: 1.5, py: 1.25 }}>
-          <Typography
-            variant="body2"
-            sx={{
-              whiteSpace: 'pre-wrap',
-              color: alpha(theme.palette.text.primary, 0.85),
-              lineHeight: 1.45,
-            }}
-          >
-            {display.summary}
-          </Typography>
-        </Box>
-
-        {(display.status || display.author) && (
+        {statusColor && statusLabel && showTitleText && (
           <Box
             sx={{
-              px: 1.5,
-              pb: 1.25,
-              display: 'flex',
-              flexWrap: 'wrap',
-              gap: 0.75,
+              position: 'absolute',
+              top: 12,
+              right: 12,
+              px: 1.25,
+              py: 0.4,
+              borderRadius: 999,
+              background: `linear-gradient(90deg, ${alpha(statusColor, 0.85)} 0%, ${alpha(statusColor, 0.55)} 100%)`,
+              color: theme.palette.getContrastText(statusColor),
+              fontSize: 11,
+              fontWeight: 700,
+              letterSpacing: 0.8,
+              textTransform: 'uppercase',
+              boxShadow: `0 10px 18px ${alpha(statusColor, 0.35)}`,
             }}
           >
-            {display.status && statusColor && (
-              <Chip
-                size="small"
-                label={statusLabel}
-                sx={{
-                  backgroundColor: alpha(statusColor, theme.palette.mode === 'dark' ? 0.2 : 0.15),
-                  color: theme.palette.getContrastText(statusColor),
-                  fontWeight: 700,
-                }}
-              />
-            )}
-            {display.author && (
-              <Chip
-                size="small"
-                variant="outlined"
-                label={`${authorPrefix} ${display.author}`}
-                sx={{
-                  borderColor: alpha(theme.palette.text.primary, 0.2),
-                  color: alpha(theme.palette.text.primary, 0.7),
-                  fontWeight: 600,
-                }}
-              />
-            )}
+            {statusLabel}
           </Box>
         )}
+
+        <Box
+          sx={{
+            position: 'relative',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: showFullDetails ? 1 : 0.75,
+            justifyContent: showTitleText ? 'flex-start' : 'center',
+            py: `${verticalPadding}px`,
+            pr: `${horizontalPadding}px`,
+            pl: `${contentLeftPadding}px`,
+            minHeight: 88,
+          }}
+        >
+          {showTitleText ? (
+            <Typography
+              variant={showFullDetails ? 'subtitle1' : 'body2'}
+              sx={{
+                fontWeight: 700,
+                lineHeight: 1.25,
+                color: titleColor,
+                textTransform: showFullDetails ? 'none' : 'uppercase',
+                letterSpacing: showFullDetails ? 0.3 : 1.1,
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}
+            >
+              {display.title}
+            </Typography>
+          ) : (
+            <Box
+              sx={{
+                width: '100%',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 0.5,
+              }}
+            >
+              <Box
+                sx={{
+                  height: 6,
+                  borderRadius: 999,
+                  backgroundColor: skeletonPrimary,
+                  width: `${skeletonWidths.primary}%`,
+                }}
+              />
+              {!isUltraCompact && (
+                <Box
+                  sx={{
+                    height: 6,
+                    borderRadius: 999,
+                    backgroundColor: skeletonSecondary,
+                    width: `${skeletonWidths.secondary}%`,
+                  }}
+                />
+              )}
+            </Box>
+          )}
+
+          {showFullDetails && display.author && (
+            <Chip
+              size="small"
+              variant="outlined"
+              label={`${authorPrefix} ${display.author}`}
+              sx={{
+                mt: 0.75,
+                alignSelf: 'flex-start',
+                borderColor: authorChipBorder,
+                color: authorChipColor,
+                fontWeight: 600,
+                backgroundColor: authorChipBackground,
+                backdropFilter: 'blur(4px)',
+              }}
+            />
+          )}
+        </Box>
       </Box>
 
       <Handle
@@ -217,9 +257,9 @@ const VisualNode = memo<NodeProps<FlowNodeDataPayload>>(({ data, selected }) => 
           width: 12,
           height: 12,
           borderRadius: '50%',
-          background: alpha(accent, 0.9),
-          border: `2px solid ${alpha(accent, theme.palette.mode === 'dark' ? 0.4 : 0.2)}`,
-          boxShadow: `0 0 0 3px ${alpha(accent, 0.12)}`,
+          background: alpha(accent, 0.85),
+          border: `2px solid ${handleBorder}`,
+          boxShadow: handleShadow,
         }}
       />
     </Box>

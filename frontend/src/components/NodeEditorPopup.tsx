@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import {
   Dialog, DialogTitle, DialogContent, Box, Stack, IconButton, Button, TextField,
-  Select, MenuItem, Typography, GlobalStyles, useTheme, Alert, Chip
+  Select, MenuItem, Typography, GlobalStyles, useTheme, Alert, Chip, ButtonBase, Tooltip
 } from '@mui/material';
+import { alpha } from '@mui/material/styles';
 import type { SelectChangeEvent } from '@mui/material/Select';
 import CloseIcon from '@mui/icons-material/Close';
 import SaveIcon from '@mui/icons-material/Save';
@@ -108,6 +109,17 @@ function bubbleColor(name: string, dark: boolean) {
   return dark ? `hsl(${h % 360}, 32%, 22%)` : `hsl(${h % 360}, 70%, 95%)`;
 }
 
+const ACTION_NODE_COLORS = [
+  '#5E60CE',
+  '#48BFE3',
+  '#56CFE1',
+  '#80FF72',
+  '#FFD166',
+  '#FF6B6B',
+  '#FF9F9C',
+  '#C77DFF',
+];
+
 // ---------- Indentation helpers (strip + restore) ----------
 interface IndentInfo { indent: string; stripped: boolean; error?: string }
 function analyzeAndStripIndent(text: string, t: (key: string, options?: any) => string): IndentInfo & { strippedText: string } {
@@ -148,6 +160,29 @@ function restoreIndent(text: string, indent: string): string {
   return out;
 }
 
+const stripMetadataComment = (content: string): string => {
+  const lines = content.split(/\r?\n/);
+  const firstNonEmptyIndex = lines.findIndex(line => line.trim().length > 0);
+  if (firstNonEmptyIndex === -1) {
+    return content;
+  }
+
+  const candidate = lines[firstNonEmptyIndex].trim();
+  if (!candidate.startsWith(NODE_METADATA_PREFIX)) {
+    return content;
+  }
+
+  const updatedLines = [...lines];
+  updatedLines.splice(firstNonEmptyIndex, 1);
+
+  // Remove leading empty lines that might be left behind to avoid blank gap
+  while (updatedLines.length && updatedLines[0].trim().length === 0) {
+    updatedLines.shift();
+  }
+
+  return updatedLines.join('\n');
+};
+
 const extractMetadataFromContent = (content: string): NodeMetadata => {
   const lines = content.split(/\r?\n/);
   for (const line of lines) {
@@ -186,6 +221,7 @@ const NodeEditorPopup: React.FC<NodeEditorPopupProps> = ({
   const [nodeName, setNodeName] = useState<string>('');
   const [nodeStatus, setNodeStatus] = useState<NodeStatus | ''>('');
   const [nodeAuthor, setNodeAuthor] = useState<string>('');
+  const [nodeColor, setNodeColor] = useState<string>('');
   const [isEditingName, setIsEditingName] = useState<boolean>(false);
   const nameBeforeEditRef = useRef<string>('');
 
@@ -217,11 +253,13 @@ const NodeEditorPopup: React.FC<NodeEditorPopupProps> = ({
   // Prepare content on open: analyze indent and strip
   useEffect(() => {
     if (!open) return;
-    const a = analyzeAndStripIndent(initialContent || '', t);
+    const rawContent = initialContent || '';
+    const contentForEditor = isActionNode ? stripMetadataComment(rawContent) : rawContent;
+    const a = analyzeAndStripIndent(contentForEditor, t);
     indentRef.current = a;
     setIndentError(a.error ?? null);
     setValue(a.strippedText);
-  }, [initialContent, open, t]);
+  }, [initialContent, open, t, isActionNode]);
 
   useEffect(() => {
     if (!open) {
@@ -232,6 +270,7 @@ const NodeEditorPopup: React.FC<NodeEditorPopupProps> = ({
       setNodeName('');
       setNodeStatus('');
       setNodeAuthor('');
+      setNodeColor('');
       setIsEditingName(false);
       return;
     }
@@ -240,6 +279,7 @@ const NodeEditorPopup: React.FC<NodeEditorPopupProps> = ({
     setNodeName(metadata.name ?? '');
     setNodeStatus(metadata.status ?? '');
     setNodeAuthor(metadata.author ?? '');
+    setNodeColor(metadata.accentColor ?? '');
     setIsEditingName(false);
   }, [initialContent, isActionNode, open]);
 
@@ -495,6 +535,9 @@ const NodeEditorPopup: React.FC<NodeEditorPopupProps> = ({
       if (authorName) {
         metadata.author = authorName;
       }
+      if (nodeColor) {
+        metadata.accentColor = nodeColor;
+      }
 
       const lines = value.split(/\r?\n/);
       let insertionIndex = 0;
@@ -528,6 +571,12 @@ const NodeEditorPopup: React.FC<NodeEditorPopupProps> = ({
       } else if (!trimmedName) {
         setNodeName('');
       }
+
+      if (metadata.accentColor) {
+        setNodeColor(metadata.accentColor);
+      } else if (!nodeColor) {
+        setNodeColor('');
+      }
     }
 
     let finalText = updatedText;
@@ -547,6 +596,7 @@ const NodeEditorPopup: React.FC<NodeEditorPopupProps> = ({
     nodeStatus,
     currentUsername,
     nodeAuthor,
+    nodeColor,
   ]);
 
   // Styles
@@ -660,6 +710,67 @@ const NodeEditorPopup: React.FC<NodeEditorPopupProps> = ({
                   </MenuItem>
                 ))}
               </Select>
+            </Box>
+
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Typography variant="caption" color="text.secondary">
+                {t('editor.nodeEditor.colorLabel', 'Color')}
+              </Typography>
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
+                <Tooltip title={t('editor.nodeEditor.defaultColor', 'Automatic')}>
+                  <ButtonBase
+                    onClick={() => setNodeColor('')}
+                    sx={{
+                      width: 28,
+                      height: 28,
+                      borderRadius: '50%',
+                      border: nodeColor
+                        ? `1px dashed ${theme.palette.divider}`
+                        : `2px solid ${theme.palette.text.primary}`,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: theme.palette.text.secondary,
+                    }}
+                  >
+                    <Typography variant="caption" sx={{ fontWeight: 700, fontSize: 10 }}>
+                      Ø
+                    </Typography>
+                  </ButtonBase>
+                </Tooltip>
+                {ACTION_NODE_COLORS.map((color) => {
+                  const isSelected = nodeColor === color;
+                  return (
+                    <Tooltip key={color} title={color}>
+                      <ButtonBase
+                        onClick={() => setNodeColor(color)}
+                        sx={{
+                          width: 28,
+                          height: 28,
+                          borderRadius: '50%',
+                          border: isSelected
+                            ? `2px solid ${theme.palette.getContrastText(color)}`
+                            : `1px solid ${alpha(color, 0.6)}`,
+                          boxShadow: isSelected ? `0 0 0 3px ${alpha(color, 0.25)}` : 'none',
+                          transition: theme.transitions.create(['box-shadow', 'transform'], {
+                            duration: theme.transitions.duration.shortest,
+                          }),
+                          transform: isSelected ? 'scale(1.05)' : 'scale(1)',
+                        }}
+                      >
+                        <Box
+                          sx={{
+                            width: '100%',
+                            height: '100%',
+                            borderRadius: '50%',
+                            backgroundColor: color,
+                          }}
+                        />
+                      </ButtonBase>
+                    </Tooltip>
+                  );
+                })}
+              </Box>
             </Box>
 
             {nodeAuthor && (

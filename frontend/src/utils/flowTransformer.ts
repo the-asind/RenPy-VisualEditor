@@ -51,7 +51,7 @@ interface MenuOptionProcessResult {
 
 // --- Configuration ---
 const NODE_WIDTH = 320;
-const NODE_HEIGHT_BASE = 50; // Base height, can increase with content
+const NODE_HEIGHT_BASE = 88; // Unified node height matching single-header layout
 const ACTION_LINE_HEIGHT = 1.5;
 const VERTICAL_SPACING = 140;
 const HORIZONTAL_SPACING_BASE = 20;
@@ -296,6 +296,9 @@ const buildDisplayForNode = (
   const visualType = resolveVisualType(node.node_type);
   const baseInfo = buildNodeDisplayInfo(scriptLines, node);
   const metadata = visualType === 'action' ? extractNodeMetadata(scriptLines, node) : undefined;
+  const accentOverride = visualType === 'action'
+    ? metadata?.accentColor?.trim() || undefined
+    : undefined;
 
   let title = baseInfo.title?.trim() || '';
   let summary = baseInfo.summary?.trim() || '';
@@ -330,41 +333,13 @@ const buildDisplayForNode = (
       author: visualType === 'action' ? metadata?.author : undefined,
       type: visualType,
       typeLabel: resolveTypeLabel(visualType),
-      accentColor: resolveAccentColor(visualType, theme, node),
+      accentColor: accentOverride || resolveAccentColor(visualType, theme, node),
     },
     metadata,
   };
 };
 
-const getNodeHeight = (data: ParsedNodeData, theme: Theme): number => {
-  if (data?.node_type === 'Action') {
-    const actionFontSizePx = getActionFontSizePx(theme);
-    const actionLineHeightPx = getActionLineHeightPx(theme, actionFontSizePx);
-
-    const startLine = typeof data.start_line === 'number' ? data.start_line : null;
-    const endLine = typeof data.end_line === 'number' ? data.end_line : null;
-
-    if (startLine !== null && endLine !== null && endLine >= startLine) {
-      const lineCount = Math.max(1, endLine - startLine + 1);
-      return NODE_HEIGHT_BASE + (lineCount - 1) * actionLineHeightPx;
-    }
-
-    const contentSource = typeof data.content === 'string'
-      ? data.content
-      : Array.isArray(data.content)
-        ? data.content.join('\n')
-        : typeof data.label_name === 'string'
-          ? data.label_name
-          : '';
-
-    const normalizedContent = contentSource.replace(/\r\n/g, '\n');
-    const lineCount = Math.max(1, normalizedContent.split('\n').length);
-
-    return NODE_HEIGHT_BASE + (lineCount - 1) * actionLineHeightPx;
-  }
-
-  return NODE_HEIGHT_BASE;
-};
+const getNodeHeight = (): number => NODE_HEIGHT_BASE;
 
 /**
  * Creates a standard React Flow edge object.
@@ -374,6 +349,7 @@ type EdgeLabelVariant = 'if-true' | 'if-false';
 interface CreateEdgeOptions {
   labelVariant?: EdgeLabelVariant;
   hideLabel?: boolean;
+  strokeColor?: string;
 }
 
 const resolveLabelStyles = (
@@ -425,6 +401,16 @@ const createFlowEdge = (
   const isEndBlockEdge = target.startsWith('end-');
   const hasLabel = Boolean(label && label.trim().length > 0 && !options.hideLabel);
   const labelStyles = hasLabel ? resolveLabelStyles(options.labelVariant, theme) : null;
+  const branchStrokeColor = options.strokeColor
+    || (options.labelVariant === 'if-true'
+      ? theme.palette.success.main
+      : options.labelVariant === 'if-false'
+        ? theme.palette.error.main
+        : undefined);
+  const strokeColor = branchStrokeColor
+    || (isEndBlockEdge
+      ? theme.custom?.nodeColors?.end || theme.palette.divider
+      : theme.custom?.edgeColor || theme.palette.divider);
 
   return {
     id,
@@ -435,17 +421,13 @@ const createFlowEdge = (
     animated,
     style: {
       strokeWidth: 2,
-      stroke: isEndBlockEdge
-        ? theme.custom?.nodeColors?.end || theme.palette.divider
-        : theme.custom?.edgeColor || theme.palette.divider,
+      stroke: strokeColor,
     },
     markerEnd: {
       type: MarkerType.ArrowClosed,
       width: 15,
       height: 15,
-      color: isEndBlockEdge
-        ? theme.custom?.nodeColors?.end || theme.palette.divider
-        : theme.custom?.edgeColor || theme.palette.divider,
+      color: strokeColor,
     },
     ...(labelStyles
       ? {
@@ -662,10 +644,10 @@ function processNodeRecursive(
         nodeId,
         firstTrueNodeId as string,
         theme,
-        'True',
+        '',
         'vertical-turn',
         false,
-        { labelVariant: 'if-true' }
+        { labelVariant: 'if-true', hideLabel: true }
       ));
       
       trueBranchResult.edges = trueBranchResult.edges.filter(
@@ -677,10 +659,10 @@ function processNodeRecursive(
         nodeId,
         nextSequentialNodeId,
         theme,
-        'True',
+        '',
         'vertical-turn',
         false,
-        { labelVariant: 'if-true' }
+        { labelVariant: 'if-true', hideLabel: true }
       ));
     }
 
@@ -691,10 +673,10 @@ function processNodeRecursive(
         nodeId,
         firstFalseNodeId as string,
         theme,
-        'False',
+        '',
         'vertical-turn',
         false,
-        { labelVariant: 'if-false' }
+        { labelVariant: 'if-false', hideLabel: true }
       ));
       
       falseBranchResult.edges = falseBranchResult.edges.filter(
@@ -706,10 +688,10 @@ function processNodeRecursive(
         nodeId,
         nextSequentialNodeId,
         theme,
-        'False',
+        '',
         'vertical-turn',
         false,
-        { labelVariant: 'if-false' }
+        { labelVariant: 'if-false', hideLabel: true }
       ));
     }
 

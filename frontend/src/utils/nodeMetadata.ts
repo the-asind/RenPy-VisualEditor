@@ -6,6 +6,7 @@ export interface NodeMetadata {
   name?: string;
   status?: NodeStatus;
   author?: string;
+  accentColor?: string;
   commentLineIndex?: number;
 }
 
@@ -103,6 +104,8 @@ export const parseMetadataComment = (line: string): NodeMetadata => {
       }
     } else if (key === 'author') {
       metadata.author = value;
+    } else if (key === 'color' || key === 'accent') {
+      metadata.accentColor = value;
     }
   }
 
@@ -144,6 +147,7 @@ export const extractNodeMetadata = (
       metadata.status = parsed.status;
       metadata.author = parsed.author;
       metadata.commentLineIndex = index;
+      metadata.accentColor = parsed.accentColor;
       break;
     }
 
@@ -311,6 +315,10 @@ export const formatMetadataComment = (metadata: NodeMetadata): string | null => 
 
   if (metadata.author && metadata.author.trim()) {
     parts.push(`author="${escapeValue(metadata.author.trim())}"`);
+  }
+
+  if (metadata.accentColor && metadata.accentColor.trim()) {
+    parts.push(`color="${escapeValue(metadata.accentColor.trim())}"`);
   }
 
   if (parts.length === 0) {
