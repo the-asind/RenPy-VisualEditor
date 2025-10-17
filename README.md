@@ -57,6 +57,17 @@ The editor uses a direct reference approach where visual nodes point to specific
 - Better supports collaborative editing
 - Maintains a consistent source of truth
 
+### Branch creation workflow
+
+Use the **Branch tool** in the editor sidebar to add new menu or conditional branches directly to a script:
+
+1. Activate the tool (arrow-into-bar icon) and click a node in the graph.
+2. Choose between inserting a menu or an if/elif/else block.
+3. Fill out the dialog form, preview the generated Ren'Py snippet, and save.
+4. The script is updated through the insert-node API and the graph reloads to show the new branch.
+
+If the selected node is not a valid target (for example, an End node), the tool shows a warning and remains ready for another selection.
+
 ## Tech Stack
 
 ### Backend

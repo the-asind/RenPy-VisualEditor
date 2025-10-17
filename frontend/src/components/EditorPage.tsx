@@ -38,6 +38,7 @@ import {  Box,
   InputLabel,
   Select,
   MenuItem,
+  Menu,
   SelectChangeEvent,
   CircularProgress,
   Grid,
@@ -58,6 +59,7 @@ import ZoomInIcon from '@mui/icons-material/ZoomIn';
 import ZoomOutIcon from '@mui/icons-material/ZoomOut';
 import PanToolIcon from '@mui/icons-material/PanTool';
 import ViewComfyIcon from '@mui/icons-material/ViewComfy';
+import InputIcon from '@mui/icons-material/Input';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import SaveIcon from '@mui/icons-material/Save';
@@ -65,7 +67,7 @@ import SearchIcon from '@mui/icons-material/Search';
 import 'reactflow/dist/style.css';
 import { motion } from 'framer-motion';
 
-import { parseScript, createNewScript, getNodeContent, updateNodeContent, getScriptContent, loadExistingScript } from '../services/api';
+import { parseScript, createNewScript, getNodeContent, updateNodeContent, getScriptContent, loadExistingScript, insertNode } from '../services/api';
 import projectService, { Project } from '../services/projectService';
 import { transformTreeToFlow } from '../utils/flowTransformer';
 import { visualNodeTypes } from './nodes/nodeTypes';
@@ -85,6 +87,15 @@ const drawerWidth = 60;
 const expandedDrawerWidth = 240;
 
 import { useCollab } from '../contexts/CollabContext';
+import MenuBranchDialog from './branching/MenuBranchDialog';
+import ConditionBranchDialog from './branching/ConditionBranchDialog';
+import {
+  buildBranchSnippet,
+  type BranchDialogResult,
+  type MenuBranchDialogResult,
+  type ConditionBranchDialogResult,
+} from '../utils/branching';
+import { analyzeAndStripIndent } from '../utils/indentation';
 
 // Status color mapping
 const getStatusColor = (status: string, theme: any) => {
@@ -150,7 +161,8 @@ const EditorPageInternal: React.FC = () => {
     connectToScript,
     disconnectFromScript,
     projectUsers,
-    scriptUsers
+    scriptUsers,
+    structureUpdate
   } = useCollab();
   
   // Project ID is required from URL
@@ -175,6 +187,20 @@ const EditorPageInternal: React.FC = () => {
   const focusNodeAfterReloadRef = useRef<string | null>(null);
   const [scriptLines, setScriptLines] = useState<string[]>([]);
   const [projectTags, setProjectTags] = useState<ProjectTag[]>([]);
+  const [branchToolActive, setBranchToolActive] = useState<boolean>(false);
+  const [branchMenuPosition, setBranchMenuPosition] = useState<{ mouseX: number; mouseY: number } | null>(null);
+  const [selectedBranchNode, setSelectedBranchNode] = useState<Node | null>(null);
+  const [activeBranchDialog, setActiveBranchDialog] = useState<'menu' | 'condition' | null>(null);
+  const [branchIndentation, setBranchIndentation] = useState<string>('');
+  const [isBranchSubmitting, setIsBranchSubmitting] = useState<boolean>(false);
+
+  const deactivateBranchTool = useCallback(() => {
+    setBranchToolActive(false);
+    setBranchMenuPosition(null);
+    setSelectedBranchNode(null);
+    setActiveBranchDialog(null);
+    setBranchIndentation('');
+  }, []);
 
   // State for LabelBlocks and tabs
   const [labelBlocks, setLabelBlocks] = useState<Array<{ id: string, name: string }>>([]);
@@ -322,6 +348,18 @@ const EditorPageInternal: React.FC = () => {
     return results;
   }, [lineToNodeMap, scriptLines, searchQuery]);
 
+  const selectedBranchNodeName = useMemo(() => {
+    if (!selectedBranchNode) {
+      return '';
+    }
+
+    return (
+      (selectedBranchNode.data as any)?.display?.title
+      || selectedBranchNode.data?.originalData?.label_name
+      || t('editor.nodeEditor.unnamed')
+    );
+  }, [selectedBranchNode, t]);
+
   useEffect(() => {
     if (isSearchDialogOpen && searchInputRef.current) {
       searchInputRef.current.focus();
@@ -354,6 +392,16 @@ const EditorPageInternal: React.FC = () => {
     };
   }, [scriptId]);
 
+  useEffect(() => {
+    deactivateBranchTool();
+  }, [deactivateBranchTool, scriptId]);
+
+  useEffect(() => {
+    return () => {
+      deactivateBranchTool();
+    };
+  }, [deactivateBranchTool]);
+
   // Function to toggle the editor toolbar drawer
   const toggleDrawer = () => {
     setDrawerOpen(!drawerOpen);
@@ -367,6 +415,23 @@ const EditorPageInternal: React.FC = () => {
   const toggleDrawerExpansion = () => {
     setExpandedDrawer(!expandedDrawer);
   };
+
+  const toggleBranchTool = useCallback(() => {
+    if (!scriptId) {
+      setBranchToolActive(false);
+      return;
+    }
+
+    setBranchToolActive((prev) => {
+      if (prev) {
+        setBranchMenuPosition(null);
+        setSelectedBranchNode(null);
+        setActiveBranchDialog(null);
+        setBranchIndentation('');
+      }
+      return !prev;
+    });
+  }, [scriptId]);
   const handleOpenSearchDialog = () => {
     setIsSearchDialogOpen(true);
   };
@@ -388,15 +453,65 @@ const EditorPageInternal: React.FC = () => {
   const onNodeClick = useCallback(async (event: React.MouseEvent, node: Node) => {
     console.log('Clicked node:', node);
 
-    
-    if (node.type === 'endNode' || node.data?.originalData?.node_type === 'End') {
-        console.log('Clicked on an End node, not opening editor.');
+    if (branchToolActive) {
+      event.preventDefault();
+      event.stopPropagation();
+
+      if (node.type === 'endNode' || node.data?.originalData?.node_type === 'End') {
+        setSnackbarMessage(t('editor.branchToolInvalidNode'));
+        setSnackbarSeverity('warning');
+        setSnackbarOpen(true);
         return;
+      }
+
+      if (!scriptId) {
+        setSnackbarMessage(t('editor.errorNoScriptId'));
+        setSnackbarSeverity('error');
+        setSnackbarOpen(true);
+        deactivateBranchTool();
+        return;
+      }
+
+      const startLine = node.data?.originalData?.start_line;
+      const endLine = node.data?.originalData?.end_line;
+
+      if (endLine === undefined || endLine === null) {
+        setSnackbarMessage(t('editor.errorMissingNodeLines'));
+        setSnackbarSeverity('error');
+        setSnackbarOpen(true);
+        return;
+      }
+
+      const rawContent = node.data?.originalData?.content;
+      let contentForIndent = '';
+      if (typeof rawContent === 'string') {
+        contentForIndent = rawContent;
+      } else if (Array.isArray(rawContent)) {
+        contentForIndent = rawContent.join('\n');
+      } else if (typeof startLine === 'number' && typeof endLine === 'number' && scriptLines.length >= endLine) {
+        contentForIndent = scriptLines.slice(Math.max(0, startLine - 1), endLine).join('\n');
+      }
+
+      const indentInfo = analyzeAndStripIndent(contentForIndent || '', t);
+      if (indentInfo.error) {
+        setSnackbarMessage(indentInfo.error);
+        setSnackbarSeverity('warning');
+        setSnackbarOpen(true);
+      }
+
+      setBranchIndentation(indentInfo.indent || '');
+      setSelectedBranchNode(node);
+      setBranchMenuPosition({ mouseX: event.clientX, mouseY: event.clientY });
+      return;
+    }
+
+    if (node.type === 'endNode' || node.data?.originalData?.node_type === 'End') {
+      console.log('Clicked on an End node, not opening editor.');
+      return;
     }
 
     if (!scriptId) {
-      console.error("Cannot fetch node content without scriptId");
-      
+      console.error('Cannot fetch node content without scriptId');
       setSnackbarMessage(t('editor.errorNoScriptId'));
       setSnackbarSeverity('error');
       setSnackbarOpen(true);
@@ -407,7 +522,7 @@ const EditorPageInternal: React.FC = () => {
     const endLine = node.data?.originalData?.end_line;
 
     if (startLine === undefined || endLine === undefined) {
-      console.error("Node data is missing start_line or end_line:", node.data);
+      console.error('Node data is missing start_line or end_line:', node.data);
       setSnackbarMessage(t('editor.errorMissingNodeLines'));
       setSnackbarSeverity('error');
       setSnackbarOpen(true);
@@ -416,29 +531,36 @@ const EditorPageInternal: React.FC = () => {
 
     setSelectedNodeForEdit(node);
     setIsFetchingNodeContent(true);
-    setIsEditorPopupOpen(true); 
-    setEditorInitialContent(''); 
+    setIsEditorPopupOpen(true);
+    setEditorInitialContent('');
 
     try {
       const contentResponse = await getNodeContent(scriptId, startLine, endLine);
       setEditorInitialContent(contentResponse.content);
     } catch (fetchError: any) {
-      console.error("Error fetching node content:", fetchError);
+      console.error('Error fetching node content:', fetchError);
       setSnackbarMessage(fetchError.message || t('editor.errorFetchContent'));
       setSnackbarSeverity('error');
       setSnackbarOpen(true);
-      setIsEditorPopupOpen(false); 
+      setIsEditorPopupOpen(false);
       setSelectedNodeForEdit(null);
     } finally {
       setIsFetchingNodeContent(false);
     }
-  }, [scriptId, t]);  
+  }, [
+    branchToolActive,
+    scriptId,
+    t,
+    scriptLines,
+    deactivateBranchTool,
+  ]);
   const reloadScriptData = useCallback(async () => {
     if (!scriptId || !fileName) {
       console.error("Cannot reload script data without scriptId and fileName");
       return;
     }
 
+    deactivateBranchTool();
     isGraphReloading.current = true;
     if (!focusNodeAfterReloadRef.current) {
       captureViewport(); // <-- capture before reload
@@ -473,9 +595,97 @@ const EditorPageInternal: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [scriptId, fileName, t, captureViewport, currentProject]);
+  }, [scriptId, fileName, t, captureViewport, currentProject, deactivateBranchTool]);
 
-  
+  useEffect(() => {
+    if (!structureUpdate || !scriptId) {
+      return;
+    }
+
+    if (structureUpdate.script_id === scriptId && !isGraphReloading.current) {
+      void reloadScriptData();
+    }
+  }, [structureUpdate, scriptId, reloadScriptData]);
+
+  const handleBranchMenuClose = useCallback(() => {
+    deactivateBranchTool();
+  }, [deactivateBranchTool]);
+
+  const handleBranchOptionSelect = useCallback((type: 'menu' | 'condition') => {
+    setActiveBranchDialog(type);
+    setBranchMenuPosition(null);
+    setBranchToolActive(false);
+  }, []);
+
+  const handleBranchDialogClose = useCallback(() => {
+    setIsBranchSubmitting(false);
+    deactivateBranchTool();
+  }, [deactivateBranchTool]);
+
+  const handleBranchDialogSubmit = useCallback(async (result: BranchDialogResult) => {
+    if (!scriptId || !selectedBranchNode) {
+      setSnackbarMessage(t('editor.errorNoScriptId'));
+      setSnackbarSeverity('error');
+      setSnackbarOpen(true);
+      return;
+    }
+
+    const endLine = selectedBranchNode.data?.originalData?.end_line;
+    if (typeof endLine !== 'number') {
+      setSnackbarMessage(t('editor.errorMissingNodeLines'));
+      setSnackbarSeverity('error');
+      setSnackbarOpen(true);
+      return;
+    }
+
+    const insertionLine = endLine + 1;
+    const normalizedIndent = branchIndentation || result.indent || '';
+    const normalizedResult = { ...result, indent: normalizedIndent } as BranchDialogResult;
+    const snippet = buildBranchSnippet(normalizedResult);
+
+    setIsBranchSubmitting(true);
+    try {
+      await insertNode(scriptId, insertionLine, result.type, snippet);
+      const nodeTitle =
+        (selectedBranchNode.data as any)?.display?.title
+        || selectedBranchNode.data?.originalData?.label_name
+        || t('editor.nodeEditor.unnamed');
+      const successKey =
+        result.type === 'menu'
+          ? 'editor.branchInsertSuccessMenu'
+          : 'editor.branchInsertSuccessCondition';
+      setSnackbarMessage(t(successKey, { nodeName: nodeTitle }));
+      setSnackbarSeverity('success');
+      setSnackbarOpen(true);
+      await reloadScriptData();
+    } catch (error: any) {
+      console.error('Error inserting node:', error);
+      setSnackbarMessage(error?.message || t('editor.branchInsertError'));
+      setSnackbarSeverity('error');
+      setSnackbarOpen(true);
+    } finally {
+      setIsBranchSubmitting(false);
+      setActiveBranchDialog(null);
+      deactivateBranchTool();
+    }
+  }, [
+    branchIndentation,
+    deactivateBranchTool,
+    reloadScriptData,
+    scriptId,
+    selectedBranchNode,
+    t,
+    insertNode,
+  ]);
+
+  const handleMenuDialogSubmit = useCallback((payload: MenuBranchDialogResult) => {
+    void handleBranchDialogSubmit(payload);
+  }, [handleBranchDialogSubmit]);
+
+  const handleConditionDialogSubmit = useCallback((payload: ConditionBranchDialogResult) => {
+    void handleBranchDialogSubmit(payload);
+  }, [handleBranchDialogSubmit]);
+
   const handleSaveNodeContent = useCallback(async (startLine: number, endLine: number, newContent: string) => {
     if (!scriptId || !selectedNodeForEdit) {
       throw new Error(t('editor.errorSaveNoContext'));
@@ -1236,7 +1446,7 @@ const EditorPageInternal: React.FC = () => {
                 </Button>
               </Tooltip>
               <Tooltip title={t('editor.zoomOut')} placement="right">
-                <Button 
+                <Button
                   onClick={handleZoomOut}
                   variant="outlined"
                   size="small"
@@ -1250,9 +1460,27 @@ const EditorPageInternal: React.FC = () => {
                   {expandedDrawer && <Typography sx={{ ml: 1 }}>{t('editor.zoomOut')}</Typography>}
                 </Button>
               </Tooltip>
+              <Tooltip title={t('editor.branchTool')} placement="right">
+                <span>
+                  <Button
+                    onClick={toggleBranchTool}
+                    variant={branchToolActive ? 'contained' : 'outlined'}
+                    size="small"
+                    disabled={!scriptId}
+                    sx={{
+                      justifyContent: expandedDrawer ? 'flex-start' : 'center',
+                      minWidth: expandedDrawer ? 'auto' : 40,
+                      width: '100%'
+                    }}
+                  >
+                    <InputIcon fontSize="small" />
+                    {expandedDrawer && <Typography sx={{ ml: 1 }}>{t('editor.branchTool')}</Typography>}
+                  </Button>
+                </span>
+              </Tooltip>
               <Tooltip title={t('editor.panMode')} placement="right">
-                <Button 
-                  onClick={togglePanMode} 
+                <Button
+                  onClick={togglePanMode}
                   variant={isPanMode ? "contained" : "outlined"}
                   size="small"
                   sx={{ 
@@ -1398,7 +1626,8 @@ const EditorPageInternal: React.FC = () => {
           zIndex: 1, // Base layer
           overflow: 'hidden',
         }}
-      >        <EditorContainer>
+      >
+        <EditorContainer className={branchToolActive ? 'branch-tool-active' : undefined}>
           {/* Loading project state */}
           {isLoadingProject && (
             <Box
@@ -1691,8 +1920,38 @@ const EditorPageInternal: React.FC = () => {
                     }}
                   />
                 )}
-              </ReactFlow>            </Box>
+              </ReactFlow>
+            </Box>
           )}
+          <Menu
+            open={Boolean(branchMenuPosition)}
+            onClose={handleBranchMenuClose}
+            anchorReference="anchorPosition"
+            anchorPosition={branchMenuPosition ? { top: branchMenuPosition.mouseY, left: branchMenuPosition.mouseX } : undefined}
+          >
+            <MenuItem onClick={() => handleBranchOptionSelect('menu')}>
+              {t('editor.branchMenuOption')}
+            </MenuItem>
+            <MenuItem onClick={() => handleBranchOptionSelect('condition')}>
+              {t('editor.branchConditionOption')}
+            </MenuItem>
+          </Menu>
+          <MenuBranchDialog
+            open={activeBranchDialog === 'menu'}
+            onClose={handleBranchDialogClose}
+            onSubmit={handleMenuDialogSubmit}
+            nodeName={selectedBranchNodeName || t('editor.nodeEditor.unnamed')}
+            indentation={branchIndentation}
+            submitting={isBranchSubmitting}
+          />
+          <ConditionBranchDialog
+            open={activeBranchDialog === 'condition'}
+            onClose={handleBranchDialogClose}
+            onSubmit={handleConditionDialogSubmit}
+            nodeName={selectedBranchNodeName || t('editor.nodeEditor.unnamed')}
+            indentation={branchIndentation}
+            submitting={isBranchSubmitting}
+          />
         </EditorContainer>
       </Box>
 

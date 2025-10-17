@@ -8,8 +8,11 @@ export default defineConfig({
     port: 3000, // Match docker-compose port mapping
     host: true, // Needed for Docker container mapping
     strictPort: true,
-     watch: {
-       usePolling: true, // Use polling for file changes in Docker
-     }
+    watch: {
+      usePolling: true, // Use polling for file changes in Docker
+    },
+  },
+  test: {
+    environment: 'node'
   }
 })
