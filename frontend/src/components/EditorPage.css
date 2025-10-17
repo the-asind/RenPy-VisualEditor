@@ -35,6 +35,15 @@
   cursor: grabbing !important;
 }
 
+.branch-tool-active,
+.branch-tool-active .react-flow__pane {
+  cursor: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2224%22 height=%2224%22%3E%3Cpath fill=%22none%22 stroke=%22%230d47a1%22 stroke-width=%222%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22 d=%22M5%204v16m0-8h12l-4-4m4%204-4%204%22/%3E%3C/svg%3E") 4 2, pointer !important;
+}
+
+.branch-tool-active .react-flow__pane.react-flow__pane--dragging {
+  cursor: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2224%22 height=%2224%22%3E%3Cpath fill=%22none%22 stroke=%22%230d47a1%22 stroke-width=%222%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22 d=%22M5%204v16m0-8h12l-4-4m4%204-4%204%22/%3E%3C/svg%3E") 4 2, pointer !important;
+}
+
 /* Hide the floating action button in the bottom left corner */
 .MuiFab-root.MuiFab-circular.MuiFab-sizeMedium.MuiFab-primary {
   display: none !important;

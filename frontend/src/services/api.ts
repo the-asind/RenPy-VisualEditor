@@ -1,7 +1,5 @@
 /// <reference types="vite/client" />
 import axios, { AxiosError } from 'axios';
-import React, { useState, useEffect } from 'react';
-import { Box, useMediaQuery, BottomNavigation, BottomNavigationAction, Paper } from '@mui/material'; // Added Paper import
 
 export interface ParsedScriptResponse {
   script_id: string;
@@ -23,11 +21,19 @@ export interface UpdateNodeResponse {
   content: string;
 }
 
-const effectiveApiUrl = (window as any).RUNTIME_CONFIG?.VITE_API_URL || import.meta.env.VITE_API_URL;
+export interface InsertNodeResponse {
+  start_line: number;
+  end_line: number;
+  line_count: number;
+  tree: any;
+}
+
+const runtimeConfig = typeof window !== 'undefined' ? (window as any).RUNTIME_CONFIG : undefined;
+const effectiveApiUrl = runtimeConfig?.VITE_API_URL || import.meta.env.VITE_API_URL;
 // Log the URL being used to help debug
 console.log('API Base URL configured:', effectiveApiUrl);
 
-const apiClient = axios.create({
+export const apiClient = axios.create({
   baseURL: effectiveApiUrl, // Use the env variable directly
   headers: {
     'Content-Type': 'application/json',
@@ -36,7 +42,7 @@ const apiClient = axios.create({
 
 // Add auth token to all requests if available
 apiClient.interceptors.request.use((config) => {
-  const token = localStorage.getItem('auth_token');
+  const token = typeof localStorage !== 'undefined' ? localStorage.getItem('auth_token') : null;
   if (token && config.headers) {
     config.headers.Authorization = `Bearer ${token}`;
   }
@@ -211,6 +217,44 @@ export const updateNodeContent = async (
     }
     
     throw axiosError.response?.data || new Error(`Failed to update node content. Status: ${axiosError.response?.status || 'unknown'}. ${axiosError.message}`);
+  }
+};
+
+export const insertNode = async (
+  scriptId: string,
+  insertionLine: number,
+  nodeType: string,
+  content: string,
+): Promise<InsertNodeResponse> => {
+  const targetUrl = `${apiClient.defaults.baseURL}/scripts/insert-node/${scriptId}`;
+  console.log(`[API Request] POST ${targetUrl} to insert ${nodeType} at line ${insertionLine}`);
+
+  try {
+    const response = await apiClient.post<InsertNodeResponse>(
+      `/scripts/insert-node/${scriptId}`,
+      { content, node_type: nodeType },
+      { params: { insertion_line: insertionLine } },
+    );
+    console.log('[API Response] insertNode successful:', response.data);
+    return response.data;
+  } catch (error) {
+    console.error('[API Error] Failed during insertNode call.');
+    console.error('Script ID:', scriptId);
+    console.error('Insertion line:', insertionLine);
+    console.error('Node type:', nodeType);
+
+    const axiosError = error as AxiosError;
+
+    if (axiosError.response) {
+      console.error('Error Response Data:', axiosError.response.data);
+      console.error('Error Response Status:', axiosError.response.status);
+    } else if (axiosError.request) {
+      console.error('Error Request:', axiosError.request);
+    } else {
+      console.error('Error Message:', axiosError.message);
+    }
+
+    throw axiosError.response?.data || new Error(`Failed to insert node. Status: ${axiosError.response?.status || 'unknown'}. ${axiosError.message}`);
   }
 };
 

@@ -12,6 +12,7 @@ import Editor, { OnMount } from '@monaco-editor/react';
 import type { Node } from 'reactflow';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../contexts/AuthContext';
+import { analyzeAndStripIndent, restoreIndent, type IndentInfo } from '../utils/indentation';
 import {
   formatMetadataComment,
   NODE_METADATA_PREFIX,
@@ -121,45 +122,6 @@ function bubbleColor(name: string, dark: boolean) {
 }
 
 // ---------- Indentation helpers (strip + restore) ----------
-interface IndentInfo { indent: string; stripped: boolean; error?: string }
-function analyzeAndStripIndent(text: string, t: (key: string, options?: any) => string): IndentInfo & { strippedText: string } {
-  const lines = text.split(/\r?\n/);
-  const firstIdx = lines.findIndex(l => l.trim().length > 0);
-  if (firstIdx === -1) return { indent: '', stripped: false, strippedText: text };
-  const first = lines[firstIdx];
-  const indentMatch = first.match(/^[\t ]*/);
-  const indent = indentMatch ? indentMatch[0] : '';
-  if (!indent) return { indent: '', stripped: false, strippedText: text };
-
-  // Validate: any non-empty line with smaller indent -> error
-  const baseLen = indent.length;
-  for (let i = firstIdx + 1; i < lines.length; i++) {
-    const l = lines[i];
-    if (!l.trim()) continue;
-    const cur = (l.match(/^[\t ]*/) || [''])[0];
-    if (cur.length < baseLen) {
-      return {
-        indent: '',
-        stripped: false,
-        strippedText: text,
-        error: t('editor.indentError', { line: i + 1 })
-      };
-    }
-  }
-
-  // Safe: strip same indent from lines that have it
-  const strippedLines = lines.map(l => l.startsWith(indent) ? l.slice(baseLen) : l);
-  return { indent, stripped: true, strippedText: strippedLines.join('\n') };
-}
-
-function restoreIndent(text: string, indent: string): string {
-  if (!indent) return text;
-  const lines = text.split(/\r?\n/);
-  // Добавляем одинаковый отступ в каждую НЕ пустую строку
-  const out = lines.map(l => (l.trim().length ? indent + l : l)).join('\n');
-  return out;
-}
-
 const stripMetadataComment = (content: string): string => {
   const lines = content.split(/\r?\n/);
   const firstNonEmptyIndex = lines.findIndex(line => line.trim().length > 0);
