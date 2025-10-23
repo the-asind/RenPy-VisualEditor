@@ -136,7 +136,7 @@
   "editor.branchTool": "分支工具",
   "editor.branchMenuOption": "添加菜单",
   "editor.branchConditionOption": "添加条件分支",
-  "editor.branchToolInvalidNode": "分支工具无法作用于结尾节点。",
+  "editor.branchToolInvalidNode": "分支工具仅可用于动作块。",
   "editor.branchInsertSuccessMenu": "已在 {{nodeName}} 之后插入菜单。",
   "editor.branchInsertSuccessCondition": "已在 {{nodeName}} 之后插入条件块。",
   "editor.branchInsertError": "插入分支失败，请重试。",

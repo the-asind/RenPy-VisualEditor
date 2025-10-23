@@ -136,7 +136,7 @@
   "editor.branchTool": "Branch tool",
   "editor.branchMenuOption": "Add menu",
   "editor.branchConditionOption": "Add condition",
-  "editor.branchToolInvalidNode": "Branch tool can't target End nodes.",
+  "editor.branchToolInvalidNode": "Branch tool can only target action blocks.",
   "editor.branchInsertSuccessMenu": "Inserted a menu after {{nodeName}}.",
   "editor.branchInsertSuccessCondition": "Inserted a condition block after {{nodeName}}.",
   "editor.branchInsertError": "Failed to insert branch. Please try again.",

@@ -136,7 +136,7 @@
   "editor.branchTool": "Verzweigungswerkzeug",
   "editor.branchMenuOption": "Menü hinzufügen",
   "editor.branchConditionOption": "Bedingung hinzufügen",
-  "editor.branchToolInvalidNode": "Das Verzweigungswerkzeug kann End-Knoten nicht anvisieren.",
+  "editor.branchToolInvalidNode": "Das Verzweigungswerkzeug kann nur auf Aktionsblöcke angewendet werden.",
   "editor.branchInsertSuccessMenu": "Menü nach {{nodeName}} eingefügt.",
   "editor.branchInsertSuccessCondition": "Bedingungsblock nach {{nodeName}} eingefügt.",
   "editor.branchInsertError": "Verzweigung konnte nicht eingefügt werden. Bitte erneut versuchen.",

@@ -138,7 +138,7 @@
   "editor.branchTool": "Инструмент ветвления",
   "editor.branchMenuOption": "Добавить меню",
   "editor.branchConditionOption": "Добавить условие",
-  "editor.branchToolInvalidNode": "Инструмент ветвления нельзя использовать на конечных узлах.",
+  "editor.branchToolInvalidNode": "Инструмент ветвления можно использовать только на блоках действий.",
   "editor.branchInsertSuccessMenu": "Меню добавлено после {{nodeName}}.",
   "editor.branchInsertSuccessCondition": "Условный блок добавлен после {{nodeName}}.",
   "editor.branchInsertError": "Не удалось вставить ветку. Попробуйте еще раз.",

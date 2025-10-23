@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useEffect, useRef, useLayoutEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useSearchParams, useNavigate, Link as RouterLink } from 'react-router-dom';
 import ReactFlow, {
   useNodesState,
   useEdgesState,
@@ -51,7 +51,9 @@ import {  Box,
   DialogActions,
   TextField,
   InputAdornment,
-  ListItemButton
+  ListItemButton,
+  Breadcrumbs,
+  Link as MuiLink
 } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import MenuIcon from '@mui/icons-material/Menu';
@@ -132,6 +134,22 @@ const EditorContainer = styled(Box)(({ theme }) => ({
   backgroundColor: theme.palette.background.default,
   zIndex: 1, // Base layer
 }));
+
+const SIDEBAR_TOGGLE_BUTTON_HEIGHT = 48;
+const SIDEBAR_BOTTOM_TOGGLE_BUTTON_HEIGHT = Math.max(Math.round(SIDEBAR_TOGGLE_BUTTON_HEIGHT / 3), 16);
+
+const getSidebarButtonSx = (expanded: boolean) => ({
+  justifyContent: expanded ? 'flex-start' : 'center',
+  minWidth: expanded ? 'auto' : 40,
+  width: '100%',
+  transition: 'padding 0.25s ease, justify-content 0.25s ease, width 0.25s ease',
+  px: expanded ? 1.5 : 0.5,
+});
+
+const getSidebarIconSx = (expanded: boolean) => ({
+  transition: 'margin 0.25s ease',
+  mr: expanded ? 1 : 0,
+});
 
 interface ScriptNodeIndexEntry {
   nodeId: string;
@@ -458,6 +476,14 @@ const EditorPageInternal: React.FC = () => {
       event.stopPropagation();
 
       if (node.type === 'endNode' || node.data?.originalData?.node_type === 'End') {
+        setSnackbarMessage(t('editor.branchToolInvalidNode'));
+        setSnackbarSeverity('warning');
+        setSnackbarOpen(true);
+        return;
+      }
+
+      const originalNodeType = node.data?.originalData?.node_type;
+      if (originalNodeType !== 'Action') {
         setSnackbarMessage(t('editor.branchToolInvalidNode'));
         setSnackbarSeverity('warning');
         setSnackbarOpen(true);
@@ -1244,6 +1270,59 @@ const EditorPageInternal: React.FC = () => {
     return [...editing, ...others];
   }, [projectUsers, scriptUsers]);
 
+  const handleProjectBreadcrumbClick = useCallback(() => {
+    if (!projectId) {
+      return;
+    }
+
+    setScriptId(null);
+    setFileName('');
+    setParsedData(null);
+    setLabelBlocks([]);
+    setActiveTabId(null);
+    setActiveLabelName(null);
+    setNodes([]);
+    setEdges([]);
+    setSearchQuery('');
+    setIsSearchDialogOpen(false);
+    setError(null);
+    setPendingNodeFocus(null);
+    focusNodeAfterReloadRef.current = null;
+    manualNodeFocusRef.current = false;
+    setBranchToolActive(false);
+    setBranchMenuPosition(null);
+    setSelectedBranchNode(null);
+    setActiveBranchDialog(null);
+    setBranchIndentation('');
+    setIsBranchSubmitting(false);
+
+    connectToProject(projectId);
+
+    navigate(`/editor?project=${projectId}`);
+  }, [
+    projectId,
+    connectToProject,
+    navigate,
+    setScriptId,
+    setFileName,
+    setParsedData,
+    setNodes,
+    setEdges,
+    setLabelBlocks,
+    setActiveTabId,
+    setActiveLabelName,
+    setSearchQuery,
+    setIsSearchDialogOpen,
+    setError,
+    setPendingNodeFocus,
+    setBranchToolActive,
+    setBranchMenuPosition,
+    setSelectedBranchNode,
+    setActiveBranchDialog,
+    setBranchIndentation,
+    setIsBranchSubmitting
+  ]);
+
   return (
     <Box sx={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
       {/* Glass-effect top bar */}
@@ -1259,32 +1338,57 @@ const EditorPageInternal: React.FC = () => {
             >
               <MenuIcon />
             </IconButton>
-            <Typography 
-              variant="h6" 
-              noWrap 
-              component="div" 
-              sx={{ 
-                display: 'flex', 
-                alignItems: 'center', 
-                fontSize: '1.25rem' 
+            <Breadcrumbs
+              separator="→"
+              aria-label="breadcrumb"
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                fontSize: '1.25rem',
+                '& .MuiBreadcrumbs-separator': {
+                  mx: 1,
+                  color: theme.palette.text.secondary,
+                  fontSize: '1.1rem'
+                }
               }}
             >
-              <span style={{ fontWeight: 600}}>Ren'Py Visual Editor </span>
-              <span style={{ 
-                opacity: 0.7, 
-                marginLeft: 8, 
-                marginRight: 8, 
-                fontWeight: 400,
-              }}>→</span>
-              <span style={{ 
-                fontWeight: 500 
-              }}>{projectName}</span>
-            </Typography>
-          </Box>          {scriptId && (
+              <MuiLink
+                component={RouterLink}
+                to="/"
+                underline="hover"
+                color="inherit"
+                sx={{ fontWeight: 600, fontSize: '1.1rem' }}
+              >
+                Ren'Py Visual Editor
+              </MuiLink>
+              <MuiLink
+                component="button"
+                type="button"
+                underline="hover"
+                color="inherit"
+                onClick={handleProjectBreadcrumbClick}
+                sx={{
+                  fontWeight: 500,
+                  fontSize: '1.1rem',
+                  textAlign: 'left',
+                  p: 0,
+                  backgroundColor: 'transparent'
+                }}
+              >
+                {projectName || '...'}
+              </MuiLink>
+              {scriptId && fileName && (
+                <Typography
+                  component="span"
+                  sx={{ fontWeight: 500, fontSize: '1.1rem' }}
+                >
+                  {fileName}
+                </Typography>
+              )}
+            </Breadcrumbs>
+          </Box>
+          {scriptId && (
             <Box sx={{ display: 'flex', alignItems: 'center' }}>
-              <Typography variant="subtitle2" color="text.secondary" sx={{ opacity: 0.7, mr: 2 }}>
-                {t('editor.editingFile', { fileName, scriptId })}
-              </Typography>
               <Tooltip title={t('editor.saveToLocal')}>
                 <Button
                   variant="outlined"
@@ -1371,7 +1475,8 @@ const EditorPageInternal: React.FC = () => {
           flexShrink: 0,
           position: 'absolute',
           zIndex: 1100, // Lower than AppBar but above the canvas
-          transition: 'all 0.3s ease',          '& .MuiDrawer-paper': {
+          transition: 'all 0.3s ease',
+          '& .MuiDrawer-paper': {
             width: expandedDrawer ? expandedDrawerWidth : drawerWidth,
             boxSizing: 'border-box',
             top: 64, // AppBar height
@@ -1387,21 +1492,36 @@ const EditorPageInternal: React.FC = () => {
           },
         }}
       >
-        <Box sx={{ 
-          display: 'flex', 
-          flexDirection: 'column', 
+        <Box sx={{
+          display: 'flex',
+          flexDirection: 'column',
           height: '100%',
           overflow: 'hidden' // Prevent horizontal scroll
         }}>
           {/* Toolbar buttons */}
           <List sx={{ py: 1 }}>
-            <ListItem disablePadding sx={{ display: 'block', textAlign: 'center', mb: 1 }}>
-              <IconButton onClick={toggleDrawerExpansion} sx={{ mx: 'auto' }}>
-                {expandedDrawer ? <ChevronLeftIcon /> : <ChevronRightIcon />}
-              </IconButton>
+            <ListItem
+              disablePadding
+              sx={{
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                mb: 1,
+                height: SIDEBAR_TOGGLE_BUTTON_HEIGHT
+              }}
+            >
+              <Box
+                sx={{
+                  width: '100%',
+                  height: SIDEBAR_TOGGLE_BUTTON_HEIGHT,
+                  pointerEvents: 'none'
+                }}
+                aria-hidden
+              />
             </ListItem>
-            
-            <Divider sx={{ my: 1, borderColor: theme.palette.divider }} />            {/* Zoom and Pan Controls */}
+
+            <Divider sx={{ my: 1, borderColor: theme.palette.divider }} />
+            {/* Zoom and Pan Controls */}
             <Box
               sx={{
                 display: 'flex',
@@ -1419,13 +1539,9 @@ const EditorPageInternal: React.FC = () => {
                     variant="outlined"
                     size="small"
                     disabled={!scriptId || nodes.length === 0 || scriptLines.length === 0}
-                    sx={{
-                      justifyContent: expandedDrawer ? 'flex-start' : 'center',
-                      minWidth: expandedDrawer ? 'auto' : 40,
-                      width: '100%'
-                    }}
+                    sx={getSidebarButtonSx(expandedDrawer)}
                   >
-                    <SearchIcon fontSize="small" />
+                    <SearchIcon fontSize="small" sx={getSidebarIconSx(expandedDrawer)} />
                     {expandedDrawer && <Typography sx={{ ml: 1 }}>{t('editor.search')}</Typography>}
                   </Button>
                 </span>
@@ -1435,13 +1551,9 @@ const EditorPageInternal: React.FC = () => {
                   onClick={handleZoomIn}
                   variant="outlined"
                   size="small"
-                  sx={{ 
-                    justifyContent: expandedDrawer ? 'flex-start' : 'center',
-                    minWidth: expandedDrawer ? 'auto' : 40,
-                    width: '100%'
-                  }}
+                  sx={getSidebarButtonSx(expandedDrawer)}
                 >
-                  <ZoomInIcon fontSize="small" />
+                  <ZoomInIcon fontSize="small" sx={getSidebarIconSx(expandedDrawer)} />
                   {expandedDrawer && <Typography sx={{ ml: 1 }}>{t('editor.zoomIn')}</Typography>}
                 </Button>
               </Tooltip>
@@ -1450,13 +1562,9 @@ const EditorPageInternal: React.FC = () => {
                   onClick={handleZoomOut}
                   variant="outlined"
                   size="small"
-                  sx={{ 
-                    justifyContent: expandedDrawer ? 'flex-start' : 'center',
-                    minWidth: expandedDrawer ? 'auto' : 40,
-                    width: '100%'
-                  }}
+                  sx={getSidebarButtonSx(expandedDrawer)}
                 >
-                  <ZoomOutIcon fontSize="small" />
+                  <ZoomOutIcon fontSize="small" sx={getSidebarIconSx(expandedDrawer)} />
                   {expandedDrawer && <Typography sx={{ ml: 1 }}>{t('editor.zoomOut')}</Typography>}
                 </Button>
               </Tooltip>
@@ -1467,13 +1575,9 @@ const EditorPageInternal: React.FC = () => {
                     variant={branchToolActive ? 'contained' : 'outlined'}
                     size="small"
                     disabled={!scriptId}
-                    sx={{
-                      justifyContent: expandedDrawer ? 'flex-start' : 'center',
-                      minWidth: expandedDrawer ? 'auto' : 40,
-                      width: '100%'
-                    }}
+                    sx={getSidebarButtonSx(expandedDrawer)}
                   >
-                    <InputIcon fontSize="small" />
+                    <InputIcon fontSize="small" sx={getSidebarIconSx(expandedDrawer)} />
                     {expandedDrawer && <Typography sx={{ ml: 1 }}>{t('editor.branchTool')}</Typography>}
                   </Button>
                 </span>
@@ -1483,28 +1587,20 @@ const EditorPageInternal: React.FC = () => {
                   onClick={togglePanMode}
                   variant={isPanMode ? "contained" : "outlined"}
                   size="small"
-                  sx={{ 
-                    justifyContent: expandedDrawer ? 'flex-start' : 'center',
-                    minWidth: expandedDrawer ? 'auto' : 40,
-                    width: '100%'
-                  }}
+                  sx={getSidebarButtonSx(expandedDrawer)}
                 >
-                  <PanToolIcon fontSize="small" />
+                  <PanToolIcon fontSize="small" sx={getSidebarIconSx(expandedDrawer)} />
                   {expandedDrawer && <Typography sx={{ ml: 1 }}>{t('editor.panMode')}</Typography>}
                 </Button>
               </Tooltip>
               <Tooltip title={t('editor.minimap')} placement="right">
-                <Button 
-                  onClick={toggleMinimap} 
+                <Button
+                  onClick={toggleMinimap}
                   variant={showMinimap ? "contained" : "outlined"}
                   size="small"
-                  sx={{ 
-                    justifyContent: expandedDrawer ? 'flex-start' : 'center',
-                    minWidth: expandedDrawer ? 'auto' : 40,
-                    width: '100%'
-                  }}
+                  sx={getSidebarButtonSx(expandedDrawer)}
                 >
-                  <ViewComfyIcon fontSize="small" />
+                  <ViewComfyIcon fontSize="small" sx={getSidebarIconSx(expandedDrawer)} />
                   {expandedDrawer && <Typography sx={{ ml: 1 }}>{t('editor.minimap')}</Typography>}
                 </Button>
               </Tooltip>
@@ -1607,6 +1703,31 @@ const EditorPageInternal: React.FC = () => {
               );
             })}
           </List>
+
+          <Box
+            sx={{
+              mt: 'auto',
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+              py: 1
+            }}
+          >
+            <IconButton
+              onClick={toggleDrawerExpansion}
+              size="small"
+              aria-label="Toggle sidebar width"
+              sx={{
+                width: SIDEBAR_BOTTOM_TOGGLE_BUTTON_HEIGHT,
+                height: SIDEBAR_BOTTOM_TOGGLE_BUTTON_HEIGHT,
+                '& .MuiSvgIcon-root': {
+                  fontSize: SIDEBAR_BOTTOM_TOGGLE_BUTTON_HEIGHT * 0.75
+                }
+              }}
+            >
+              {expandedDrawer ? <ChevronLeftIcon /> : <ChevronRightIcon />}
+            </IconButton>
+          </Box>
         </Box>
       </Drawer>
 

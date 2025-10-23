@@ -136,7 +136,7 @@
   "editor.branchTool": "分岐ツール",
   "editor.branchMenuOption": "メニューを追加",
   "editor.branchConditionOption": "条件分岐を追加",
-  "editor.branchToolInvalidNode": "分岐ツールはEndノードには使用できません。",
+  "editor.branchToolInvalidNode": "分岐ツールはアクションブロックにのみ使用できます。",
   "editor.branchInsertSuccessMenu": "{{nodeName}} の後にメニューを挿入しました。",
   "editor.branchInsertSuccessCondition": "{{nodeName}} の後に条件ブロックを挿入しました。",
   "editor.branchInsertError": "分岐の挿入に失敗しました。もう一度お試しください。",
