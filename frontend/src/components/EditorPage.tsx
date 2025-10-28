@@ -61,7 +61,6 @@ import ZoomInIcon from '@mui/icons-material/ZoomIn';
 import ZoomOutIcon from '@mui/icons-material/ZoomOut';
 import PanToolIcon from '@mui/icons-material/PanTool';
 import ViewComfyIcon from '@mui/icons-material/ViewComfy';
-import InputIcon from '@mui/icons-material/Input';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import SaveIcon from '@mui/icons-material/Save';
@@ -205,15 +204,29 @@ const EditorPageInternal: React.FC = () => {
   const focusNodeAfterReloadRef = useRef<string | null>(null);
   const [scriptLines, setScriptLines] = useState<string[]>([]);
   const [projectTags, setProjectTags] = useState<ProjectTag[]>([]);
-  const [branchToolActive, setBranchToolActive] = useState<boolean>(false);
   const [branchMenuPosition, setBranchMenuPosition] = useState<{ mouseX: number; mouseY: number } | null>(null);
   const [selectedBranchNode, setSelectedBranchNode] = useState<Node | null>(null);
   const [activeBranchDialog, setActiveBranchDialog] = useState<'menu' | 'condition' | null>(null);
   const [branchIndentation, setBranchIndentation] = useState<string>('');
   const [isBranchSubmitting, setIsBranchSubmitting] = useState<boolean>(false);
 
-  const deactivateBranchTool = useCallback(() => {
-    setBranchToolActive(false);
+  useEffect(() => {
+    const handleContextMenu = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest('.monaco-editor')) {
+        return;
+      }
+
+      event.preventDefault();
+    };
+
+    document.addEventListener('contextmenu', handleContextMenu, true);
+    return () => {
+      document.removeEventListener('contextmenu', handleContextMenu, true);
+    };
+  }, []);
+
+  const closeBranchMenu = useCallback(() => {
     setBranchMenuPosition(null);
     setSelectedBranchNode(null);
     setActiveBranchDialog(null);
@@ -653,14 +666,14 @@ const EditorPageInternal: React.FC = () => {
   }, [scriptId]);
 
   useEffect(() => {
-    deactivateBranchTool();
-  }, [deactivateBranchTool, scriptId]);
+    closeBranchMenu();
+  }, [closeBranchMenu, scriptId]);
 
   useEffect(() => {
     return () => {
-      deactivateBranchTool();
+      closeBranchMenu();
     };
-  }, [deactivateBranchTool]);
+  }, [closeBranchMenu]);
 
   // Function to toggle the editor toolbar drawer
   const toggleDrawer = () => {
@@ -676,22 +689,6 @@ const EditorPageInternal: React.FC = () => {
     setExpandedDrawer(!expandedDrawer);
   };
 
-  const toggleBranchTool = useCallback(() => {
-    if (!scriptId) {
-      setBranchToolActive(false);
-      return;
-    }
-
-    setBranchToolActive((prev) => {
-      if (prev) {
-        setBranchMenuPosition(null);
-        setSelectedBranchNode(null);
-        setActiveBranchDialog(null);
-        setBranchIndentation('');
-      }
-      return !prev;
-    });
-  }, [scriptId]);
   const handleOpenSearchDialog = () => {
     setIsSearchDialogOpen(true);
   };
@@ -712,66 +709,6 @@ const EditorPageInternal: React.FC = () => {
   // Function to handle node clicks - Opens the editor popup
   const onNodeClick = useCallback(async (event: React.MouseEvent, node: Node) => {
     console.log('Clicked node:', node);
-
-    if (branchToolActive) {
-      event.preventDefault();
-      event.stopPropagation();
-
-      if (node.type === 'endNode' || node.data?.originalData?.node_type === 'End') {
-        setSnackbarMessage(t('editor.branchToolInvalidNode'));
-        setSnackbarSeverity('warning');
-        setSnackbarOpen(true);
-        return;
-      }
-
-      const originalNodeType = node.data?.originalData?.node_type;
-      if (originalNodeType !== 'Action') {
-        setSnackbarMessage(t('editor.branchToolInvalidNode'));
-        setSnackbarSeverity('warning');
-        setSnackbarOpen(true);
-        return;
-      }
-
-      if (!scriptId) {
-        setSnackbarMessage(t('editor.errorNoScriptId'));
-        setSnackbarSeverity('error');
-        setSnackbarOpen(true);
-        deactivateBranchTool();
-        return;
-      }
-
-      const startLine = node.data?.originalData?.start_line;
-      const endLine = node.data?.originalData?.end_line;
-
-      if (endLine === undefined || endLine === null) {
-        setSnackbarMessage(t('editor.errorMissingNodeLines'));
-        setSnackbarSeverity('error');
-        setSnackbarOpen(true);
-        return;
-      }
-
-      const rawContent = node.data?.originalData?.content;
-      let contentForIndent = '';
-      if (typeof rawContent === 'string') {
-        contentForIndent = rawContent;
-      } else if (Array.isArray(rawContent)) {
-        contentForIndent = rawContent.join('\n');
-      } else if (typeof startLine === 'number' && typeof endLine === 'number' && scriptLines.length >= endLine) {
-        contentForIndent = scriptLines.slice(Math.max(0, startLine - 1), endLine).join('\n');
-      }
-
-      const indentInfo = analyzeAndStripIndent(contentForIndent || '', t);
-      if (indentInfo.error) {
-        setSnackbarMessage(indentInfo.error);
-        setSnackbarSeverity('warning');
-        setSnackbarOpen(true);
-      }
-
-      setBranchIndentation(indentInfo.indent || '');
-      setSelectedBranchNode(node);
-      setBranchMenuPosition({ mouseX: event.clientX, mouseY: event.clientY });
-      return;
-    }
 
     if (node.type === 'endNode' || node.data?.originalData?.node_type === 'End') {
       console.log('Clicked on an End node, not opening editor.');
@@ -816,11 +753,74 @@ const EditorPageInternal: React.FC = () => {
       setIsFetchingNodeContent(false);
     }
   }, [
-    branchToolActive,
     scriptId,
     t,
     scriptLines,
-    deactivateBranchTool,
+  ]);
+
+  const onNodeContextMenu = useCallback((event: React.MouseEvent, node: Node) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (node.type === 'endNode' || node.data?.originalData?.node_type === 'End') {
+      setSnackbarMessage(t('editor.branchToolInvalidNode'));
+      setSnackbarSeverity('warning');
+      setSnackbarOpen(true);
+      return;
+    }
+
+    const originalNodeType = node.data?.originalData?.node_type;
+    if (originalNodeType !== 'Action') {
+      setSnackbarMessage(t('editor.branchToolInvalidNode'));
+      setSnackbarSeverity('warning');
+      setSnackbarOpen(true);
+      return;
+    }
+
+    if (!scriptId) {
+      setSnackbarMessage(t('editor.errorNoScriptId'));
+      setSnackbarSeverity('error');
+      setSnackbarOpen(true);
+      closeBranchMenu();
+      return;
+    }
+
+    const startLine = node.data?.originalData?.start_line;
+    const endLine = node.data?.originalData?.end_line;
+
+    if (endLine === undefined || endLine === null) {
+      setSnackbarMessage(t('editor.errorMissingNodeLines'));
+      setSnackbarSeverity('error');
+      setSnackbarOpen(true);
+      return;
+    }
+
+    const rawContent = node.data?.originalData?.content;
+    let contentForIndent = '';
+    if (typeof rawContent === 'string') {
+      contentForIndent = rawContent;
+    } else if (Array.isArray(rawContent)) {
+      contentForIndent = rawContent.join('\n');
+    } else if (typeof startLine === 'number' && typeof endLine === 'number' && scriptLines.length >= endLine) {
+      contentForIndent = scriptLines.slice(Math.max(0, startLine - 1), endLine).join('\n');
+    }
+
+    const indentInfo = analyzeAndStripIndent(contentForIndent || '', t);
+    if (indentInfo.error) {
+      setSnackbarMessage(indentInfo.error);
+      setSnackbarSeverity('warning');
+      setSnackbarOpen(true);
+    }
+
+    setActiveBranchDialog(null);
+    setBranchIndentation(indentInfo.indent || '');
+    setSelectedBranchNode(node);
+    setBranchMenuPosition({ mouseX: event.clientX, mouseY: event.clientY });
+  }, [
+    closeBranchMenu,
+    scriptId,
+    scriptLines,
+    t,
   ]);
   const reloadScriptData = useCallback(async () => {
     if (!scriptId || !fileName) {
@@ -828,7 +828,7 @@ const EditorPageInternal: React.FC = () => {
       return;
     }
 
-    deactivateBranchTool();
+    closeBranchMenu();
     isGraphReloading.current = true;
     if (!focusNodeAfterReloadRef.current) {
       captureViewport(); // <-- capture before reload
@@ -863,7 +863,7 @@ const EditorPageInternal: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [scriptId, fileName, t, captureViewport, currentProject, deactivateBranchTool]);
+  }, [scriptId, fileName, t, captureViewport, currentProject, closeBranchMenu]);
 
   useEffect(() => {
     if (!structureUpdate || !scriptId) {
@@ -876,19 +876,18 @@ const EditorPageInternal: React.FC = () => {
   }, [structureUpdate, scriptId, reloadScriptData]);
 
   const handleBranchMenuClose = useCallback(() => {
-    deactivateBranchTool();
-  }, [deactivateBranchTool]);
+    closeBranchMenu();
+  }, [closeBranchMenu]);
 
   const handleBranchOptionSelect = useCallback((type: 'menu' | 'condition') => {
     setActiveBranchDialog(type);
     setBranchMenuPosition(null);
-    setBranchToolActive(false);
   }, []);
 
   const handleBranchDialogClose = useCallback(() => {
     setIsBranchSubmitting(false);
-    deactivateBranchTool();
-  }, [deactivateBranchTool]);
+    closeBranchMenu();
+  }, [closeBranchMenu]);
 
   const handleBranchDialogSubmit = useCallback(async (result: BranchDialogResult) => {
     if (!scriptId || !selectedBranchNode) {
@@ -934,11 +933,11 @@ const EditorPageInternal: React.FC = () => {
     } finally {
       setIsBranchSubmitting(false);
       setActiveBranchDialog(null);
-      deactivateBranchTool();
+      closeBranchMenu();
     }
   }, [
     branchIndentation,
-    deactivateBranchTool,
+    closeBranchMenu,
     reloadScriptData,
     scriptId,
     selectedBranchNode,
@@ -1531,7 +1530,6 @@ const EditorPageInternal: React.FC = () => {
     setPendingNodeFocus(null);
     focusNodeAfterReloadRef.current = null;
     manualNodeFocusRef.current = false;
-    setBranchToolActive(false);
     setBranchMenuPosition(null);
     setSelectedBranchNode(null);
     setActiveBranchDialog(null);
@@ -1557,7 +1555,6 @@ const EditorPageInternal: React.FC = () => {
     setIsSearchDialogOpen,
     setError,
     setPendingNodeFocus,
-    setBranchToolActive,
     setBranchMenuPosition,
     setSelectedBranchNode,
     setActiveBranchDialog,
@@ -1810,20 +1807,6 @@ const EditorPageInternal: React.FC = () => {
                   {expandedDrawer && <Typography sx={{ ml: 1 }}>{t('editor.zoomOut')}</Typography>}
                 </Button>
               </Tooltip>
-              <Tooltip title={t('editor.branchTool')} placement="right">
-                <span>
-                  <Button
-                    onClick={toggleBranchTool}
-                    variant={branchToolActive ? 'contained' : 'outlined'}
-                    size="small"
-                    disabled={!scriptId}
-                    sx={getSidebarButtonSx(expandedDrawer)}
-                  >
-                    <InputIcon fontSize="small" sx={getSidebarIconSx(expandedDrawer)} />
-                    {expandedDrawer && <Typography sx={{ ml: 1 }}>{t('editor.branchTool')}</Typography>}
-                  </Button>
-                </span>
-              </Tooltip>
               <Tooltip title={t('editor.panMode')} placement="right">
                 <Button
                   onClick={togglePanMode}
@@ -1990,7 +1973,7 @@ const EditorPageInternal: React.FC = () => {
           overflow: 'hidden',
         }}
       >
-        <EditorContainer className={branchToolActive ? 'branch-tool-active' : undefined}>
+        <EditorContainer>
           {/* Loading project state */}
           {isLoadingProject && (
             <Box
@@ -2257,6 +2240,7 @@ const EditorPageInternal: React.FC = () => {
                 onEdgesChange={onEdgesChange}
                 onConnect={onConnect}
                 onNodeClick={onNodeClick}
+                onNodeContextMenu={onNodeContextMenu}
                 className="flow-canvas"
                 edgeTypes={edgeTypes}
                 nodeTypes={visualNodeTypes}
