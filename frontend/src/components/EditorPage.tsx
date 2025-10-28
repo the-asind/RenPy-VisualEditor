@@ -233,6 +233,248 @@ const EditorPageInternal: React.FC = () => {
   const reactFlowInstance = useReactFlow(); // Add ReactFlow instance ref
   const edgeTypes = useMemo(() => ({ 'vertical-turn': VerticalTurnEdge }), []);
 
+  const isPanningRef = useRef(false);
+  const lastViewportUpdateRef = useRef<{ x: number; y: number; time: number } | null>(null);
+  const panVelocityRef = useRef<{ vx: number; vy: number }>({ vx: 0, vy: 0 });
+  const panAccelerationRef = useRef<{ ax: number; ay: number }>({ ax: 0, ay: 0 });
+  const velocitySamplesRef = useRef<Array<{ time: number; vx: number; vy: number }>>([]);
+  const inertiaFrameRef = useRef<number | null>(null);
+  const isMiddleMousePressedRef = useRef(false);
+  const flowWrapperRef = useRef<HTMLDivElement | null>(null);
+
+  const stopInertia = useCallback(() => {
+    if (inertiaFrameRef.current !== null) {
+      cancelAnimationFrame(inertiaFrameRef.current);
+      inertiaFrameRef.current = null;
+    }
+
+    panVelocityRef.current = { vx: 0, vy: 0 };
+    panAccelerationRef.current = { ax: 0, ay: 0 };
+    velocitySamplesRef.current = [];
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      stopInertia();
+    };
+  }, [stopInertia]);
+
+  const handleMoveStart = useCallback((event: React.MouseEvent | React.TouchEvent) => {
+    stopInertia();
+
+    if ('nativeEvent' in event) {
+      const nativeEvent = event.nativeEvent;
+
+      if ('buttons' in nativeEvent) {
+        const buttons = (nativeEvent as MouseEvent).buttons ?? 0;
+
+        if ((buttons & 2) === 2 || (buttons & 4) === 4) {
+          isPanningRef.current = true;
+          panVelocityRef.current = { vx: 0, vy: 0 };
+          panAccelerationRef.current = { ax: 0, ay: 0 };
+          lastViewportUpdateRef.current = null;
+          velocitySamplesRef.current = [];
+          return;
+        }
+      }
+    }
+
+    isPanningRef.current = false;
+    velocitySamplesRef.current = [];
+  }, [stopInertia]);
+
+  const handleMove = useCallback((_: React.MouseEvent | React.TouchEvent | WheelEvent, viewport: Viewport) => {
+    if (!isPanningRef.current) {
+      lastViewportUpdateRef.current = null;
+      velocitySamplesRef.current = [];
+      return;
+    }
+
+    const now = performance.now();
+    const last = lastViewportUpdateRef.current;
+
+    if (last) {
+      const deltaTime = Math.max(now - last.time, 1);
+      const dx = viewport.x - last.x;
+      const dy = viewport.y - last.y;
+
+      const vx = dx / deltaTime;
+      const vy = dy / deltaTime;
+
+      panVelocityRef.current = { vx, vy };
+
+      velocitySamplesRef.current.push({ time: now, vx, vy });
+      if (velocitySamplesRef.current.length > 6) {
+        velocitySamplesRef.current.shift();
+      }
+    }
+
+    lastViewportUpdateRef.current = { x: viewport.x, y: viewport.y, time: now };
+  }, []);
+
+  const handleMoveEnd = useCallback(() => {
+    if (!isPanningRef.current) {
+      return;
+    }
+
+    isPanningRef.current = false;
+    lastViewportUpdateRef.current = null;
+
+    let currentVelocity = panVelocityRef.current;
+
+    if (velocitySamplesRef.current.length > 0) {
+      const lastSample = velocitySamplesRef.current[velocitySamplesRef.current.length - 1];
+      currentVelocity = { vx: lastSample.vx, vy: lastSample.vy };
+
+      if (velocitySamplesRef.current.length > 1) {
+        const prevSample = velocitySamplesRef.current[velocitySamplesRef.current.length - 2];
+        const deltaTime = Math.max(lastSample.time - prevSample.time, 1);
+
+        panAccelerationRef.current = {
+          ax: (lastSample.vx - prevSample.vx) / deltaTime,
+          ay: (lastSample.vy - prevSample.vy) / deltaTime,
+        };
+      } else {
+        panAccelerationRef.current = { ax: 0, ay: 0 };
+      }
+    } else {
+      panAccelerationRef.current = { ax: 0, ay: 0 };
+    }
+
+    panVelocityRef.current = currentVelocity;
+    velocitySamplesRef.current = [];
+
+    if (!reactFlowInstance) {
+      return;
+    }
+
+    const { vx, vy } = panVelocityRef.current;
+
+    if (Math.abs(vx) < 0.001 && Math.abs(vy) < 0.001) {
+      panAccelerationRef.current = { ax: 0, ay: 0 };
+      return;
+    }
+
+    let lastTime = performance.now();
+    const friction = 0.92;
+
+    const step = () => {
+      if (!reactFlowInstance) {
+        stopInertia();
+        return;
+      }
+
+      const now = performance.now();
+      const deltaTime = now - lastTime;
+      lastTime = now;
+
+      const decay = Math.pow(friction, deltaTime / 16.67);
+
+      panVelocityRef.current.vx += panAccelerationRef.current.ax * deltaTime;
+      panVelocityRef.current.vy += panAccelerationRef.current.ay * deltaTime;
+
+      panVelocityRef.current.vx *= decay;
+      panVelocityRef.current.vy *= decay;
+
+      panAccelerationRef.current.ax *= Math.pow(friction, deltaTime / 33.34);
+      panAccelerationRef.current.ay *= Math.pow(friction, deltaTime / 33.34);
+
+      const currentVx = panVelocityRef.current.vx;
+      const currentVy = panVelocityRef.current.vy;
+
+      if (Math.abs(currentVx) < 0.001 && Math.abs(currentVy) < 0.001) {
+        stopInertia();
+        return;
+      }
+
+      const viewport = reactFlowInstance.getViewport();
+      reactFlowInstance.setViewport({
+        ...viewport,
+        x: viewport.x + currentVx * deltaTime,
+        y: viewport.y + currentVy * deltaTime,
+      });
+
+      inertiaFrameRef.current = requestAnimationFrame(step);
+    };
+
+    inertiaFrameRef.current = requestAnimationFrame(step);
+  }, [reactFlowInstance, stopInertia]);
+
+  useEffect(() => {
+    const handlePointerDown = (event: PointerEvent) => {
+      if (event.button === 1) {
+        isMiddleMousePressedRef.current = true;
+      }
+    };
+
+    const handlePointerUp = (event: PointerEvent) => {
+      if (event.button === 1) {
+        isMiddleMousePressedRef.current = false;
+      }
+    };
+
+    const handlePointerCancel = (event: PointerEvent) => {
+      if (event.button === 1) {
+        isMiddleMousePressedRef.current = false;
+      }
+    };
+
+    const handleBlur = () => {
+      isMiddleMousePressedRef.current = false;
+    };
+
+    window.addEventListener('pointerdown', handlePointerDown);
+    window.addEventListener('pointerup', handlePointerUp);
+    window.addEventListener('pointercancel', handlePointerCancel);
+    window.addEventListener('blur', handleBlur);
+
+    return () => {
+      window.removeEventListener('pointerdown', handlePointerDown);
+      window.removeEventListener('pointerup', handlePointerUp);
+      window.removeEventListener('pointercancel', handlePointerCancel);
+      window.removeEventListener('blur', handleBlur);
+    };
+  }, []);
+
+  useEffect(() => {
+    const container = flowWrapperRef.current;
+
+    if (!container) {
+      return;
+    }
+
+    const handleWheel = (event: WheelEvent) => {
+      const buttons = event.buttons ?? 0;
+      const middlePressedFromEvent = (buttons & 4) === 4;
+      const isMiddleActive = middlePressedFromEvent || isMiddleMousePressedRef.current;
+
+      if (isMiddleActive) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    };
+
+    container.addEventListener('wheel', handleWheel, { passive: false });
+
+    return () => {
+      container.removeEventListener('wheel', handleWheel);
+    };
+  }, []);
+
+  const handleCanvasContextMenu = useCallback((event: React.MouseEvent) => {
+    const target = event.target as HTMLElement | null;
+
+    if (!target) {
+      return;
+    }
+
+    const nodeElement = target.closest('.react-flow__node');
+
+    if (!nodeElement) {
+      event.preventDefault();
+    }
+  }, []);
+
   // --- NEW: viewport ref and helpers ---
   const savedViewportRef = useRef<Viewport | null>(null);
   const prevActiveTabId = useRef<string | null>(null); // Ref to track tab changes
@@ -1996,14 +2238,18 @@ const EditorPageInternal: React.FC = () => {
           )}
 
           {scriptId && !isLoading && !error && (
-            <Box sx={{ 
-              position: 'absolute', 
-              top: 0, 
-              left: 0, 
-              width: '100%', 
-              height: '100%',
-              zIndex: 10 // Ensure it's at the right layer in the stack
-            }} className="flow-canvas-container">
+            <Box
+              ref={flowWrapperRef}
+              sx={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: '100%',
+                zIndex: 10 // Ensure it's at the right layer in the stack
+              }}
+              className="flow-canvas-container"
+            >
               <ReactFlow
                 nodes={nodes}
                 edges={edges}
@@ -2019,12 +2265,16 @@ const EditorPageInternal: React.FC = () => {
                 defaultViewport={{ x: 0, y: 0, zoom: zoom }}
                 minZoom={0.05} // Set minimum zoom to 0.05 (much more zoomed out)
                 maxZoom={10}   // Allow a bit more zoom in too
-                panOnScroll={true}
-                panOnDrag={true}
+                panOnScroll={false}
+                panOnDrag={[1, 2]}
                 selectionOnDrag={false}
                 zoomOnScroll={true}
                 zoomOnPinch={true}
                 preventScrolling={true}
+                onMoveStart={handleMoveStart}
+                onMove={handleMove}
+                onMoveEnd={handleMoveEnd}
+                onContextMenu={handleCanvasContextMenu}
               >
                 <Background color={theme.palette.divider} />
                 <Controls />
