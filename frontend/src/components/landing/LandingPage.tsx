@@ -5,7 +5,6 @@ import {
   Card,
   CardContent,
   Chip,
-  Grid,
   Stack,
   Typography,
   useTheme,
@@ -60,11 +59,6 @@ const LandingPage: React.FC = () => {
       icon: <PeopleAltRoundedIcon />,
       text: t('landing.cards.collab.text'),
     },
-    {
-      title: t('landing.cards.confidence.title'),
-      icon: <SecurityRoundedIcon />,
-      text: t('landing.cards.confidence.text'),
-    },
   ];
 
   return (
@@ -110,7 +104,7 @@ const LandingPage: React.FC = () => {
         sx={{
           position: 'relative',
           zIndex: 1,
-          maxWidth: 1200,
+          maxWidth: 1050,
           mx: 'auto',
           px: { xs: 3, md: 5 },
           py: { xs: 6, md: 8 },
@@ -123,20 +117,22 @@ const LandingPage: React.FC = () => {
                 ...glassSurface,
                 borderRadius: 4,
                 p: { xs: 3, md: 4 },
+                pb: { xs: 4, md: 4.5 },
                 display: 'grid',
-                gridTemplateColumns: { xs: '1fr', md: '1.2fr 0.9fr' },
+                gridTemplateColumns: { xs: '1fr', md: '1.1fr 0.9fr' },
                 gridTemplateRows: { xs: 'auto auto auto', md: 'auto 1fr auto' },
                 gap: 3,
                 alignItems: 'stretch',
+                position: 'relative',
               }}
             >
-              <Stack spacing={2} sx={{ height: '100%', justifyContent: 'flex-start' }}>
-                <Chip
-                  label={t('landing.hero.tag')}
-                  color="primary"
-                  variant="outlined"
-                  sx={{ alignSelf: 'flex-start', fontWeight: 700 }}
-                />
+              <Stack
+                spacing={2}
+                sx={{
+                  height: '100%',
+                  justifyContent: 'space-between',
+                }}
+              >
                 <Typography variant="h3" sx={{ fontWeight: 700, lineHeight: 1.2 }}>
                   {t('landing.hero.title')}
                   <br />
@@ -148,8 +144,14 @@ const LandingPage: React.FC = () => {
                   {t('landing.hero.description')}
                 </Typography>
 
-                <Stack direction="row" spacing={2} flexWrap="wrap">
-                  <Button
+                <Stack
+                  direction="row"
+                  spacing={2}
+                flexWrap="wrap"
+                alignItems="flex-end"
+                sx={{ mt: 'auto' }}
+              >
+                <Button
                     variant="contained"
                     size="large"
                     startIcon={<PlayArrowRoundedIcon />}
@@ -177,7 +179,8 @@ const LandingPage: React.FC = () => {
                     p: 0,
                     overflow: 'hidden',
                     position: 'relative',
-                    minHeight: { xs: 220, md: 260 },
+                    minHeight: { xs: 200, md: 220 },
+                    mb: { xs: 1, md: 0 },
                   }}
                 >
                   <Box
@@ -190,7 +193,7 @@ const LandingPage: React.FC = () => {
                       border: 0,
                       width: '100%',
                       height: '100%',
-                      minHeight: { xs: 220, md: 260 },
+                      minHeight: { xs: 200, md: 220 },
                     }}
                   />
                 </Box>
@@ -201,10 +204,17 @@ const LandingPage: React.FC = () => {
                 spacing={1}
                 flexWrap="wrap"
                 rowGap={1}
+                justifyContent="center"
                 sx={{
                   gridColumn: '1 / -1',
-                  alignSelf: 'end',
-                  mt: { xs: 1, md: 0 },
+                  position: { xs: 'static', md: 'absolute' },
+                  left: { md: '50%' },
+                  transform: { md: 'translateX(-50%)' },
+                  bottom: { md: 12 },
+                  mt: { xs: 2, md: 0 },
+                  mb: { xs: 1.5, md: 0 },
+                  px: 1.5,
+                  width: '100%',
                 }}
               >
                 {roadmapBadges.map((badge) => (
@@ -225,9 +235,17 @@ const LandingPage: React.FC = () => {
             </Box>
           </motion.div>
 
-          <Grid container spacing={3}>
+          <Box
+            display="grid"
+            gridTemplateColumns={{
+              xs: '1fr',
+              sm: 'repeat(2, minmax(0, 1fr))',
+              md: 'repeat(3, minmax(0, 1fr))',
+            }}
+            gap={3}
+          >
             {benefitCards.map((card) => (
-              <Grid item xs={12} sm={6} md={3} key={card.title}>
+              <Box key={card.title}>
                 <Card
                   sx={{
                     height: '100%',
@@ -263,9 +281,9 @@ const LandingPage: React.FC = () => {
                     </Typography>
                   </CardContent>
                 </Card>
-              </Grid>
+              </Box>
             ))}
-          </Grid>
+          </Box>
 
           <Card
             sx={{
