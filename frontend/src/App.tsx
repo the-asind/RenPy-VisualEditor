@@ -61,8 +61,8 @@ function App() {
         display: 'flex',
         flex: 1,
         // overflow: 'hidden', // Allow child content to scroll
-        // Remove top padding in editor mode, apply only when TopBar is visible
-        pt: isEditorMode ? 0 : 8
+        // TopBar now participates in layout (sticky), so no manual offset needed
+        pt: 0
       }}>
         {/* Sidebar - Conditionally rendered (hide on home and editor) */}
         {showSidebar && <Sidebar isEditorMode={isEditorMode} />}
