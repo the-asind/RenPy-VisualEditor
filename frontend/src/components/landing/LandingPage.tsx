@@ -65,9 +65,10 @@ const LandingPage: React.FC = () => {
     <Box
       sx={{
         position: 'relative',
-        minHeight: 'calc(100vh - 64px)',
+        minHeight: '100vh',
         overflow: 'hidden',
         color: theme.palette.text.primary,
+        backgroundColor: theme.palette.mode === 'dark' ? '#0c1122' : '#3d3d3e',
         background: theme.palette.mode === 'dark'
           ? 'radial-gradient(circle at 20% 20%, rgba(76,29,149,0.35), transparent 35%), radial-gradient(circle at 80% 10%, rgba(14,165,233,0.25), transparent 30%), #0b1021'
           : 'radial-gradient(circle at 20% 20%, rgba(59,130,246,0.12), transparent 35%), radial-gradient(circle at 80% 10%, rgba(236,72,153,0.1), transparent 30%), #f4f7fb',
@@ -108,6 +109,7 @@ const LandingPage: React.FC = () => {
           mx: 'auto',
           px: { xs: 3, md: 5 },
           py: { xs: 6, md: 8 },
+          mt: { xs: 8, md: 8 }, // offset for fixed top bar (64px)
         }}
       >
         <Stack spacing={4}>

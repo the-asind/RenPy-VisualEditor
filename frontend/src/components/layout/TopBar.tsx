@@ -48,7 +48,7 @@ const TopBar: React.FC = () => {
 
   return (
     <AppBar
-      position="sticky"
+      position="fixed"
       sx={{
         zIndex: (theme) => theme.zIndex.drawer + 1,
         background: 'transparent',
