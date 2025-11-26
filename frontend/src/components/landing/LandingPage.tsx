@@ -125,6 +125,7 @@ const LandingPage: React.FC = () => {
                 p: { xs: 3, md: 4 },
                 display: 'grid',
                 gridTemplateColumns: { xs: '1fr', md: '1.2fr 0.9fr' },
+                gridTemplateRows: { xs: 'auto auto auto', md: 'auto 1fr auto' },
                 gap: 3,
                 alignItems: 'stretch',
               }}
@@ -166,23 +167,6 @@ const LandingPage: React.FC = () => {
                     {t('menu.login')}
                   </Button>
                 </Stack>
-
-                <Stack direction="row" spacing={1} flexWrap="wrap" rowGap={1} sx={{ mt: 'auto' }}>
-                  {roadmapBadges.map((badge) => (
-                    <Chip
-                      key={badge.label}
-                      label={badge.label}
-                      size="small"
-                      sx={{
-                        color: badge.color,
-                        borderColor: alpha(badge.color, 0.5),
-                        background: alpha(badge.color, 0.08),
-                        fontWeight: 600,
-                      }}
-                      variant="outlined"
-                    />
-                  ))}
-                </Stack>
               </Stack>
 
               <Stack spacing={2} alignItems="stretch" justifyContent="center">
@@ -211,10 +195,37 @@ const LandingPage: React.FC = () => {
                   />
                 </Box>
               </Stack>
+
+              <Stack
+                direction="row"
+                spacing={1}
+                flexWrap="wrap"
+                rowGap={1}
+                sx={{
+                  gridColumn: '1 / -1',
+                  alignSelf: 'end',
+                  mt: { xs: 1, md: 0 },
+                }}
+              >
+                {roadmapBadges.map((badge) => (
+                  <Chip
+                    key={badge.label}
+                    label={badge.label}
+                    size="small"
+                    sx={{
+                      color: badge.color,
+                      borderColor: alpha(badge.color, 0.5),
+                      background: alpha(badge.color, 0.08),
+                      fontWeight: 600,
+                    }}
+                    variant="outlined"
+                  />
+                ))}
+              </Stack>
             </Box>
           </motion.div>
 
-          <Grid container spacing={3} sx={{ mt: -1 }}>
+          <Grid container spacing={3}>
             {benefitCards.map((card) => (
               <Grid item xs={12} sm={6} md={3} key={card.title}>
                 <Card
@@ -229,14 +240,16 @@ const LandingPage: React.FC = () => {
                     <Stack direction="row" spacing={1.5} alignItems="center" mb={1}>
                       <Box
                         sx={{
-                          width: 44,
-                          height: 44,
+                          width: 46,
+                          height: 46,
+                          minWidth: 46,
                           borderRadius: '50%',
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
                           background: alpha(theme.palette.primary.main, 0.12),
                           color: theme.palette.primary.main,
+                          aspectRatio: '1 / 1',
                         }}
                       >
                         {card.icon}
