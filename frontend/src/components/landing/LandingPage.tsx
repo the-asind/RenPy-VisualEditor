@@ -5,18 +5,14 @@ import {
   Card,
   CardContent,
   Chip,
-  Divider,
   Grid,
   Stack,
   Typography,
   useTheme,
 } from '@mui/material';
 import { alpha } from '@mui/material/styles';
-import AutoFixHighRoundedIcon from '@mui/icons-material/AutoFixHighRounded';
-import BoltRoundedIcon from '@mui/icons-material/BoltRounded';
 import CodeRoundedIcon from '@mui/icons-material/CodeRounded';
 import GestureRoundedIcon from '@mui/icons-material/GestureRounded';
-import HubRoundedIcon from '@mui/icons-material/HubRounded';
 import LoginRoundedIcon from '@mui/icons-material/LoginRounded';
 import PlayArrowRoundedIcon from '@mui/icons-material/PlayArrowRounded';
 import SecurityRoundedIcon from '@mui/icons-material/SecurityRounded';
@@ -28,7 +24,6 @@ import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 
 import DarkVeil from './DarkVeil';
-import GlassIcons, { GlassIconsItem } from './GlassIcons';
 
 const LandingPage: React.FC = () => {
   const theme = useTheme();
@@ -42,42 +37,33 @@ const LandingPage: React.FC = () => {
     backdropFilter: 'blur(16px)',
   };
 
-  const iconItems: GlassIconsItem[] = [
-    { icon: <HubRoundedIcon fontSize="medium" />, color: 'blue', label: 'Visual nodes' },
-    { icon: <SyncAltRoundedIcon fontSize="medium" />, color: 'purple', label: 'Two-way sync' },
-    { icon: <PeopleAltRoundedIcon fontSize="medium" />, color: 'red', label: 'Collaboration' },
-    { icon: <GestureRoundedIcon fontSize="medium" />, color: 'indigo', label: 'Branch tool' },
-    { icon: <CodeRoundedIcon fontSize="medium" />, color: 'orange', label: 'Keeps formatting' },
-    { icon: <SecurityRoundedIcon fontSize="medium" />, color: 'green', label: 'Auth ready' },
-  ];
-
   const roadmapBadges = [
-    { label: 'Visual node-based editor', color: theme.palette.primary.main },
-    { label: 'Two-way Ren’Py ↔ graph conversion', color: theme.palette.secondary.main },
-    { label: 'Real-time collaborative editing', color: theme.palette.success.main },
-    { label: 'Direct script editing with WYSIWYG nodes', color: theme.palette.warning.main },
+    { label: t('landing.badges.visualEditor'), color: theme.palette.primary.main },
+    { label: t('landing.badges.twoWay'), color: theme.palette.secondary.main },
+    { label: t('landing.badges.collab'), color: theme.palette.success.main },
+    { label: t('landing.badges.wysiwyg'), color: theme.palette.warning.main },
   ];
 
   const benefitCards = [
     {
-      title: 'Visual-first editing',
+      title: t('landing.cards.visualFirst.title'),
       icon: <GestureRoundedIcon />,
-      text: 'Design branching dialogues on a node canvas while the engine tracks exact line ranges in the Ren’Py file.',
+      text: t('landing.cards.visualFirst.text'),
     },
     {
-      title: 'Two-way conversion',
+      title: t('landing.cards.twoWay.title'),
       icon: <SyncAltRoundedIcon />,
-      text: 'Switch between graph and script without losing structure; keep formatting intact for writers and reviewers.',
+      text: t('landing.cards.twoWay.text'),
     },
     {
-      title: 'Collaboration built in',
+      title: t('landing.cards.collab.title'),
       icon: <PeopleAltRoundedIcon />,
-      text: 'WebSocket updates, live presence, and the roadmap toward conflict resolution, history, and undo/redo.',
+      text: t('landing.cards.collab.text'),
     },
     {
-      title: 'Operational confidence',
+      title: t('landing.cards.confidence.title'),
       icon: <SecurityRoundedIcon />,
-      text: 'FastAPI backend, auth, project storage, uploads/downloads, and SQLite persistence ready for teams.',
+      text: t('landing.cards.confidence.text'),
     },
   ];
 
@@ -138,27 +124,27 @@ const LandingPage: React.FC = () => {
                 borderRadius: 4,
                 p: { xs: 3, md: 4 },
                 display: 'grid',
-                gridTemplateColumns: { xs: '1fr', md: '1.2fr 0.8fr' },
+                gridTemplateColumns: { xs: '1fr', md: '1.2fr 0.9fr' },
                 gap: 3,
+                alignItems: 'stretch',
               }}
             >
-              <Stack spacing={2}>
+              <Stack spacing={2} sx={{ height: '100%', justifyContent: 'flex-start' }}>
                 <Chip
-                  label="Ren'Py Visual Editor"
+                  label={t('landing.hero.tag')}
                   color="primary"
                   variant="outlined"
                   sx={{ alignSelf: 'flex-start', fontWeight: 700 }}
                 />
                 <Typography variant="h3" sx={{ fontWeight: 700, lineHeight: 1.2 }}>
-                  Визуальный редактор Ren&apos;Py
+                  {t('landing.hero.title')}
                   <br />
                   <Typography component="span" variant="h4" sx={{ fontWeight: 500, color: theme.palette.text.secondary }}>
-                    Build branching stories without fighting the script file.
+                    {t('landing.hero.subtitle')}
                   </Typography>
                 </Typography>
                 <Typography variant="body1" sx={{ maxWidth: 720, color: alpha(theme.palette.text.primary, 0.85) }}>
-                  Visual node-based editing, two-way Ren&apos;Py conversion, and real-time collaboration.
-                  Keep every line formatted as authors expect while teams co-edit scenes and branches.
+                  {t('landing.hero.description')}
                 </Typography>
 
                 <Stack direction="row" spacing={2} flexWrap="wrap">
@@ -181,7 +167,7 @@ const LandingPage: React.FC = () => {
                   </Button>
                 </Stack>
 
-                <Stack direction="row" spacing={1} flexWrap="wrap" rowGap={1}>
+                <Stack direction="row" spacing={1} flexWrap="wrap" rowGap={1} sx={{ mt: 'auto' }}>
                   {roadmapBadges.map((badge) => (
                     <Chip
                       key={badge.label}
@@ -200,17 +186,35 @@ const LandingPage: React.FC = () => {
               </Stack>
 
               <Stack spacing={2} alignItems="stretch" justifyContent="center">
-                <Box sx={{ ...glassSurface, borderRadius: 3, p: 2 }}>
-                  <Typography variant="subtitle2" sx={{ textTransform: 'uppercase', letterSpacing: 1.2, mb: 1 }}>
-                    Liquid Glass Highlights
-                  </Typography>
-                  <GlassIcons items={iconItems} className="glass-icons-grid" />
+                <Box
+                  sx={{
+                    ...glassSurface,
+                    borderRadius: 3,
+                    p: 0,
+                    overflow: 'hidden',
+                    position: 'relative',
+                    minHeight: { xs: 220, md: 260 },
+                  }}
+                >
+                  <Box
+                    component="iframe"
+                    src="https://www.youtube.com/embed/TYLyjyfUyfQ"
+                    title={t('landing.hero.videoTitle')}
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                    allowFullScreen
+                    sx={{
+                      border: 0,
+                      width: '100%',
+                      height: '100%',
+                      minHeight: { xs: 220, md: 260 },
+                    }}
+                  />
                 </Box>
               </Stack>
             </Box>
           </motion.div>
 
-          <Grid container spacing={3}>
+          <Grid container spacing={3} sx={{ mt: -1 }}>
             {benefitCards.map((card) => (
               <Grid item xs={12} sm={6} md={3} key={card.title}>
                 <Card
@@ -250,93 +254,6 @@ const LandingPage: React.FC = () => {
             ))}
           </Grid>
 
-          <Grid container spacing={3}>
-            <Grid item xs={12} md={7}>
-              <Card
-                sx={{
-                  ...glassSurface,
-                  borderRadius: 4,
-                  p: 3,
-                }}
-              >
-                <Stack direction="row" alignItems="center" spacing={1} mb={2}>
-                  <BoltRoundedIcon color="primary" />
-                  <Typography variant="h6" sx={{ fontWeight: 700 }}>
-                    Branch creation workflow
-                  </Typography>
-                </Stack>
-                <Typography variant="body2" color="text.secondary" mb={2}>
-                  Build menus and conditionals straight from the graph editor while the API injects correct Ren’Py
-                  snippets. Perfect for menu-heavy visual novels.
-                </Typography>
-                <Stack spacing={1.5}>
-                  {[
-                    'Activate the branch tool, click a node, and pick menu or if/elif/else.',
-                    'Preview generated Ren’Py snippets before saving.',
-                    'Insert directly into the script and see the graph update instantly.',
-                  ].map((step, index) => (
-                    <Stack
-                      key={step}
-                      direction="row"
-                      alignItems="flex-start"
-                      spacing={1.5}
-                      sx={{
-                        p: 1.5,
-                        borderRadius: 2,
-                        background: alpha(theme.palette.primary.main, 0.07),
-                      }}
-                    >
-                      <Chip label={`0${index + 1}`} size="small" color="primary" />
-                      <Typography variant="body2">{step}</Typography>
-                    </Stack>
-                  ))}
-                </Stack>
-              </Card>
-            </Grid>
-
-            <Grid item xs={12} md={5}>
-              <Card
-                sx={{
-                  ...glassSurface,
-                  borderRadius: 4,
-                  p: 3,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 1.5,
-                }}
-              >
-                <Stack direction="row" alignItems="center" spacing={1}>
-                  <AutoFixHighRoundedIcon color="secondary" />
-                  <Typography variant="h6" sx={{ fontWeight: 700 }}>
-                    Why teams pick this editor
-                  </Typography>
-                </Stack>
-                <Divider sx={{ borderColor: alpha(theme.palette.divider, 0.6) }} />
-                <Stack spacing={1}>
-                  {[
-                    'Keeps original script formatting while you edit nodes.',
-                    'WYSIWYG dialogue editor for fast polish.',
-                    'Upload/download support for sharing builds.',
-                    'Auth, project management, and SQLite persistence included.',
-                  ].map((item) => (
-                    <Stack key={item} direction="row" spacing={1.5} alignItems="flex-start">
-                      <Box
-                        sx={{
-                          width: 10,
-                          height: 10,
-                          borderRadius: '50%',
-                          backgroundColor: alpha(theme.palette.secondary.main, 0.9),
-                          mt: 0.6,
-                        }}
-                      />
-                      <Typography variant="body2">{item}</Typography>
-                    </Stack>
-                  ))}
-                </Stack>
-              </Card>
-            </Grid>
-          </Grid>
-
           <Card
             sx={{
               ...glassSurface,
@@ -351,23 +268,16 @@ const LandingPage: React.FC = () => {
               <Stack direction="row" alignItems="center" spacing={1}>
                 <SensorsRoundedIcon color="primary" />
                 <Typography variant="h6" sx={{ fontWeight: 700 }}>
-                  Real-time ready
+                  {t('landing.realtime.title')}
                 </Typography>
               </Stack>
               <Typography variant="body2" color="text.secondary">
-                WebSocket-powered collaboration, project-level access control, and presence indicators are already in
-                place. Next up: conflict resolution and history/undo on the roadmap.
+                {t('landing.realtime.description')}
               </Typography>
-              <Stack direction="row" spacing={1} flexWrap="wrap">
-                <Chip label="FastAPI backend" variant="outlined" />
-                <Chip label="ReactFlow graph" variant="outlined" />
-                <Chip label="SQLite persistence" variant="outlined" />
-                <Chip label="Auth + project roles" variant="outlined" />
-              </Stack>
             </Stack>
             <Stack spacing={2} justifyContent="center">
               <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-                Ready to test it?
+                {t('landing.realtime.ready')}
               </Typography>
               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
                 <Button
