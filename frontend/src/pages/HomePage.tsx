@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { 
+import React, { useState } from 'react';
+import {
   Box, Typography, Grid, Card, CardContent, Button,
   IconButton, useTheme, CircularProgress, Alert, Dialog,
   DialogTitle, DialogContent, DialogActions, TextField,
@@ -13,16 +13,16 @@ import EditIcon from '@mui/icons-material/Edit';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import useProjects from '../hooks/useProjects';
-import { useAuth } from '../contexts/AuthContext'; // Import useAuth
+import { useAuth } from '../contexts/AuthContext';
 import { Project } from '../services/projectService';
 import ProjectManageDialog from '../components/project/ProjectManageDialog';
+import LandingPage from '../components/landing/LandingPage';
 
-const HomePage: React.FC = () => {
+const ProjectsDashboard: React.FC = () => {
   const theme = useTheme();
   const navigate = useNavigate();
   const { t } = useTranslation();
-  const { isAuthenticated, token } = useAuth(); // Get isAuthenticated state and token
-  
+
   // State for new project dialog
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
@@ -35,23 +35,6 @@ const HomePage: React.FC = () => {
   
   // Get projects from database using our custom hook
   const { projects, loading, error, refreshProjects, createProject } = useProjects();
-
-  // Redirect to login if not authenticated
-  useEffect(() => {
-    // We need to check token here because isAuthenticated might be false during initial load
-    // even if token exists, until the AuthContext verifies the token.
-    const currentToken = localStorage.getItem('auth_token'); 
-    if (!currentToken) {
-      navigate('/login');
-    }
-  }, [navigate]); // Rerun if navigate changes, though it's unlikely
-
-  // Additional effect to handle cases where token becomes null after initial load (e.g. logout)
-  useEffect(() => {
-    if (!token && !isAuthenticated) { // If token is explicitly null and not authenticated
-        navigate('/login');
-    }
-  }, [token, isAuthenticated, navigate]);
 
   const handleOpenProject = (projectId: number | string) => {
     navigate(`/editor?project=${projectId}`);
@@ -441,6 +424,11 @@ const HomePage: React.FC = () => {
       />
     </Box>
   );
+};
+
+const HomePage: React.FC = () => {
+  const { isAuthenticated } = useAuth();
+  return isAuthenticated ? <ProjectsDashboard /> : <LandingPage />;
 };
 
 export default HomePage;

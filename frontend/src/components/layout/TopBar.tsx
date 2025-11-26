@@ -1,9 +1,6 @@
 import React, { useState } from 'react';
 import { AppBar, Toolbar, IconButton, Typography, Box, Menu, MenuItem, Button } from '@mui/material';
 import HomeIcon from '@mui/icons-material/Home';
-import Brightness4Icon from '@mui/icons-material/Brightness4';
-import Brightness7Icon from '@mui/icons-material/Brightness7';
-import AccountCircle from '@mui/icons-material/AccountCircle';
 import TranslateIcon from '@mui/icons-material/Translate';
 import SettingsIcon from '@mui/icons-material/Settings';
 import { useThemeContext } from '../../contexts/ThemeContext';
@@ -11,6 +8,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '@mui/material/styles';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import AnimatedThemeToggle from './AnimatedThemeToggle';
 
 const TopBar: React.FC = () => {
   const { mode, toggleTheme } = useThemeContext();
@@ -77,9 +75,9 @@ const TopBar: React.FC = () => {
         </Typography>
 
         <Box sx={{ display: 'flex', alignItems: 'center' }}>
-          <IconButton sx={{ ml: 1 }} onClick={toggleTheme} color="inherit">
-            {mode === 'dark' ? <Brightness7Icon /> : <Brightness4Icon />}
-          </IconButton>
+          <Box sx={{ ml: 1.5 }}>
+            <AnimatedThemeToggle mode={mode} onToggle={toggleTheme} />
+          </Box>
           {/* Language selector */}
           <IconButton
             size="large"
