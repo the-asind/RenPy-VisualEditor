@@ -476,17 +476,17 @@ function processNodeRecursive(
     };
   }
 
-  // Apply offset if present
-  if (apiNode.offset) {
-    startX += apiNode.offset.x;
-    startY += apiNode.offset.y;
-  }
-
   const nodeId = apiNode.id || `node-${Math.random().toString(16).slice(2)}`;
+  const { display, metadata } = buildDisplayForNode(apiNode, scriptLines, theme);
+
+  // Apply offset from metadata if present
+  if (metadata?.offset) {
+    startX += metadata.offset.x;
+    startY += metadata.offset.y;
+  }
   const nodeType = apiNode.node_type || 'Default';
   const nodePosition = { x: startX, y: startY };
   const nodeHeight = getNodeHeight(apiNode, theme);
-  const { display, metadata } = buildDisplayForNode(apiNode, scriptLines, theme);
 
   const flowNode = createFlowNode(
     nodeId,

@@ -82,6 +82,7 @@ import {
   persistProjectTags,
   sortProjectTags,
 } from '../utils/projectTags';
+import { extractNodeMetadata, formatMetadataComment, NODE_METADATA_PREFIX } from '../utils/nodeMetadata';
 
 // Width for the editor toolbar drawer
 const drawerWidth = 60;
@@ -1517,7 +1518,79 @@ const EditorPageInternal: React.FC = () => {
       dragStartPosRef.current = { x: node.position.x, y: node.position.y };
   }, []);
 
-  const onNodeDragStop = useCallback(async (event: React.MouseEvent, node: Node) => {
+  const onNodeDrag = useCallback((event: React.MouseEvent, node: Node, nodes: Node[]) => {
+      if (!dragStartPosRef.current) return;
+
+      // Calculate delta since start of drag (or since last frame?)
+      // React Flow updates the dragged node position automatically in `nodes`.
+      // We need to move children.
+
+      // But wait, `onNodeDrag` provides the node with its NEW position.
+      // We can compare with `dragStartPosRef` to get total delta, but that would apply total delta every frame?
+      // No, we need delta since last frame.
+
+      // Actually, React Flow handles the dragged node.
+      // If we want to move children, we need to update their positions in the state.
+      // But calculating "descendants" on every drag event might be expensive?
+      // Let's try to update `nodes` state.
+
+      // Better approach:
+      // In `onNodeDrag`, we calculate delta from *previous* position.
+      // `dragStartPosRef` stores start. We might need `lastDragPosRef`.
+  }, []);
+
+  // Use a ref to track the last position during drag for delta calculation
+  const lastDragPosRef = useRef<{x: number, y: number} | null>(null);
+
+  const onNodeDragStartHandler = useCallback((event: React.MouseEvent, node: Node) => {
+      dragStartPosRef.current = { x: node.position.x, y: node.position.y };
+      lastDragPosRef.current = { x: node.position.x, y: node.position.y };
+  }, []);
+
+  const onNodeDragHandler = useCallback((event: React.MouseEvent, node: Node) => {
+      if (!lastDragPosRef.current) return;
+
+      const dx = node.position.x - lastDragPosRef.current.x;
+      const dy = node.position.y - lastDragPosRef.current.y;
+
+      if (dx === 0 && dy === 0) return;
+
+      lastDragPosRef.current = { x: node.position.x, y: node.position.y };
+
+      // Find all descendants
+      // We can use recursion on edges
+      const descendants = new Set<string>();
+      const stack = [node.id];
+
+      while (stack.length > 0) {
+          const currentId = stack.pop()!;
+          // Find outgoing edges from currentId
+          const outgoingEdges = edges.filter(e => e.source === currentId);
+          outgoingEdges.forEach(edge => {
+              if (!descendants.has(edge.target)) {
+                  descendants.add(edge.target);
+                  stack.push(edge.target);
+              }
+          });
+      }
+
+      if (descendants.size > 0) {
+          setNodes(nds => nds.map(n => {
+              if (descendants.has(n.id)) {
+                  return {
+                      ...n,
+                      position: {
+                          x: n.position.x + dx,
+                          y: n.position.y + dy
+                      }
+                  };
+              }
+              return n;
+          }));
+      }
+  }, [edges, setNodes]);
+
+  const onNodeDragStopHandler = useCallback(async (event: React.MouseEvent, node: Node) => {
       if (!dragStartPosRef.current || !scriptId) return;
 
       const oldPos = dragStartPosRef.current;
@@ -1525,43 +1598,118 @@ const EditorPageInternal: React.FC = () => {
       const dx = newPos.x - oldPos.x;
       const dy = newPos.y - oldPos.y;
 
+      // Reset refs
+      dragStartPosRef.current = null;
+      lastDragPosRef.current = null;
+
       if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return; // Ignore tiny movements
 
-      const originalOffset = node.data?.originalData?.offset || { x: 0, y: 0 };
-      const newOffset = { x: originalOffset.x + dx, y: originalOffset.y + dy };
+      // We only save the offset for the dragged node (parent).
+      // Children positions are derived during render or updated visually during drag.
 
-      const startLine = node.data?.originalData?.start_line;
-      if (typeof startLine !== 'number') return;
+      // Get current metadata from scriptLines
+      // We need to fetch FRESH metadata because it might have changed?
+      // Or rely on what we have in `scriptLines`.
+      const metadata = extractNodeMetadata(scriptLines, node.data?.originalData);
 
-      // Check for existing offset comment
-      const lineIndexToCheck = startLine - 1;
-      let hasExistingOffset = false;
+      // Calculate new offset
+      // If node already had an offset, add dx/dy.
+      // If not, it starts at 0,0 relative to its default flow position?
+      // Wait, `flowTransformer` applies `metadata.offset` to `startX`/`startY`.
+      // If `metadata.offset` was `{x: 10, y: 10}`, the node was rendered at `Default + 10`.
+      // If we move it by another 10, new offset should be `20`.
+      // So yes, add to existing offset.
 
-      if (lineIndexToCheck >= 0 && lineIndexToCheck < scriptLines.length) {
-          const line = scriptLines[lineIndexToCheck];
-          if (line.trim().match(/^#\s*offset:/)) {
-              hasExistingOffset = true;
-          }
-      }
+      const currentOffset = metadata.offset || { x: 0, y: 0 };
+      const newOffset = { x: currentOffset.x + dx, y: currentOffset.y + dy };
 
-      const offsetString = `# offset: ${Math.round(newOffset.x)}, ${Math.round(newOffset.y)}`;
+      // Update metadata object
+      const newMetadata = {
+          ...metadata,
+          offset: newOffset
+      };
+
+      const newComment = formatMetadataComment(newMetadata);
+      if (!newComment) return; // Should not happen as we added offset
 
       try {
-          if (hasExistingOffset) {
-              await updateNodeContent(scriptId, lineIndexToCheck, lineIndexToCheck, offsetString);
+          if (typeof metadata.commentLineIndex === 'number') {
+              // Update existing comment line
+              await updateNodeContent(scriptId, metadata.commentLineIndex, metadata.commentLineIndex, newComment);
           } else {
-              // Insert new line at startLine
-              await insertNode(scriptId, startLine, 'Comment', offsetString);
+              // Insert new comment
+              // For Action nodes, usually metadata is inside the block if it exists, or above?
+              // `extractNodeMetadata` scans from start_line.
+              // If we insert at start_line, it pushes content down.
+              // If start_line points to `label X:`, we want to insert inside?
+              // `extractNodeMetadata` includes the label line in scan.
+
+              // If we insert at `start_line`, the new line becomes `start_line`.
+              // The original content starts at `start_line + 1`.
+              // `renpyParser` needs to be able to associate it.
+              // If we insert BEFORE `label X:`, `renpyParser` might associate it if it looks back?
+              // But we reverted `renpyParser` looking back.
+              // So we MUST insert WITHIN the node's range as seen by `renpyParser` or make sure `renpyParser` sees it.
+
+              // `renpyParser` parses the file. A line starting with `#` is a comment.
+              // If it's inside a block (indented), it's part of the block actions.
+              // If it's top level, it's ignored unless it's a label?
+
+              // If the node is a LabelBlock, inserting at `start_line` (before `label:`) puts it outside the label node.
+              // So for LabelBlock, we should insert at `start_line + 1` (inside).
+              // For Action/If/Menu nodes (inside a label), inserting at `start_line` keeps it inside the label,
+              // but maybe "before" the specific action node?
+              // If we insert before an action, it becomes a comment node preceding the action?
+              // Or does `renpyParser` attach comments to the following node?
+              // My `renpyParser` ignores comments mostly.
+
+              // BUT `extractNodeMetadata` scans the range `start` to `end`.
+              // If we insert at `start_line`, the new line is at `start_line`. The old `start_line` becomes `start_line + 1`.
+              // The parser will re-parse.
+              // If we insert at `start_line`, it will be picked up by `extractNodeMetadata` if the parser groups it into the node.
+
+              // Strategy:
+              // If LabelBlock: Insert at `start_line + 1` (indented).
+              // If Action/Other: Insert at `start_line`.
+
+              let insertLine = node.data?.originalData?.start_line;
+              if (node.data?.originalData?.node_type === 'LabelBlock') {
+                  insertLine += 1;
+                  // Make sure to add indentation if inside label
+                  // We can rely on `formatMetadataComment` returning the string,
+                  // but we might need to prepend spaces?
+                  // `updateNodeContent`/`insertNode` handles lines.
+                  // If we use `insertNode`, does it handle indent?
+                  // `insertNode` takes `content`. We should add 4 spaces for indentation if inside label.
+              }
+
+              // Helper to check indentation of the target line to match it?
+              // Or just assume 4 spaces for now if inside label.
+              let contentToInsert = newComment;
+              if (node.data?.originalData?.node_type === 'LabelBlock') {
+                   contentToInsert = `    ${newComment}`;
+              } else {
+                  // For actions, try to match indentation of the start_line
+                  const currentLine = scriptLines[insertLine];
+                  const indentMatch = currentLine.match(/^\s*/);
+                  const indent = indentMatch ? indentMatch[0] : '';
+                  contentToInsert = `${indent}${newComment}`;
+              }
+
+              await insertNode(scriptId, insertLine, 'Comment', contentToInsert);
           }
+
+          setSnackbarMessage(t('editor.saveSuccess'));
+          setSnackbarSeverity('success');
+          setSnackbarOpen(true);
+
       } catch (e: any) {
           console.error("Failed to save offset", e);
           setSnackbarMessage("Failed to save node position");
           setSnackbarSeverity("error");
           setSnackbarOpen(true);
       }
-
-      dragStartPosRef.current = null;
-  }, [scriptId, scriptLines, t]);
+  }, [scriptId, scriptLines, t, edges, updateNodeContent, insertNode]);
 
   const handleProjectBreadcrumbClick = useCallback(() => {
     if (!projectId) {
@@ -2311,8 +2459,9 @@ const EditorPageInternal: React.FC = () => {
                 onMove={handleMove}
                 onMoveEnd={handleMoveEnd}
                 onContextMenu={handleCanvasContextMenu}
-                onNodeDragStart={onNodeDragStart}
-                onNodeDragStop={onNodeDragStop}
+                onNodeDragStart={onNodeDragStartHandler}
+                onNodeDrag={onNodeDragHandler}
+                onNodeDragStop={onNodeDragStopHandler}
               >
                 <Background color={theme.palette.divider} />
                 <Controls />

@@ -10,6 +10,7 @@ export interface NodeMetadata {
   commentLineIndex?: number;
   tag?: string;
   tagColor?: string;
+  offset?: { x: number; y: number };
 }
 
 export interface NodeDisplayInfo {
@@ -19,6 +20,7 @@ export interface NodeDisplayInfo {
   author?: string;
   tag?: string;
   tagColor?: string;
+  offset?: { x: number; y: number };
 }
 
 export const NODE_METADATA_PREFIX = '# @NODE';
@@ -114,6 +116,11 @@ export const parseMetadataComment = (line: string): NodeMetadata => {
       metadata.tag = value;
     } else if (key === 'tagcolor' || key === 'tag_color') {
       metadata.tagColor = value;
+    } else if (key === 'offset') {
+      const parts = value.split(',').map(s => parseFloat(s.trim()));
+      if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+        metadata.offset = { x: parts[0], y: parts[1] };
+      }
     }
   }
 
@@ -339,6 +346,10 @@ export const formatMetadataComment = (metadata: NodeMetadata): string | null => 
     parts.push(`tagColor="${escapeValue(metadata.tagColor.trim())}"`);
   }
 
+  if (metadata.offset) {
+    parts.push(`offset="${Math.round(metadata.offset.x)},${Math.round(metadata.offset.y)}"`);
+  }
+
   if (parts.length === 0) {
     return null;
   }
@@ -363,5 +374,6 @@ export const buildNodeDisplayInfo = (
     author: metadata.author,
     tag: metadata.tag,
     tagColor: metadata.tagColor,
+    offset: metadata.offset,
   };
 };
