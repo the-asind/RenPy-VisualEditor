@@ -1511,6 +1511,58 @@ const EditorPageInternal: React.FC = () => {
     return [...editing, ...others];
   }, [projectUsers, scriptUsers]);
 
+  const dragStartPosRef = useRef<{x: number, y: number} | null>(null);
+
+  const onNodeDragStart = useCallback((event: React.MouseEvent, node: Node) => {
+      dragStartPosRef.current = { x: node.position.x, y: node.position.y };
+  }, []);
+
+  const onNodeDragStop = useCallback(async (event: React.MouseEvent, node: Node) => {
+      if (!dragStartPosRef.current || !scriptId) return;
+
+      const oldPos = dragStartPosRef.current;
+      const newPos = node.position;
+      const dx = newPos.x - oldPos.x;
+      const dy = newPos.y - oldPos.y;
+
+      if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return; // Ignore tiny movements
+
+      const originalOffset = node.data?.originalData?.offset || { x: 0, y: 0 };
+      const newOffset = { x: originalOffset.x + dx, y: originalOffset.y + dy };
+
+      const startLine = node.data?.originalData?.start_line;
+      if (typeof startLine !== 'number') return;
+
+      // Check for existing offset comment
+      const lineIndexToCheck = startLine - 1;
+      let hasExistingOffset = false;
+
+      if (lineIndexToCheck >= 0 && lineIndexToCheck < scriptLines.length) {
+          const line = scriptLines[lineIndexToCheck];
+          if (line.trim().match(/^#\s*offset:/)) {
+              hasExistingOffset = true;
+          }
+      }
+
+      const offsetString = `# offset: ${Math.round(newOffset.x)}, ${Math.round(newOffset.y)}`;
+
+      try {
+          if (hasExistingOffset) {
+              await updateNodeContent(scriptId, lineIndexToCheck, lineIndexToCheck, offsetString);
+          } else {
+              // Insert new line at startLine
+              await insertNode(scriptId, startLine, 'Comment', offsetString);
+          }
+      } catch (e: any) {
+          console.error("Failed to save offset", e);
+          setSnackbarMessage("Failed to save node position");
+          setSnackbarSeverity("error");
+          setSnackbarOpen(true);
+      }
+
+      dragStartPosRef.current = null;
+  }, [scriptId, scriptLines, t]);
+
   const handleProjectBreadcrumbClick = useCallback(() => {
     if (!projectId) {
       return;
@@ -2259,6 +2311,8 @@ const EditorPageInternal: React.FC = () => {
                 onMove={handleMove}
                 onMoveEnd={handleMoveEnd}
                 onContextMenu={handleCanvasContextMenu}
+                onNodeDragStart={onNodeDragStart}
+                onNodeDragStop={onNodeDragStop}
               >
                 <Background color={theme.palette.divider} />
                 <Controls />

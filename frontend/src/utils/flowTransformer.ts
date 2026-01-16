@@ -476,6 +476,12 @@ function processNodeRecursive(
     };
   }
 
+  // Apply offset if present
+  if (apiNode.offset) {
+    startX += apiNode.offset.x;
+    startY += apiNode.offset.y;
+  }
+
   const nodeId = apiNode.id || `node-${Math.random().toString(16).slice(2)}`;
   const nodeType = apiNode.node_type || 'Default';
   const nodePosition = { x: startX, y: startY };

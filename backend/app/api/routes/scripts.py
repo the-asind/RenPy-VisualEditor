@@ -8,7 +8,8 @@ from pathlib import Path
 from typing import Dict, Any, Optional, List
 import uuid
 
-from ...services.parser.renpy_parser import RenPyParser, ChoiceNode, ChoiceNodeType
+# RenPyParser removed as parsing is moved to frontend
+# from ...services.parser.renpy_parser import RenPyParser, ChoiceNode, ChoiceNodeType
 from ...services.database import DatabaseService
 from ...models.exceptions import ResourceNotFoundException, DatabaseException
 from ...services.websocket import connection_manager
@@ -23,24 +24,7 @@ scripts_router = APIRouter(
 
 # Initialize services
 db_service = DatabaseService()
-parser = RenPyParser()
-
-# Helper functions
-def node_to_dict(node: ChoiceNode) -> Dict[str, Any]:
-    """Convert a ChoiceNode to a dictionary with line references for JSON serialization."""
-    result = {
-        "id": str(id(node)),  # Generate a unique ID using the object's memory address
-        "node_type": node.node_type.value if hasattr(node.node_type, "value") else str(node.node_type),
-        "label_name": node.label_name,
-        "start_line": node.start_line,
-        "end_line": node.end_line,
-        "children": [node_to_dict(child) for child in node.children]
-    }
-    
-    if hasattr(node, "false_branch") and node.false_branch:
-        result["false_branch"] = [node_to_dict(opt) for opt in node.false_branch]
-    
-    return result
+# parser = RenPyParser()
 
 # Routes
 @scripts_router.post("/parse", response_model=Dict[str, Any])
@@ -51,14 +35,14 @@ async def parse_script(
     current_user: Dict[str, Any] = Depends(get_current_user)
 ) -> Dict[str, Any]:
     """
-    Parse a RenPy script file and return its tree structure with line references.
+    Save a RenPy script file. Parsing is now handled by the client.
     
     Args:
         file: The uploaded RenPy script file
         project_id: ID of the project to associate the script with
         
     Returns:
-        JSON representation of the parsed script tree with line references
+        Script info.
     """
     try:
         # current_user now injected via Depends
@@ -82,17 +66,6 @@ async def parse_script(
         if not has_access:
             raise HTTPException(status_code=403, detail="Access denied to the specified project")
         
-        # Parse the content to check validity
-        temp_dir = Path(tempfile.gettempdir()) / "renpy_editor" / str(uuid.uuid4())
-        temp_dir.mkdir(parents=True, exist_ok=True)
-        
-        temp_file = temp_dir / file.filename
-        with open(temp_file, "wb") as f:
-            f.write(content)
-        
-        # Parse the file to build the tree
-        parsed_tree = await parser.parse_async(str(temp_file))
-        
         # Check if script with this filename already exists in the project
         existing_script = db_service.get_script_by_filename(project_id, file.filename)
         
@@ -115,19 +88,17 @@ async def parse_script(
                 user_id=current_user["id"]
             )
         
-        # Clean up temp file
-        background_tasks.add_task(shutil.rmtree, temp_dir, ignore_errors=True)
-        
         # Return result
+        # 'tree' is returned as empty dict as parsing is moved to client.
         result = {
             "script_id": script_id,
             "filename": file.filename,
-            "tree": node_to_dict(parsed_tree)
+            "tree": {}
         }
         
         return result
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error parsing script: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error saving script: {str(e)}")
 
 @scripts_router.get("/node-content/{script_id}", response_model=Dict[str, Any])
 async def get_node_content(
@@ -240,10 +211,11 @@ async def update_node_content(
         # Save changes to database
         db_service.update_script(script_id, new_content, current_user["id"])
 
-        # Parse updated script and broadcast new structure to collaborators
-        parsed_tree = parser.parse_text(new_content)
+        # Broadcast update to collaborators.
+        # We send an empty tree or just a signal that update happened.
+        # Clients will reload content.
         await connection_manager.broadcast_structure_update(
-            script_id, node_to_dict(parsed_tree)
+            script_id, {}
         )
 
         # Calculate new end line
@@ -314,31 +286,16 @@ async def insert_node(
         # Save changes to database
         db_service.update_script(script_id, new_content, current_user["id"])
         
-        # Re-parse the entire script to update the tree
-        # Create temp file for parsing
-        temp_dir = Path(tempfile.gettempdir()) / "renpy_editor" / str(uuid.uuid4())
-        temp_dir.mkdir(parents=True, exist_ok=True)
-        temp_file = temp_dir / "temp_script.rpy"
-        
-        with open(temp_file, "w", encoding="utf-8") as f:
-            f.write(new_content)
-
-        # Parse the updated file
-        parsed_tree = await parser.parse_async(str(temp_file))
-
-        # Clean up temp file
-        shutil.rmtree(temp_dir, ignore_errors=True)
-
         # Broadcast updated structure to other clients
         await connection_manager.broadcast_structure_update(
-            script_id, node_to_dict(parsed_tree)
+            script_id, {}
         )
 
         return {
             "start_line": insertion_line,
             "end_line": insertion_line + len(new_content_lines) - 1,
             "line_count": len(new_content_lines),
-            "tree": node_to_dict(parsed_tree)
+            "tree": {}
         }
     except ResourceNotFoundException as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -512,13 +469,13 @@ async def load_existing_script(
     current_user: Dict[str, Any] = Depends(get_current_user)
 ) -> Dict[str, Any]:
     """
-    Load an existing script and return its parsed tree structure.
+    Load an existing script and return its content (parsing handled by client).
     
     Args:
         script_id: The ID of the script to load
         
     Returns:
-        JSON representation of the script with parsed tree
+        JSON representation of the script with empty tree
     """
     try:
         # Get script from database
@@ -534,31 +491,15 @@ async def load_existing_script(
         if not has_access:
             raise HTTPException(status_code=403, detail="Access denied to this script")
         
-        # Parse the script content to build tree
-        temp_dir = Path(tempfile.gettempdir()) / "renpy_editor" / str(uuid.uuid4())
-        temp_dir.mkdir(parents=True, exist_ok=True)
+        # Return result with empty tree but include content so client can parse it
+        result = {
+            "script_id": script_id,
+            "filename": script["filename"],
+            "content": script["content"],
+            "tree": {}
+        }
         
-        temp_file = temp_dir / script["filename"]
-        with open(temp_file, "w", encoding='utf-8') as f:
-            f.write(script["content"])
-        
-        try:
-            # Parse the file to build the tree
-            parsed_tree = await parser.parse_async(str(temp_file))
-            
-            # Return result
-            result = {
-                "script_id": script_id,
-                "filename": script["filename"],
-                "tree": node_to_dict(parsed_tree)
-            }
-            
-            return result
-        finally:
-            # Clean up temp file
-            import shutil
-            shutil.rmtree(temp_dir, ignore_errors=True)
-            
+        return result
     except ResourceNotFoundException as e:
         raise HTTPException(status_code=404, detail=str(e))
     except HTTPException:

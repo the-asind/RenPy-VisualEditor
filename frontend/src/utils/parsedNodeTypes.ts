@@ -1,3 +1,8 @@
+export interface Offset {
+  x: number;
+  y: number;
+}
+
 export interface ParsedNodeData {
   id?: string;
   node_type?: string;
@@ -9,5 +14,6 @@ export interface ParsedNodeData {
   condition?: string;
   children?: ParsedNodeData[];
   false_branch?: ParsedNodeData[];
+  offset?: Offset;
   [key: string]: any;
 }

@@ -1,5 +1,6 @@
 /// <reference types="vite/client" />
 import axios, { AxiosError } from 'axios';
+import { RenPyParser } from '../utils/renpyParser';
 
 export interface ParsedScriptResponse {
   script_id: string;
@@ -70,13 +71,25 @@ export const parseScript = async (file: File, projectId?: string): Promise<Parse
   console.log(`[API Request] POST ${targetUrl} with file: ${file.name}${projectId ? ` for project: ${projectId}` : ''}`);
 
   try {
+    // 1. Upload to server to save and get script_id
     const response = await apiClient.post<ParsedScriptResponse>('/scripts/parse', formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
     });
-    console.log('[API Response] parseScript successful:', response.data);
-    return response.data;
+    console.log('[API Response] Upload successful:', response.data);
+
+    // 2. Parse locally
+    const text = await file.text();
+    const parser = new RenPyParser();
+    const tree = parser.parse(text);
+    console.log('[Local Parser] Parsed tree:', tree);
+
+    return {
+      script_id: response.data.script_id,
+      filename: response.data.filename,
+      tree: tree
+    };
   } catch (error) {
     // --- Enhanced Error Logging ---
     console.error('[API Error] Failed during parseScript call.');
@@ -296,13 +309,24 @@ export const getScriptContent = async (scriptId: string): Promise<string> => {
  * @returns The script content and parsed tree data.
  */
 export const loadExistingScript = async (scriptId: string): Promise<ParsedScriptResponse> => {
-  const targetUrl = `${apiClient.defaults.baseURL}/scripts/load/${scriptId}`;
-  console.log(`[API Request] GET ${targetUrl} to load existing script`);
+  const targetUrl = `${apiClient.defaults.baseURL}/scripts/download/${scriptId}`; // Using download instead of load
+  console.log(`[API Request] GET ${targetUrl} to load existing script content`);
   
   try {
-    const response = await apiClient.get<ParsedScriptResponse>(`/scripts/load/${scriptId}`);
-    console.log('[API Response] loadExistingScript successful:', response.data);
-    return response.data;
+    // 1. Fetch content
+    const response = await apiClient.get<{content: string, filename: string}>(`/scripts/download/${scriptId}`);
+    console.log('[API Response] Script content loaded');
+
+    // 2. Parse locally
+    const parser = new RenPyParser();
+    const tree = parser.parse(response.data.content);
+    console.log('[Local Parser] Parsed tree:', tree);
+
+    return {
+      script_id: scriptId,
+      filename: response.data.filename,
+      tree: tree
+    };
   } catch (error) {
     console.error('[API Error] Failed during loadExistingScript call.');
     console.error('Script ID:', scriptId);
