@@ -148,6 +148,7 @@ export const extractNodeMetadata = (
     return metadata;
   }
 
+  // Scan inside the node first
   for (let index = start; index <= end; index += 1) {
     const rawLine = scriptLines[index];
     const trimmed = rawLine.trim();

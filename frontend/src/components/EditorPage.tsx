@@ -1590,8 +1590,11 @@ const EditorPageInternal: React.FC = () => {
       }
   }, [edges, setNodes]);
 
+  // Ref to track saving status to prevent loop
+  const isSavingOffsetRef = useRef(false);
+
   const onNodeDragStopHandler = useCallback(async (event: React.MouseEvent, node: Node) => {
-      if (!dragStartPosRef.current || !scriptId) return;
+      if (!dragStartPosRef.current || !scriptId || isSavingOffsetRef.current) return;
 
       const oldPos = dragStartPosRef.current;
       const newPos = node.position;
@@ -1608,20 +1611,15 @@ const EditorPageInternal: React.FC = () => {
       // Children positions are derived during render or updated visually during drag.
 
       // Get current metadata from scriptLines
-      // We need to fetch FRESH metadata because it might have changed?
-      // Or rely on what we have in `scriptLines`.
       const metadata = extractNodeMetadata(scriptLines, node.data?.originalData);
-
-      // Calculate new offset
-      // If node already had an offset, add dx/dy.
-      // If not, it starts at 0,0 relative to its default flow position?
-      // Wait, `flowTransformer` applies `metadata.offset` to `startX`/`startY`.
-      // If `metadata.offset` was `{x: 10, y: 10}`, the node was rendered at `Default + 10`.
-      // If we move it by another 10, new offset should be `20`.
-      // So yes, add to existing offset.
 
       const currentOffset = metadata.offset || { x: 0, y: 0 };
       const newOffset = { x: currentOffset.x + dx, y: currentOffset.y + dy };
+
+      // Check if offset actually changed significantly (rounding might cause small diffs)
+      if (Math.abs(currentOffset.x - newOffset.x) < 0.1 && Math.abs(currentOffset.y - newOffset.y) < 0.1) {
+          return;
+      }
 
       // Update metadata object
       const newMetadata = {
@@ -1630,86 +1628,56 @@ const EditorPageInternal: React.FC = () => {
       };
 
       const newComment = formatMetadataComment(newMetadata);
-      if (!newComment) return; // Should not happen as we added offset
+      if (!newComment) return;
+
+      isSavingOffsetRef.current = true;
 
       try {
-          if (typeof metadata.commentLineIndex === 'number') {
-              // Update existing comment line
+          // If we have an existing metadata line index, reuse it.
+          // BUT check if it's valid.
+          if (typeof metadata.commentLineIndex === 'number' && metadata.commentLineIndex < scriptLines.length) {
               await updateNodeContent(scriptId, metadata.commentLineIndex, metadata.commentLineIndex, newComment);
           } else {
-              // Insert new comment
-              // For Action nodes, usually metadata is inside the block if it exists, or above?
-              // `extractNodeMetadata` scans from start_line.
-              // If we insert at start_line, it pushes content down.
-              // If start_line points to `label X:`, we want to insert inside?
-              // `extractNodeMetadata` includes the label line in scan.
-
-              // If we insert at `start_line`, the new line becomes `start_line`.
-              // The original content starts at `start_line + 1`.
-              // `renpyParser` needs to be able to associate it.
-              // If we insert BEFORE `label X:`, `renpyParser` might associate it if it looks back?
-              // But we reverted `renpyParser` looking back.
-              // So we MUST insert WITHIN the node's range as seen by `renpyParser` or make sure `renpyParser` sees it.
-
-              // `renpyParser` parses the file. A line starting with `#` is a comment.
-              // If it's inside a block (indented), it's part of the block actions.
-              // If it's top level, it's ignored unless it's a label?
-
-              // If the node is a LabelBlock, inserting at `start_line` (before `label:`) puts it outside the label node.
-              // So for LabelBlock, we should insert at `start_line + 1` (inside).
-              // For Action/If/Menu nodes (inside a label), inserting at `start_line` keeps it inside the label,
-              // but maybe "before" the specific action node?
-              // If we insert before an action, it becomes a comment node preceding the action?
-              // Or does `renpyParser` attach comments to the following node?
-              // My `renpyParser` ignores comments mostly.
-
-              // BUT `extractNodeMetadata` scans the range `start` to `end`.
-              // If we insert at `start_line`, the new line is at `start_line`. The old `start_line` becomes `start_line + 1`.
-              // The parser will re-parse.
-              // If we insert at `start_line`, it will be picked up by `extractNodeMetadata` if the parser groups it into the node.
-
               // Strategy:
-              // If LabelBlock: Insert at `start_line + 1` (indented).
-              // If Action/Other: Insert at `start_line`.
+              // If LabelBlock: Insert at `start_line` (before label) is safer for `extractNodeMetadata` looking back.
+              // Wait, previous logic was inserting inside. But `extractNodeMetadata` now looks back.
+              // So putting it BEFORE the node is generally better/cleaner for labels too.
+              // But for Actions inside a block, putting it before might put it inside the previous block?
+              // No, it just sits above.
+
+              // Let's stick to inserting AT `start_line`. This pushes the node down.
+              // The comment will be "above" the node.
+              // `extractNodeMetadata` will find it by scanning backwards from the node's new start_line (which is old + 1).
+              // Wait, `extractNodeMetadata` uses `scriptLines`. `scriptLines` will be updated after reload.
 
               let insertLine = node.data?.originalData?.start_line;
-              if (node.data?.originalData?.node_type === 'LabelBlock') {
-                  insertLine += 1;
-                  // Make sure to add indentation if inside label
-                  // We can rely on `formatMetadataComment` returning the string,
-                  // but we might need to prepend spaces?
-                  // `updateNodeContent`/`insertNode` handles lines.
-                  // If we use `insertNode`, does it handle indent?
-                  // `insertNode` takes `content`. We should add 4 spaces for indentation if inside label.
-              }
 
-              // Helper to check indentation of the target line to match it?
-              // Or just assume 4 spaces for now if inside label.
-              let contentToInsert = newComment;
-              if (node.data?.originalData?.node_type === 'LabelBlock') {
-                   contentToInsert = `    ${newComment}`;
-              } else {
-                  // For actions, try to match indentation of the start_line
-                  const currentLine = scriptLines[insertLine];
-                  const indentMatch = currentLine.match(/^\s*/);
-                  const indent = indentMatch ? indentMatch[0] : '';
-                  contentToInsert = `${indent}${newComment}`;
-              }
+              // For actions, try to match indentation of the start_line
+              const currentLine = scriptLines[insertLine];
+              const indentMatch = currentLine?.match(/^\s*/);
+              const indent = indentMatch ? indentMatch[0] : '';
+              const contentToInsert = `${indent}${newComment}`;
 
               await insertNode(scriptId, insertLine, 'Comment', contentToInsert);
           }
 
-          setSnackbarMessage(t('editor.saveSuccess'));
-          setSnackbarSeverity('success');
-          setSnackbarOpen(true);
+          // DO NOT show success snackbar for every drag, it causes flickering/noise
+          // setSnackbarMessage(t('editor.saveSuccess'));
+          // setSnackbarSeverity('success');
+          // setSnackbarOpen(true);
+
+          // Explicitly reload to sync graph
+          await reloadScriptData();
 
       } catch (e: any) {
           console.error("Failed to save offset", e);
           setSnackbarMessage("Failed to save node position");
           setSnackbarSeverity("error");
           setSnackbarOpen(true);
+      } finally {
+          isSavingOffsetRef.current = false;
       }
-  }, [scriptId, scriptLines, t, edges, updateNodeContent, insertNode]);
+  }, [scriptId, scriptLines, t, edges, updateNodeContent, insertNode, reloadScriptData]);
 
   const handleProjectBreadcrumbClick = useCallback(() => {
     if (!projectId) {
