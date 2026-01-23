@@ -148,7 +148,6 @@ export const extractNodeMetadata = (
     return metadata;
   }
 
-  // Scan inside the node first
   for (let index = start; index <= end; index += 1) {
     const rawLine = scriptLines[index];
     const trimmed = rawLine.trim();
@@ -167,43 +166,10 @@ export const extractNodeMetadata = (
       metadata.tag = parsed.tag;
       metadata.tagColor = parsed.tagColor;
       metadata.offset = parsed.offset;
-      return metadata; // Return immediately if found inside
+      break;
     }
 
     // Stop scanning after the first non-empty, non-metadata line
-    break;
-  }
-
-  // If not found inside, look immediately before the start_line
-  // Iterate backwards from start-1, skipping empty lines
-  for (let index = start - 1; index >= 0; index -= 1) {
-    const rawLine = scriptLines[index];
-    const trimmed = rawLine.trim();
-
-    if (!trimmed) {
-      continue; // Skip empty lines
-    }
-
-    if (trimmed.startsWith(NODE_METADATA_PREFIX)) {
-      const parsed = parseMetadataComment(trimmed);
-      metadata.name = parsed.name;
-      metadata.status = parsed.status;
-      metadata.author = parsed.author;
-      metadata.commentLineIndex = index;
-      metadata.accentColor = parsed.accentColor;
-      metadata.tag = parsed.tag;
-      metadata.tagColor = parsed.tagColor;
-      metadata.offset = parsed.offset;
-      return metadata;
-    }
-
-    // If we hit a standard comment, continue searching upwards.
-    // This allows metadata to be placed above other comments.
-    if (trimmed.startsWith('#')) {
-      continue;
-    }
-
-    // If we hit a non-empty, non-metadata, non-comment line, stop
     break;
   }
 

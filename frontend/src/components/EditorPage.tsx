@@ -70,9 +70,10 @@ import { motion } from 'framer-motion';
 
 import { parseScript, createNewScript, getNodeContent, updateNodeContent, getScriptContent, loadExistingScript, insertNode } from '../services/api';
 import projectService, { Project } from '../services/projectService';
+import { RenPyParser } from '../utils/renpyParser';
 import { transformTreeToFlow } from '../utils/flowTransformer';
 import { visualNodeTypes } from './nodes/nodeTypes';
-import { buildNodeDisplayInfo } from '../utils/nodeMetadata';
+import { buildNodeDisplayInfo, extractNodeMetadata, formatMetadataComment, NODE_METADATA_PREFIX } from '../utils/nodeMetadata';
 import NodeEditorPopup from './NodeEditorPopup';
 import './EditorPage.css';
 import VerticalTurnEdge from './edges/VerticalTurnEdge';
@@ -82,7 +83,6 @@ import {
   persistProjectTags,
   sortProjectTags,
 } from '../utils/projectTags';
-import { extractNodeMetadata, formatMetadataComment, NODE_METADATA_PREFIX } from '../utils/nodeMetadata';
 
 // Width for the editor toolbar drawer
 const drawerWidth = 60;
@@ -839,18 +839,13 @@ const EditorPageInternal: React.FC = () => {
 
     setIsLoading(true);
     try {
-
-
       const scriptContent = await getScriptContent(scriptId);
       setScriptLines(scriptContent.split(/\r?\n/));
-      const blob = new Blob([scriptContent], { type: 'text/plain' });
-      const file = new File([blob], fileName, { type: 'text/plain' });
-        console.log("Re-parsing script to get updated nodes and edges");
-      const projectId = currentProject?.id?.toString();
-      const data = await parseScript(file, projectId);
       
-      
-      setParsedData(data.tree);
+      console.log("Parsing script locally to get updated nodes and edges");
+      const parser = new RenPyParser();
+      const tree = parser.parse(scriptContent);
+      setParsedData(tree);
       
       console.log("Script data fully reloaded after node edit");
     } catch (error) {
@@ -1265,7 +1260,12 @@ const EditorPageInternal: React.FC = () => {
       const data = await parseScript(file, projectId);
       setScriptId(data.script_id);
       setFileName(data.filename);
-      setParsedData(data.tree);
+
+      const text = await file.text();
+      setScriptLines(text.split(/\r?\n/));
+      const parser = new RenPyParser();
+      const tree = parser.parse(text);
+      setParsedData(tree);
       console.log('Parsed data:', data);
     } catch (err: any) {
       setError(err.detail || err.message || t('editor.parseError'));
@@ -1299,7 +1299,12 @@ const EditorPageInternal: React.FC = () => {
       const data = await createNewScript(newFilename, projectId);
       setScriptId(data.script_id);
       setFileName(data.filename);
-      setParsedData(data.tree);
+
+      const content = await getScriptContent(data.script_id);
+      setScriptLines(content.split(/\r?\n/));
+      const parser = new RenPyParser();
+      const tree = parser.parse(content);
+      setParsedData(tree);
       console.log('Created and parsed new script:', data);
     } catch (err: any) {
       setError(err.detail || err.message || 'Failed to create new script.');
@@ -1491,7 +1496,12 @@ const EditorPageInternal: React.FC = () => {
       const data = await loadExistingScript(scriptId);
       setScriptId(data.script_id);
       setFileName(data.filename);
-      setParsedData(data.tree);
+
+      const content = await getScriptContent(data.script_id);
+      setScriptLines(content.split(/\r?\n/));
+      const parser = new RenPyParser();
+      const tree = parser.parse(content);
+      setParsedData(tree);
       console.log('Loaded existing script:', data);
     } catch (err: any) {
       setError(err.detail || err.message || t('editor.loadScriptError'));
@@ -1514,170 +1524,52 @@ const EditorPageInternal: React.FC = () => {
 
   const dragStartPosRef = useRef<{x: number, y: number} | null>(null);
 
-  const onNodeDragStart = useCallback((event: React.MouseEvent, node: Node) => {
-      dragStartPosRef.current = { x: node.position.x, y: node.position.y };
-  }, []);
-
-  const onNodeDrag = useCallback((event: React.MouseEvent, node: Node, nodes: Node[]) => {
-      if (!dragStartPosRef.current) return;
-
-      // Calculate delta since start of drag (or since last frame?)
-      // React Flow updates the dragged node position automatically in `nodes`.
-      // We need to move children.
-
-      // But wait, `onNodeDrag` provides the node with its NEW position.
-      // We can compare with `dragStartPosRef` to get total delta, but that would apply total delta every frame?
-      // No, we need delta since last frame.
-
-      // Actually, React Flow handles the dragged node.
-      // If we want to move children, we need to update their positions in the state.
-      // But calculating "descendants" on every drag event might be expensive?
-      // Let's try to update `nodes` state.
-
-      // Better approach:
-      // In `onNodeDrag`, we calculate delta from *previous* position.
-      // `dragStartPosRef` stores start. We might need `lastDragPosRef`.
-  }, []);
-
-  // Use a ref to track the last position during drag for delta calculation
-  const lastDragPosRef = useRef<{x: number, y: number} | null>(null);
-
   const onNodeDragStartHandler = useCallback((event: React.MouseEvent, node: Node) => {
       dragStartPosRef.current = { x: node.position.x, y: node.position.y };
-      lastDragPosRef.current = { x: node.position.x, y: node.position.y };
   }, []);
 
-  const onNodeDragHandler = useCallback((event: React.MouseEvent, node: Node) => {
-      if (!lastDragPosRef.current) return;
-
-      const dx = node.position.x - lastDragPosRef.current.x;
-      const dy = node.position.y - lastDragPosRef.current.y;
-
-      if (dx === 0 && dy === 0) return;
-
-      lastDragPosRef.current = { x: node.position.x, y: node.position.y };
-
-      // Find all descendants
-      // We can use recursion on edges
-      const descendants = new Set<string>();
-      const stack = [node.id];
-
-      while (stack.length > 0) {
-          const currentId = stack.pop()!;
-          // Find outgoing edges from currentId
-          const outgoingEdges = edges.filter(e => e.source === currentId);
-          outgoingEdges.forEach(edge => {
-              if (!descendants.has(edge.target)) {
-                  descendants.add(edge.target);
-                  stack.push(edge.target);
-              }
-          });
-      }
-
-      if (descendants.size > 0) {
-          setNodes(nds => nds.map(n => {
-              if (descendants.has(n.id)) {
-                  return {
-                      ...n,
-                      position: {
-                          x: n.position.x + dx,
-                          y: n.position.y + dy
-                      }
-                  };
-              }
-              return n;
-          }));
-      }
-  }, [edges, setNodes]);
-
-  // Ref to track saving status to prevent loop
-  const isSavingOffsetRef = useRef(false);
-
   const onNodeDragStopHandler = useCallback(async (event: React.MouseEvent, node: Node) => {
-      if (!dragStartPosRef.current || !scriptId || isSavingOffsetRef.current) return;
+      if (!dragStartPosRef.current || !scriptId) return;
 
       const oldPos = dragStartPosRef.current;
       const newPos = node.position;
       const dx = newPos.x - oldPos.x;
       const dy = newPos.y - oldPos.y;
 
-      // Reset refs
       dragStartPosRef.current = null;
-      lastDragPosRef.current = null;
 
-      if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return; // Ignore tiny movements
+      if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return;
 
-      // We only save the offset for the dragged node (parent).
-      // Children positions are derived during render or updated visually during drag.
-
-      // Get current metadata from scriptLines
       const metadata = extractNodeMetadata(scriptLines, node.data?.originalData);
 
       const currentOffset = metadata.offset || { x: 0, y: 0 };
       const newOffset = { x: currentOffset.x + dx, y: currentOffset.y + dy };
 
-      // Check if offset actually changed significantly (rounding might cause small diffs)
-      if (Math.abs(currentOffset.x - newOffset.x) < 0.1 && Math.abs(currentOffset.y - newOffset.y) < 0.1) {
-          return;
-      }
-
-      // Update metadata object
-      const newMetadata = {
-          ...metadata,
-          offset: newOffset
-      };
-
+      const newMetadata = { ...metadata, offset: newOffset };
       const newComment = formatMetadataComment(newMetadata);
+
       if (!newComment) return;
 
-      isSavingOffsetRef.current = true;
-
       try {
-          // If we have an existing metadata line index, reuse it.
-          // BUT check if it's valid.
           if (typeof metadata.commentLineIndex === 'number' && metadata.commentLineIndex < scriptLines.length) {
               await updateNodeContent(scriptId, metadata.commentLineIndex, metadata.commentLineIndex, newComment);
           } else {
-              // Strategy:
-              // If LabelBlock: Insert at `start_line` (before label) is safer for `extractNodeMetadata` looking back.
-              // Wait, previous logic was inserting inside. But `extractNodeMetadata` now looks back.
-              // So putting it BEFORE the node is generally better/cleaner for labels too.
-              // But for Actions inside a block, putting it before might put it inside the previous block?
-              // No, it just sits above.
-
-              // Let's stick to inserting AT `start_line`. This pushes the node down.
-              // The comment will be "above" the node.
-              // `extractNodeMetadata` will find it by scanning backwards from the node's new start_line (which is old + 1).
-              // Wait, `extractNodeMetadata` uses `scriptLines`. `scriptLines` will be updated after reload.
-
-              let insertLine = node.data?.originalData?.start_line;
-
-              // For actions, try to match indentation of the start_line
-              const currentLine = scriptLines[insertLine];
-              const indentMatch = currentLine?.match(/^\s*/);
+              const insertLine = node.data?.originalData?.start_line;
+              const currentLine = scriptLines[insertLine] || '';
+              const indentMatch = currentLine.match(/^\s*/);
               const indent = indentMatch ? indentMatch[0] : '';
               const contentToInsert = `${indent}${newComment}`;
 
               await insertNode(scriptId, insertLine, 'Comment', contentToInsert);
           }
-
-          // DO NOT show success snackbar for every drag, it causes flickering/noise
-          // setSnackbarMessage(t('editor.saveSuccess'));
-          // setSnackbarSeverity('success');
-          // setSnackbarOpen(true);
-
-          // Explicitly reload to sync graph
           await reloadScriptData();
-
-      } catch (e: any) {
+      } catch (e) {
           console.error("Failed to save offset", e);
           setSnackbarMessage("Failed to save node position");
           setSnackbarSeverity("error");
           setSnackbarOpen(true);
-      } finally {
-          isSavingOffsetRef.current = false;
       }
-  }, [scriptId, scriptLines, t, edges, updateNodeContent, insertNode, reloadScriptData]);
+  }, [scriptId, scriptLines, reloadScriptData]);
 
   const handleProjectBreadcrumbClick = useCallback(() => {
     if (!projectId) {
@@ -2428,7 +2320,6 @@ const EditorPageInternal: React.FC = () => {
                 onMoveEnd={handleMoveEnd}
                 onContextMenu={handleCanvasContextMenu}
                 onNodeDragStart={onNodeDragStartHandler}
-                onNodeDrag={onNodeDragHandler}
                 onNodeDragStop={onNodeDragStopHandler}
               >
                 <Background color={theme.palette.divider} />
