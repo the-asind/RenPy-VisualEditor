@@ -88,6 +88,9 @@ const normalizeValue = (raw: string): string => {
 };
 
 export const parseMetadataComment = (line: string): NodeMetadata => {
+  if (!line) {
+    return {};
+  }
   const trimmed = line.trim();
   if (!trimmed.startsWith(NODE_METADATA_PREFIX)) {
     return {};
@@ -152,6 +155,11 @@ export const extractNodeMetadata = (
 
   for (let index = start; index <= end; index += 1) {
     const rawLine = scriptLines[index];
+
+    if (!rawLine) {
+        continue;
+    }
+
     const trimmed = rawLine.trim();
 
     if (!trimmed) {
@@ -214,6 +222,9 @@ export const computeNodeSummary = (
   const sanitizedLines: string[] = [];
 
   collectedLines.forEach((line) => {
+    if (!line) {
+        return;
+    }
     const trimmed = line.trim();
     if (!trimmed) {
       return;
