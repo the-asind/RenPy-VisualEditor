@@ -33,6 +33,7 @@ export interface FlowNodeDataPayload {
   originalData: ParsedNodeData;
   display: FlowNodeDisplay;
   metadata?: NodeMetadata;
+  initialPosition?: { x: number; y: number };
 }
 
 interface NodeProcessResult {
@@ -188,6 +189,7 @@ const createFlowNode = (
       originalData: { ...data },
       display,
       metadata,
+      initialPosition: { ...position },
     },
     position,
     style: {
@@ -478,9 +480,17 @@ function processNodeRecursive(
 
   const nodeId = apiNode.id || `node-${Math.random().toString(16).slice(2)}`;
   const nodeType = apiNode.node_type || 'Default';
-  const nodePosition = { x: startX, y: startY };
-  const nodeHeight = getNodeHeight(apiNode, theme);
   const { display, metadata } = buildDisplayForNode(apiNode, scriptLines, theme);
+
+  // Apply relative offset logic
+  // offset.x is applied to the visual X, but hidden from the parent's logical bounds calculation
+  // offset.y is applied to the visual Y, and propagates to children
+  const offset = metadata?.offset || { x: 0, y: 0 };
+  const currentX = startX + offset.x;
+  const currentY_Base = startY + offset.y;
+
+  const nodePosition = { x: currentX, y: currentY_Base };
+  const nodeHeight = getNodeHeight(apiNode, theme);
 
   const flowNode = createFlowNode(
     nodeId,
@@ -504,9 +514,9 @@ function processNodeRecursive(
     ));
   }
 
-  let currentY = startY + nodeHeight + VERTICAL_SPACING;
-  let childrenMinX = startX;
-  let childrenMaxX = startX + NODE_WIDTH;
+  let currentY = currentY_Base + nodeHeight + VERTICAL_SPACING;
+  let childrenMinX = currentX;
+  let childrenMaxX = currentX + NODE_WIDTH;
   const nextParentInfo = { id: nodeId, type: nodeType };
 
   // --- Child Processing based on Node Type ---
@@ -515,7 +525,7 @@ function processNodeRecursive(
     // Process true branch (children)
     let trueBranchResult: NodeProcessResult = { 
       nodes: [], edges: [], nextY: currentY, 
-      horizontalBounds: { minX: startX, maxX: startX + NODE_WIDTH } 
+      horizontalBounds: { minX: currentX, maxX: currentX + NODE_WIDTH }
     };
     
     if (apiNode.children && apiNode.children.length > 0) {
@@ -530,7 +540,7 @@ function processNodeRecursive(
         const parentInfoForTrue = { id: lastTrueNodeId, type: lastTrueNodeType };
         
         const trueNodeResult = processNodeRecursive(
-          trueNode, theme, scriptLines, parentInfoForTrue, startX, currentTrueY,
+          trueNode, theme, scriptLines, parentInfoForTrue, currentX, currentTrueY,
           level + 1, nextTrueNodeId
         );
         
@@ -557,7 +567,7 @@ function processNodeRecursive(
     // Process false branch
     let falseBranchResult: NodeProcessResult = { 
       nodes: [], edges: [], nextY: currentY, 
-      horizontalBounds: { minX: startX, maxX: startX + NODE_WIDTH } 
+      horizontalBounds: { minX: currentX, maxX: currentX + NODE_WIDTH }
     };
     
     if (apiNode.false_branch && apiNode.false_branch.length > 0) {
@@ -572,7 +582,7 @@ function processNodeRecursive(
         const parentInfoForFalse = { id: lastFalseNodeId, type: lastFalseNodeType };
         
         const falseNodeResult = processNodeRecursive(
-          falseNode, theme, scriptLines, parentInfoForFalse, startX, currentFalseY,
+          falseNode, theme, scriptLines, parentInfoForFalse, currentX, currentFalseY,
           level + 1, nextFalseNodeId
         );
         
@@ -607,13 +617,13 @@ function processNodeRecursive(
 
     let deltaX_true = 0;
     let deltaX_false = 0;
-    let targetTrueBranchMinX = startX;
-    let targetFalseBranchMinX = startX;
+    let targetTrueBranchMinX = currentX;
+    let targetFalseBranchMinX = currentX;
 
     if (trueBranchExists && falseBranchExists) {
       const gap = HORIZONTAL_SPACING_BASE;
       const totalChildWidth = falseWidth + trueWidth + gap;
-      const combinedStartX = startX + NODE_WIDTH / 2 - totalChildWidth / 2;
+      const combinedStartX = currentX + NODE_WIDTH / 2 - totalChildWidth / 2;
 
       targetFalseBranchMinX = combinedStartX;
       targetTrueBranchMinX = combinedStartX + falseWidth + gap;
@@ -621,10 +631,10 @@ function processNodeRecursive(
       deltaX_false = targetFalseBranchMinX - falseBranchResult.horizontalBounds.minX;
       deltaX_true = targetTrueBranchMinX - trueBranchResult.horizontalBounds.minX;
     } else if (trueBranchExists) {
-      targetTrueBranchMinX = startX + NODE_WIDTH + HORIZONTAL_SPACING_BASE;
+      targetTrueBranchMinX = currentX + NODE_WIDTH + HORIZONTAL_SPACING_BASE;
       deltaX_true = targetTrueBranchMinX - trueBranchResult.horizontalBounds.minX;
     } else if (falseBranchExists) {
-      targetFalseBranchMinX = startX + NODE_WIDTH / 2 - falseWidth / 2;
+      targetFalseBranchMinX = currentX + NODE_WIDTH / 2 - falseWidth / 2;
       deltaX_false = targetFalseBranchMinX - falseBranchResult.horizontalBounds.minX;
     }
 
@@ -715,15 +725,15 @@ function processNodeRecursive(
     );
     
     // Ensure bounds are valid even if branches were empty
-    if (!isFinite(childrenMinX)) childrenMinX = startX;
-    if (!isFinite(childrenMaxX)) childrenMaxX = startX + NODE_WIDTH;
+    if (!isFinite(childrenMinX)) childrenMinX = currentX;
+    if (!isFinite(childrenMaxX)) childrenMaxX = currentX + NODE_WIDTH;
 
   } else if (nodeType === 'MenuBlock') {
     // --- Layout Algorithm for MenuBlock ---
     // Process each option to determine its structure and bounds
     const optionResults: MenuOptionProcessResult[] = [];
     let maxOptionY = currentY;
-    let tempX = startX;
+    let tempX = currentX;
     
     if (apiNode.children && apiNode.children.length > 0) {
       // Process each option
@@ -746,10 +756,10 @@ function processNodeRecursive(
         + (optionResults.length - 1) * HORIZONTAL_SPACING_BASE;
       
       // Calculate starting X to center options
-      const startingX = startX + NODE_WIDTH / 2 - totalWidth / 2;
+      const startingX = currentX + NODE_WIDTH / 2 - totalWidth / 2;
       
       // Position each option
-      let currentX = startingX;
+      let currentOptionX = startingX;
       let firstOptionX = Infinity;
       let lastOptionX = -Infinity;
       
@@ -757,7 +767,7 @@ function processNodeRecursive(
         const { node: optionNode, result: optionResult, width } = optionData;
         
         // Calculate shift needed to position this option
-        const deltaX = currentX - optionResult.horizontalBounds.minX;
+        const deltaX = currentOptionX - optionResult.horizontalBounds.minX;
         
         // Apply shift to nodes
         optionResult.nodes.forEach(node => { node.position.x += deltaX; });
@@ -785,11 +795,11 @@ function processNodeRecursive(
         currentEdges = currentEdges.concat(optionResult.edges);
         
         // Track horizontal bounds
-        firstOptionX = Math.min(firstOptionX, currentX);
-        lastOptionX = Math.max(lastOptionX, currentX + width);
+        firstOptionX = Math.min(firstOptionX, currentOptionX);
+        lastOptionX = Math.max(lastOptionX, currentOptionX + width);
         
         // Move X for next option
-        currentX += width + HORIZONTAL_SPACING_BASE;
+        currentOptionX += width + HORIZONTAL_SPACING_BASE;
       }
 
       currentY = maxOptionY;
@@ -797,16 +807,16 @@ function processNodeRecursive(
       childrenMaxX = lastOptionX;
       
       // Ensure bounds are valid
-      if (!isFinite(childrenMinX)) childrenMinX = startX;
-      if (!isFinite(childrenMaxX)) childrenMaxX = startX + NODE_WIDTH;
+      if (!isFinite(childrenMinX)) childrenMinX = currentX;
+      if (!isFinite(childrenMaxX)) childrenMaxX = currentX + NODE_WIDTH;
     }
 
   } else if (apiNode.children && apiNode.children.length > 0) {
     // Process standard sequence of child nodes vertically
     let lastChildNodeId = nodeId;
     let lastChildNodeType = nodeType;
-    let childMinX = startX;
-    let childMaxX = startX + NODE_WIDTH;
+    let childMinX = currentX;
+    let childMaxX = currentX + NODE_WIDTH;
 
     for (let i = 0; i < apiNode.children.length; i++) {
       const childNode = apiNode.children[i];
@@ -815,7 +825,7 @@ function processNodeRecursive(
       const parentInfoForChild = { id: lastChildNodeId, type: lastChildNodeType };
 
       const childResult = processNodeRecursive(
-        childNode, theme, scriptLines, parentInfoForChild, startX, currentY, level, nextChildId
+        childNode, theme, scriptLines, parentInfoForChild, currentX, currentY, level, nextChildId
       );
       
       currentNodes = currentNodes.concat(childResult.nodes);
@@ -844,13 +854,14 @@ function processNodeRecursive(
   }
 
   // Return the collected nodes, edges, next Y position, and horizontal bounds
+  // SUBTRACT the offset.x from horizontalBounds to report logical bounds
   return {
     nodes: currentNodes,
     edges: currentEdges,
     nextY: currentY,
     horizontalBounds: {
-      minX: Math.min(startX, childrenMinX), 
-      maxX: Math.max(startX + NODE_WIDTH, childrenMaxX)
+      minX: Math.min(currentX, childrenMinX) - offset.x,
+      maxX: Math.max(currentX + NODE_WIDTH, childrenMaxX) - offset.x
     }
   };
 }

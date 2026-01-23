@@ -71,8 +71,9 @@ import { motion } from 'framer-motion';
 import { parseScript, createNewScript, getNodeContent, updateNodeContent, getScriptContent, loadExistingScript, insertNode } from '../services/api';
 import projectService, { Project } from '../services/projectService';
 import { transformTreeToFlow } from '../utils/flowTransformer';
+import { RenPyParser } from '../utils/renpyParser';
 import { visualNodeTypes } from './nodes/nodeTypes';
-import { buildNodeDisplayInfo } from '../utils/nodeMetadata';
+import { buildNodeDisplayInfo, updateNodeMetadataInScript } from '../utils/nodeMetadata';
 import NodeEditorPopup from './NodeEditorPopup';
 import './EditorPage.css';
 import VerticalTurnEdge from './edges/VerticalTurnEdge';
@@ -246,6 +247,7 @@ const EditorPageInternal: React.FC = () => {
   const reactFlowInstance = useReactFlow(); // Add ReactFlow instance ref
   const edgeTypes = useMemo(() => ({ 'vertical-turn': VerticalTurnEdge }), []);
 
+  const isSavingOffsetRef = useRef(false);
   const isPanningRef = useRef(false);
   const lastViewportUpdateRef = useRef<{ x: number; y: number; time: number } | null>(null);
   const panVelocityRef = useRef<{ vx: number; vy: number }>({ vx: 0, vy: 0 });
@@ -838,21 +840,17 @@ const EditorPageInternal: React.FC = () => {
 
     setIsLoading(true);
     try {
-
-
       const scriptContent = await getScriptContent(scriptId);
       setScriptLines(scriptContent.split(/\r?\n/));
-      const blob = new Blob([scriptContent], { type: 'text/plain' });
-      const file = new File([blob], fileName, { type: 'text/plain' });
-        console.log("Re-parsing script to get updated nodes and edges");
-      const projectId = currentProject?.id?.toString();
-      const data = await parseScript(file, projectId);
       
+      console.log("Parsing script locally to get updated nodes and edges");
+      const parser = new RenPyParser();
+      const parsedTree = parser.parse(scriptContent);
       
-      setParsedData(data.tree);
+      setParsedData(parsedTree);
       
       console.log("Script data fully reloaded after node edit");
-    } catch (error) {
+    } catch (error: any) {
       console.error("Failed to reload script data:", error);
       setSnackbarMessage(t('editor.errorReloadScript'));
       setSnackbarSeverity('error');
@@ -1264,7 +1262,16 @@ const EditorPageInternal: React.FC = () => {
       const data = await parseScript(file, projectId);
       setScriptId(data.script_id);
       setFileName(data.filename);
-      setParsedData(data.tree);
+
+      if (data.content) {
+        setScriptLines(data.content.split(/\r?\n/));
+        const parser = new RenPyParser();
+        const parsedTree = parser.parse(data.content);
+        setParsedData(parsedTree);
+      } else {
+        throw new Error("No content received from server");
+      }
+
       console.log('Parsed data:', data);
     } catch (err: any) {
       setError(err.detail || err.message || t('editor.parseError'));
@@ -1298,7 +1305,20 @@ const EditorPageInternal: React.FC = () => {
       const data = await createNewScript(newFilename, projectId);
       setScriptId(data.script_id);
       setFileName(data.filename);
-      setParsedData(data.tree);
+
+      if (data.content) {
+        setScriptLines(data.content.split(/\r?\n/));
+        const parser = new RenPyParser();
+        const parsedTree = parser.parse(data.content);
+        setParsedData(parsedTree);
+      } else {
+         // Fallback if content is missing (should not happen with updated backend)
+         // But createNewScript defaults content locally in api.ts?
+         // api.ts createNewScript creates a file with default content and calls parseScript.
+         // So data.content should be there.
+         throw new Error("No content received from server");
+      }
+
       console.log('Created and parsed new script:', data);
     } catch (err: any) {
       setError(err.detail || err.message || 'Failed to create new script.');
@@ -1490,7 +1510,16 @@ const EditorPageInternal: React.FC = () => {
       const data = await loadExistingScript(scriptId);
       setScriptId(data.script_id);
       setFileName(data.filename);
-      setParsedData(data.tree);
+
+      if (data.content) {
+        setScriptLines(data.content.split(/\r?\n/));
+        const parser = new RenPyParser();
+        const parsedTree = parser.parse(data.content);
+        setParsedData(parsedTree);
+      } else {
+        throw new Error("No content received from server");
+      }
+
       console.log('Loaded existing script:', data);
     } catch (err: any) {
       setError(err.detail || err.message || t('editor.loadScriptError'));
@@ -2259,6 +2288,57 @@ const EditorPageInternal: React.FC = () => {
                 onMove={handleMove}
                 onMoveEnd={handleMoveEnd}
                 onContextMenu={handleCanvasContextMenu}
+                onNodeDragStop={useCallback(async (event: React.MouseEvent, node: Node) => {
+                  if (isSavingOffsetRef.current) return;
+
+                  const initialPos = node.data?.initialPosition;
+                  const oldOffset = node.data?.metadata?.offset || { x: 0, y: 0 };
+
+                  if (!initialPos) return;
+
+                  const deltaX = node.position.x - initialPos.x;
+                  const deltaY = node.position.y - initialPos.y;
+
+                  // Ignore small movements
+                  if (Math.abs(deltaX) < 1 && Math.abs(deltaY) < 1) return;
+
+                  const newOffset = {
+                      x: Math.round(oldOffset.x + deltaX),
+                      y: Math.round(oldOffset.y + deltaY)
+                  };
+
+                  if (!scriptId) return;
+
+                  const startLine = node.data?.originalData?.start_line;
+                  if (typeof startLine !== 'number') return;
+
+                  isSavingOffsetRef.current = true;
+
+                  try {
+                    const currentContent = scriptLines.join('\n');
+                    const newContent = updateNodeMetadataInScript(
+                        currentContent,
+                        startLine,
+                        { offset: newOffset }
+                    );
+
+                    // Use full content update for robustness
+                    await updateNodeContent(scriptId, 0, scriptLines.length - 1, newContent);
+
+                    // Don't focus node on reload after drag (it's annoying)
+                    focusNodeAfterReloadRef.current = null;
+                    manualNodeFocusRef.current = false;
+
+                    await reloadScriptData();
+                  } catch (error) {
+                    console.error("Failed to save node offset:", error);
+                    setSnackbarMessage(t('editor.errorSaveGeneric'));
+                    setSnackbarSeverity('error');
+                    setSnackbarOpen(true);
+                  } finally {
+                    isSavingOffsetRef.current = false;
+                  }
+                }, [scriptId, scriptLines, reloadScriptData, t])}
               >
                 <Background color={theme.palette.divider} />
                 <Controls />

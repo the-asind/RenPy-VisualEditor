@@ -10,6 +10,8 @@ export interface NodeMetadata {
   commentLineIndex?: number;
   tag?: string;
   tagColor?: string;
+  offset?: { x: number; y: number };
+  uuid?: string;
 }
 
 export interface NodeDisplayInfo {
@@ -114,6 +116,13 @@ export const parseMetadataComment = (line: string): NodeMetadata => {
       metadata.tag = value;
     } else if (key === 'tagcolor' || key === 'tag_color') {
       metadata.tagColor = value;
+    } else if (key === 'offset') {
+      const coords = value.split(',').map(n => parseFloat(n.trim()));
+      if (coords.length === 2 && coords.every(Number.isFinite)) {
+        metadata.offset = { x: coords[0], y: coords[1] };
+      }
+    } else if (key === 'uuid') {
+      metadata.uuid = value;
     }
   }
 
@@ -339,6 +348,14 @@ export const formatMetadataComment = (metadata: NodeMetadata): string | null => 
     parts.push(`tagColor="${escapeValue(metadata.tagColor.trim())}"`);
   }
 
+  if (metadata.offset) {
+    parts.push(`offset="${metadata.offset.x},${metadata.offset.y}"`);
+  }
+
+  if (metadata.uuid && metadata.uuid.trim()) {
+    parts.push(`uuid="${escapeValue(metadata.uuid.trim())}"`);
+  }
+
   if (parts.length === 0) {
     return null;
   }
@@ -363,5 +380,47 @@ export const buildNodeDisplayInfo = (
     author: metadata.author,
     tag: metadata.tag,
     tagColor: metadata.tagColor,
-  };
+    offset: metadata.offset, // Pass offset for use in flowTransformer
+    uuid: metadata.uuid,
+  } as any; // Cast to any to avoid strict type checks if NodeDisplayInfo is not updated yet (it's not, but flowTransformer uses metadata directly)
+};
+
+export const updateNodeMetadataInScript = (
+  scriptContent: string,
+  nodeStartLine: number,
+  updates: Partial<NodeMetadata>
+): string => {
+  const lines = scriptContent.split(/\r?\n/);
+
+  if (nodeStartLine < 0 || nodeStartLine >= lines.length) {
+    return scriptContent;
+  }
+
+  const currentLine = lines[nodeStartLine];
+  const indentMatch = currentLine.match(/^\s*/);
+  const indentStr = indentMatch ? indentMatch[0] : '';
+
+  const trimmed = currentLine.trim();
+
+  if (trimmed.startsWith(NODE_METADATA_PREFIX)) {
+    // Update existing metadata line
+    const currentMeta = parseMetadataComment(currentLine);
+    const newMeta = { ...currentMeta, ...updates };
+    const metaString = formatMetadataComment(newMeta);
+    if (metaString) {
+      lines[nodeStartLine] = indentStr + metaString;
+    } else {
+      // If formatting returns null (empty metadata), remove the line?
+      // Or keep it? Removing might be safer to avoid clutter.
+      lines.splice(nodeStartLine, 1);
+    }
+  } else {
+    // Insert new metadata line
+    const metaString = formatMetadataComment(updates);
+    if (metaString) {
+      lines.splice(nodeStartLine, 0, indentStr + metaString);
+    }
+  }
+
+  return lines.join('\n');
 };

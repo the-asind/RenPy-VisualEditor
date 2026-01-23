@@ -4,7 +4,8 @@ import axios, { AxiosError } from 'axios';
 export interface ParsedScriptResponse {
   script_id: string;
   filename: string;
-  tree: any;
+  tree?: any;
+  content?: string;
 }
 
 // Интерфейс для ответа при получении содержимого узла
@@ -25,7 +26,7 @@ export interface InsertNodeResponse {
   start_line: number;
   end_line: number;
   line_count: number;
-  tree: any;
+  tree?: any;
 }
 
 const runtimeConfig = typeof window !== 'undefined' ? (window as any).RUNTIME_CONFIG : undefined;
