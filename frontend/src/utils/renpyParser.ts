@@ -82,15 +82,25 @@ export class RenPyParser {
   private lines: string[] = [];
 
   parse(content: string): ChoiceNode {
+    console.time('RenPyParser.parse');
     this.lines = content.split(/\r?\n/);
-    return this.parseLabels();
+    console.log(`RenPyParser: Parsing ${this.lines.length} lines`);
+
+    const result = this.parseLabels();
+    console.timeEnd('RenPyParser.parse');
+    return result;
   }
 
   private parseLabels(): ChoiceNode {
     const rootNode = new ChoiceNode('root', 0);
     let index = 0;
+    const startTime = performance.now();
 
     while (index < this.lines.length) {
+      if (performance.now() - startTime > 1000) {
+         console.warn(`RenPyParser: Parsing taking long time. Current index: ${index}/${this.lines.length}`);
+      }
+
       const line = this.lines[index];
       const labelInfo = isLabel(line);
 
@@ -139,7 +149,14 @@ export class RenPyParser {
     indentLevel: number,
     currentNode: ChoiceNode
   ): { success: boolean; index: number } {
+    let loopGuard = 0;
     while (index < this.lines.length) {
+      loopGuard++;
+      if (loopGuard > 100000) {
+          console.error("RenPyParser: Infinite loop detected in parseBlock at index " + index);
+          return { success: false, index };
+      }
+
       const currentLine = this.lines[index];
       const currentIndent = this.getIndentLevel(currentLine);
 
