@@ -19,6 +19,10 @@ export class RenPyParser {
     return this.parseLabels();
   }
 
+  private generateId(): string {
+    return Math.random().toString(36).substring(2, 15);
+  }
+
   private parseLabels(): ParsedNodeData {
     const rootNode: ParsedNodeData = {
       id: "root",
@@ -49,6 +53,7 @@ export class RenPyParser {
         // Labels have children. We start with an Action node.
 
         let labelChildNode: ParsedNodeData = {
+            id: this.generateId(),
             start_line: index,
             node_type: ChoiceNodeType.ACTION,
             children: []
@@ -107,6 +112,7 @@ export class RenPyParser {
             index = newIndex + 1;
 
             labelChildNode = {
+                id: this.generateId(),
                 start_line: index,
                 node_type: ChoiceNodeType.ACTION,
                 children: []
@@ -214,6 +220,7 @@ export class RenPyParser {
 
       index += 1;
       let statementNode: ParsedNodeData = {
+          id: this.generateId(),
           start_line: index,
           node_type: ChoiceNodeType.ACTION,
           children: []
@@ -232,6 +239,7 @@ export class RenPyParser {
 
           index += 1;
           statementNode = {
+            id: this.generateId(),
             start_line: index,
             node_type: ChoiceNodeType.ACTION,
             children: []
@@ -255,6 +263,7 @@ export class RenPyParser {
 
           if (this.isElifStatement(nextLineTrimmed)) {
               const falseBranchNode: ParsedNodeData = {
+                  id: this.generateId(),
                   start_line: index,
                   children: [],
                   false_branch: []
@@ -271,6 +280,7 @@ export class RenPyParser {
               index += 1;
               while (true) {
                   let falseBranchAction: ParsedNodeData = {
+                      id: this.generateId(),
                       start_line: index,
                       node_type: ChoiceNodeType.ACTION,
                       children: []
@@ -324,6 +334,7 @@ export class RenPyParser {
               const adjustedStartLine = this.findStartLineWithMetadata(index, currentIndent);
 
               const choiceNode: ParsedNodeData = {
+                  id: this.generateId(),
                   label_name: trimmedLine.slice(0, -1).trim().replace(/^"|"$/g, ''), // strip : and quotes
                   start_line: adjustedStartLine,
                   node_type: ChoiceNodeType.MENU_OPTION,
