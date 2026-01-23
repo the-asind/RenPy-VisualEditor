@@ -1591,6 +1591,58 @@ const EditorPageInternal: React.FC = () => {
     setIsBranchSubmitting
   ]);
 
+  const handleNodeDragStop = useCallback(async (event: React.MouseEvent, node: Node) => {
+    if (isSavingOffsetRef.current) return;
+
+    const initialPos = node.data?.initialPosition;
+    const oldOffset = node.data?.metadata?.offset || { x: 0, y: 0 };
+
+    if (!initialPos) return;
+
+    const deltaX = node.position.x - initialPos.x;
+    const deltaY = node.position.y - initialPos.y;
+
+    // Ignore small movements
+    if (Math.abs(deltaX) < 1 && Math.abs(deltaY) < 1) return;
+
+    const newOffset = {
+        x: Math.round(oldOffset.x + deltaX),
+        y: Math.round(oldOffset.y + deltaY)
+    };
+
+    if (!scriptId) return;
+
+    const startLine = node.data?.originalData?.start_line;
+    if (typeof startLine !== 'number') return;
+
+    isSavingOffsetRef.current = true;
+
+    try {
+      const currentContent = scriptLines.join('\n');
+      const newContent = updateNodeMetadataInScript(
+          currentContent,
+          startLine,
+          { offset: newOffset }
+      );
+
+      // Use full content update for robustness
+      await updateNodeContent(scriptId, 0, scriptLines.length - 1, newContent);
+
+      // Don't focus node on reload after drag (it's annoying)
+      focusNodeAfterReloadRef.current = null;
+      manualNodeFocusRef.current = false;
+
+      await reloadScriptData();
+    } catch (error) {
+      console.error("Failed to save node offset:", error);
+      setSnackbarMessage(t('editor.errorSaveGeneric'));
+      setSnackbarSeverity('error');
+      setSnackbarOpen(true);
+    } finally {
+      isSavingOffsetRef.current = false;
+    }
+  }, [scriptId, scriptLines, reloadScriptData, t]);
+
   return (
     <Box sx={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
       {/* Glass-effect top bar */}
@@ -2288,57 +2340,7 @@ const EditorPageInternal: React.FC = () => {
                 onMove={handleMove}
                 onMoveEnd={handleMoveEnd}
                 onContextMenu={handleCanvasContextMenu}
-                onNodeDragStop={useCallback(async (event: React.MouseEvent, node: Node) => {
-                  if (isSavingOffsetRef.current) return;
-
-                  const initialPos = node.data?.initialPosition;
-                  const oldOffset = node.data?.metadata?.offset || { x: 0, y: 0 };
-
-                  if (!initialPos) return;
-
-                  const deltaX = node.position.x - initialPos.x;
-                  const deltaY = node.position.y - initialPos.y;
-
-                  // Ignore small movements
-                  if (Math.abs(deltaX) < 1 && Math.abs(deltaY) < 1) return;
-
-                  const newOffset = {
-                      x: Math.round(oldOffset.x + deltaX),
-                      y: Math.round(oldOffset.y + deltaY)
-                  };
-
-                  if (!scriptId) return;
-
-                  const startLine = node.data?.originalData?.start_line;
-                  if (typeof startLine !== 'number') return;
-
-                  isSavingOffsetRef.current = true;
-
-                  try {
-                    const currentContent = scriptLines.join('\n');
-                    const newContent = updateNodeMetadataInScript(
-                        currentContent,
-                        startLine,
-                        { offset: newOffset }
-                    );
-
-                    // Use full content update for robustness
-                    await updateNodeContent(scriptId, 0, scriptLines.length - 1, newContent);
-
-                    // Don't focus node on reload after drag (it's annoying)
-                    focusNodeAfterReloadRef.current = null;
-                    manualNodeFocusRef.current = false;
-
-                    await reloadScriptData();
-                  } catch (error) {
-                    console.error("Failed to save node offset:", error);
-                    setSnackbarMessage(t('editor.errorSaveGeneric'));
-                    setSnackbarSeverity('error');
-                    setSnackbarOpen(true);
-                  } finally {
-                    isSavingOffsetRef.current = false;
-                  }
-                }, [scriptId, scriptLines, reloadScriptData, t])}
+                onNodeDragStop={handleNodeDragStop}
               >
                 <Background color={theme.palette.divider} />
                 <Controls />
