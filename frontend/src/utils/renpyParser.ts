@@ -55,19 +55,57 @@ export class RenPyParser {
         };
 
         while (true) {
+            // parseBlock returns the index of the last processed line.
             const { result, newIndex } = this.parseBlock(index, 1, labelChildNode);
-            index = newIndex;
-
-            if (!result) {
-                break;
-            }
 
             // If the child node is valid (has content), add it
             if ((labelChildNode.end_line ?? -1) >= (labelChildNode.start_line ?? 0)) {
                  labelNode.children?.push(labelChildNode);
             }
 
-            index += 1;
+            if (!result) {
+                // If result is false, we hit EOF or dedent.
+                // newIndex is the last valid line of the block.
+                // We should stop here.
+                index = newIndex;
+                break;
+            }
+
+            // If result is true, we hit a statement (If/Menu).
+            // newIndex is the line BEFORE the statement started (because parseBlock rewinds on statement).
+            // But wait, parseBlock checks: if statement -> return true, newIndex = index - 1.
+            // So we need to increment index to process the statement?
+            // Actually, parseStatement updates the currentNode (which was passed as labelChildNode... NO).
+            // parseBlock takes `currentNode`. If statement found:
+            //   If currentNode has content: returns true, index rewound.
+            //   If empty: calls parseStatement, returns true, index AFTER statement.
+
+            // The loop logic here assumes parseBlock handles the "Actions" between statements.
+
+            // Correct loop:
+            // 1. parseBlock attempts to fill labelChildNode.
+            // 2. If it returns true:
+            //    It means it encountered a statement.
+            //    If labelChildNode was populated, it returned EARLY (rewound). We push labelChildNode.
+            //    Then we must process the statement.
+            //    BUT parseBlock calls parseStatement internally if the node was empty?
+            //    Let's check parseBlock logic again.
+
+            // Re-reading parseBlock:
+            // if statement:
+            //   if currentNode has lines: rewind, return true. (Parent pushes node, loops).
+            //   if empty: parseStatement(currentNode...), return true. (Parent pushes node (now IfBlock), loops).
+
+            // So in both cases, we push the node.
+
+            // Update index to continue.
+            // If parseBlock returned true:
+            //   If newIndex == index (advanced): we continue from newIndex + 1.
+            //   If newIndex == old index (rewound): we continue from newIndex + 1.
+            //   Wait. If rewound, newIndex points to last line of Action. Next line is Statement.
+
+            index = newIndex + 1;
+
             labelChildNode = {
                 start_line: index,
                 node_type: ChoiceNodeType.ACTION,
@@ -80,7 +118,27 @@ export class RenPyParser {
             labelNode.children?.push(labelChildNode);
         }
 
-        labelNode.end_line = index - 1;
+        // Determine end_line based on the last child's end_line,
+        // effectively capturing the full scope of the label.
+        let calculatedEndLine = labelNode.start_line ?? 0;
+        if (labelNode.children && labelNode.children.length > 0) {
+            const lastChild = labelNode.children[labelNode.children.length - 1];
+            if (typeof lastChild.end_line === 'number') {
+                calculatedEndLine = lastChild.end_line;
+            }
+        } else {
+            // No children? (Empty label). End line is start line?
+            // Or if we parsed lines but they were empty?
+            // index points to last processed line.
+            calculatedEndLine = Math.max(calculatedEndLine, index - 1);
+        }
+
+        // Clamp to file bounds
+        if (calculatedEndLine >= this.lines.length) {
+            calculatedEndLine = this.lines.length - 1;
+        }
+
+        labelNode.end_line = calculatedEndLine;
         rootNode.children?.push(labelNode);
       } else {
         index += 1;
