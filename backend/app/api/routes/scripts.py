@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional, List
 import uuid
 
-from ...services.parser.renpy_parser import RenPyParser, ChoiceNode, ChoiceNodeType
+# Removed parser import
 from ...services.database import DatabaseService
 from ...models.exceptions import ResourceNotFoundException, DatabaseException
 from ...services.websocket import connection_manager
@@ -23,24 +23,7 @@ scripts_router = APIRouter(
 
 # Initialize services
 db_service = DatabaseService()
-parser = RenPyParser()
-
-# Helper functions
-def node_to_dict(node: ChoiceNode) -> Dict[str, Any]:
-    """Convert a ChoiceNode to a dictionary with line references for JSON serialization."""
-    result = {
-        "id": str(id(node)),  # Generate a unique ID using the object's memory address
-        "node_type": node.node_type.value if hasattr(node.node_type, "value") else str(node.node_type),
-        "label_name": node.label_name,
-        "start_line": node.start_line,
-        "end_line": node.end_line,
-        "children": [node_to_dict(child) for child in node.children]
-    }
-    
-    if hasattr(node, "false_branch") and node.false_branch:
-        result["false_branch"] = [node_to_dict(opt) for opt in node.false_branch]
-    
-    return result
+# parser = RenPyParser() # Removed
 
 # Routes
 @scripts_router.post("/parse", response_model=Dict[str, Any])
@@ -51,101 +34,44 @@ async def parse_script(
     current_user: Dict[str, Any] = Depends(get_current_user)
 ) -> Dict[str, Any]:
     """
-    Parse a RenPy script file and return its tree structure with line references.
-    
-    Args:
-        file: The uploaded RenPy script file
-        project_id: ID of the project to associate the script with
-        
-    Returns:
-        JSON representation of the parsed script tree with line references
+    Accepts a script file and returns its content for client-side parsing.
+    Legacy name "parse" kept for compatibility, but now it acts as an upload/read endpoint.
     """
     try:
-        # current_user now injected via Depends
-        if not file.filename:
-            raise HTTPException(status_code=400, detail="Filename is required")
-            
-        if not file.filename.lower().endswith(".rpy"):
-            raise HTTPException(status_code=400, detail="Invalid file type. Only .rpy files are allowed.")
-
-        # Read file content
-        content = await file.read()
-        file_size = len(content)
-        
-        if file_size > 1024 * 1024:  # 1MB limit
-            raise HTTPException(status_code=400, detail="File too large. Maximum size is 1MB.")
-        
-        # Verify user has access to the specified project
+        # Validate user has access to the project
         user_projects = db_service.get_user_projects(current_user["id"])
         has_access = any(p["id"] == project_id for p in user_projects)
         
         if not has_access:
-            raise HTTPException(status_code=403, detail="Access denied to the specified project")
-        
-        # Parse the content to check validity
-        temp_dir = Path(tempfile.gettempdir()) / "renpy_editor" / str(uuid.uuid4())
-        temp_dir.mkdir(parents=True, exist_ok=True)
-        
-        temp_file = temp_dir / file.filename
-        with open(temp_file, "wb") as f:
-            f.write(content)
-        
-        # Parse the file to build the tree
-        parsed_tree = await parser.parse_async(str(temp_file))
-        
-        # Check if script with this filename already exists in the project
-        existing_script = db_service.get_script_by_filename(project_id, file.filename)
-        
-        decoded_content = content.decode('utf-8')
+            raise HTTPException(status_code=403, detail="Access denied to this project")
 
-        if existing_script:
-            # Update existing script
-            script_id = existing_script["id"]
-            db_service.update_script(
-                script_id=script_id,
-                content=decoded_content,
-                user_id=current_user["id"]
-            )
-        else:
-            # Save to database
-            script_id = db_service.save_script(
-                project_id=project_id,
-                filename=file.filename,
-                content=decoded_content,
-                user_id=current_user["id"]
-            )
+        content = await file.read()
+        content_str = content.decode('utf-8')
         
-        # Clean up temp file
-        background_tasks.add_task(shutil.rmtree, temp_dir, ignore_errors=True)
+        # Save to database (create new script entry)
+        filename = file.filename or "uploaded.rpy"
+        script_id = db_service.create_script(project_id, filename, content_str, current_user["id"])
         
-        # Return result
-        result = {
+        return {
             "script_id": script_id,
-            "filename": file.filename,
-            "tree": node_to_dict(parsed_tree)
+            "filename": filename,
+            "content": content_str,
+            # "tree": ... # No longer returned
         }
-        
-        return result
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error parsing script: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error processing script: {str(e)}")
 
-@scripts_router.get("/node-content/{script_id}", response_model=Dict[str, Any])
+@scripts_router.get("/node-content/{script_id}", response_model=Dict[str, str])
 async def get_node_content(
-    script_id: str, 
-    start_line: int, 
+    script_id: str,
+    start_line: int,
     end_line: int,
     token: str = Depends(oauth2_scheme)
-) -> Dict[str, Any]:
+) -> Dict[str, str]:
     """
-    Get the content of a specific node by line range.
-    
-    Args:
-        script_id: The ID of the script
-        start_line: Starting line number (0-indexed)
-        end_line: Ending line number (0-indexed)
-        
-    Returns:
-        Node content
+    Get the raw content of a specific node by line numbers.
     """
     try:
         current_user = await get_current_user(token)
@@ -155,7 +81,7 @@ async def get_node_content(
         if not script:
             raise ResourceNotFoundException("Script", script_id)
         
-        # Validate user has access to the script's project
+        # Validate user has access
         project_id = script["project_id"]
         user_projects = db_service.get_user_projects(current_user["id"])
         has_access = any(p["id"] == project_id for p in user_projects)
@@ -165,131 +91,102 @@ async def get_node_content(
         
         content_lines = script["content_lines"]
         
-        # Validate line range
+        # Validate lines
         if start_line < 0 or end_line >= len(content_lines) or start_line > end_line:
             raise HTTPException(status_code=400, detail="Invalid line range")
+
+        node_content = "\n".join(content_lines[start_line:end_line+1])
         
-        # Extract the content
-        node_content = content_lines[start_line:end_line + 1]
-        
-        return {
-            "content": "\n".join(node_content),
-            "start_line": start_line,
-            "end_line": end_line
-        }
+        return {"content": node_content}
     except ResourceNotFoundException as e:
         raise HTTPException(status_code=404, detail=str(e))
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error retrieving node content: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error getting node content: {str(e)}")
 
 @scripts_router.post("/update-node/{script_id}", response_model=Dict[str, Any])
 async def update_node_content(
-    script_id: str, 
-    start_line: int, 
-    end_line: int, 
+    script_id: str,
+    start_line: int,
+    end_line: int,
     content: str = Body(..., embed=True),
     token: str = Depends(oauth2_scheme)
 ) -> Dict[str, Any]:
     """
-    Update the content of a specific node.
-    
-    Args:
-        script_id: The ID of the script
-        start_line: Starting line number (0-indexed)
-        end_line: Ending line number (0-indexed)
-        content: New content for the node
-        
-    Returns:
-        Updated line range
+    Update the content of a node.
     """
     try:
         current_user = await get_current_user(token)
         
-        # Get script from database
+        # Get script
         script = db_service.get_script(script_id)
         if not script:
             raise ResourceNotFoundException("Script", script_id)
-        
-        # Validate user has access to the script's project
+
+        # Validate access
         project_id = script["project_id"]
         user_projects = db_service.get_user_projects(current_user["id"])
         has_access = any(p["id"] == project_id for p in user_projects)
         
         if not has_access:
             raise HTTPException(status_code=403, detail="Access denied to this script")
-        
-        # Get current content
+
         content_lines = script["content_lines"]
         
-        # Validate line range
+        # Validate lines
         if start_line < 0 or end_line >= len(content_lines) or start_line > end_line:
             raise HTTPException(status_code=400, detail="Invalid line range")
-        
-        # Calculate line differences
-        old_line_count = end_line - start_line + 1
-        new_content_lines = content.splitlines()
-        new_line_count = len(new_content_lines)
-        line_diff = new_line_count - old_line_count
-        
-        # Update the content
-        content_lines[start_line:end_line+1] = new_content_lines
+
+        # Replace content
+        new_lines = content.splitlines()
+        content_lines[start_line:end_line+1] = new_lines
         new_content = "\n".join(content_lines)
 
-        # Save changes to database
+        # Save
         db_service.update_script(script_id, new_content, current_user["id"])
 
-        # Parse updated script and broadcast new structure to collaborators
-        parsed_tree = parser.parse_text(new_content)
-        await connection_manager.broadcast_structure_update(
-            script_id, node_to_dict(parsed_tree)
+        # No re-parsing here. Client should handle update or reload.
+        # Broadcast raw update notification
+        # The client will likely need to re-fetch or re-parse locally if the structure changed.
+        # But for text content update, maybe structure didn't change?
+        # Ideally we broadcast "content_updated" and clients decide.
+
+        await connection_manager.broadcast_to_script(
+            script_id,
+            {
+                "type": "content_updated", # Generic update
+                "user_id": current_user["id"],
+                "timestamp": "now"
+            }
         )
 
-        # Calculate new end line
-        new_end_line = start_line + new_line_count - 1
-        
-        return {
-            "start_line": start_line,
-            "end_line": new_end_line,
-            "line_diff": line_diff
-        }
+        return {"success": True, "message": "Node updated successfully"}
     except ResourceNotFoundException as e:
         raise HTTPException(status_code=404, detail=str(e))
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error updating node content: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error updating node: {str(e)}")
 
 @scripts_router.post("/insert-node/{script_id}", response_model=Dict[str, Any])
 async def insert_node(
-    script_id: str, 
-    insertion_line: int, 
-    content: str = Body(..., embed=True),
-    node_type: str = Body(..., embed=True),
+    script_id: str,
+    insertion_line: int,
+    node_type: str = Body(...),
+    content: str = Body(...),
     token: str = Depends(oauth2_scheme)
 ) -> Dict[str, Any]:
     """
-    Insert a new node at the specified position.
-    
-    Args:
-        script_id: The ID of the script
-        insertion_line: The line where to insert the new node
-        content: The content of the new node
-        node_type: The type of node to insert
-        
-    Returns:
-        Information about the inserted node
+    Insert a new node at a specific line.
     """
     try:
         current_user = await get_current_user(token)
         
-        # Get script from database
         script = db_service.get_script(script_id)
         if not script:
             raise ResourceNotFoundException("Script", script_id)
         
-        # Validate user has access to the script's project
         project_id = script["project_id"]
         user_projects = db_service.get_user_projects(current_user["id"])
         has_access = any(p["id"] == project_id for p in user_projects)
@@ -297,48 +194,36 @@ async def insert_node(
         if not has_access:
             raise HTTPException(status_code=403, detail="Access denied to this script")
         
-        # Get current content
         content_lines = script["content_lines"]
         
-        # Validate insertion line
         if insertion_line < 0 or insertion_line > len(content_lines):
             raise HTTPException(status_code=400, detail="Invalid insertion line")
         
-        # Parse the new content
         new_content_lines = content.splitlines()
-        
-        # Insert the new lines
         content_lines[insertion_line:insertion_line] = new_content_lines
         new_content = "\n".join(content_lines)
         
-        # Save changes to database
         db_service.update_script(script_id, new_content, current_user["id"])
         
-        # Re-parse the entire script to update the tree
-        # Create temp file for parsing
-        temp_dir = Path(tempfile.gettempdir()) / "renpy_editor" / str(uuid.uuid4())
-        temp_dir.mkdir(parents=True, exist_ok=True)
-        temp_file = temp_dir / "temp_script.rpy"
+        # NO PARSING.
         
-        with open(temp_file, "w", encoding="utf-8") as f:
-            f.write(new_content)
-
-        # Parse the updated file
-        parsed_tree = await parser.parse_async(str(temp_file))
-
-        # Clean up temp file
-        shutil.rmtree(temp_dir, ignore_errors=True)
-
-        # Broadcast updated structure to other clients
-        await connection_manager.broadcast_structure_update(
-            script_id, node_to_dict(parsed_tree)
+        # Broadcast insert
+        await connection_manager.broadcast_to_script(
+            script_id,
+            {
+                "type": "content_inserted",
+                "line": insertion_line,
+                "count": len(new_content_lines),
+                "user_id": current_user["id"]
+            }
         )
 
         return {
             "start_line": insertion_line,
             "end_line": insertion_line + len(new_content_lines) - 1,
             "line_count": len(new_content_lines),
-            "tree": node_to_dict(parsed_tree)
+            "content": content
+            # "tree": ... # Removed
         }
     except ResourceNotFoundException as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -352,24 +237,13 @@ async def download_script(
     script_id: str,
     token: str = Depends(oauth2_scheme)
 ) -> JSONResponse:
-    """
-    Download the current version of the script.
-    
-    Args:
-        script_id: The ID of the script
-        
-    Returns:
-        The script file content
-    """
     try:
         current_user = await get_current_user(token)
         
-        # Get script from database
         script = db_service.get_script(script_id)
         if not script:
             raise ResourceNotFoundException("Script", script_id)
         
-        # Validate user has access to the script's project
         project_id = script["project_id"]
         user_projects = db_service.get_user_projects(current_user["id"])
         has_access = any(p["id"] == project_id for p in user_projects)
@@ -393,24 +267,13 @@ async def delete_script(
     script_id: str,
     token: str = Depends(oauth2_scheme)
 ) -> Dict[str, str]:
-    """
-    Delete a script.
-    
-    Args:
-        script_id: The ID of the script to delete
-        
-    Returns:
-        Confirmation message
-    """
     try:
         current_user = await get_current_user(token)
         
-        # Get script from database
         script = db_service.get_script(script_id)
         if not script:
             raise ResourceNotFoundException("Script", script_id)
         
-        # Validate user has access to the script's project
         project_id = script["project_id"]
         user_projects = db_service.get_user_projects(current_user["id"])
         has_access = any(p["id"] == project_id and p.get("role") in ["Owner", "Editor"] 
@@ -419,7 +282,6 @@ async def delete_script(
         if not has_access:
             raise HTTPException(status_code=403, detail="Permission denied to delete this script")
         
-        # Delete from database
         deleted = db_service.delete_script(script_id)
         if not deleted:
             raise HTTPException(status_code=500, detail="Failed to delete script")
@@ -437,26 +299,15 @@ async def get_project_scripts(
     project_id: str,
     token: str = Depends(oauth2_scheme)
 ) -> List[Dict[str, Any]]:
-    """
-    Get all scripts for a project.
-    
-    Args:
-        project_id: The ID of the project
-        
-    Returns:
-        List of scripts in the project
-    """
     try:
         current_user = await get_current_user(token)
         
-        # Validate user has access to the project
         user_projects = db_service.get_user_projects(current_user["id"])
         has_access = any(p["id"] == project_id for p in user_projects)
         
         if not has_access:
             raise HTTPException(status_code=403, detail="Access denied to this project")
         
-        # Get scripts from database
         scripts = db_service.get_project_scripts(project_id)
         return scripts
     except HTTPException:
@@ -471,21 +322,9 @@ async def search_scripts(
     limit: int = 20,
     token: str = Depends(oauth2_scheme)
 ) -> List[Dict[str, Any]]:
-    """
-    Search scripts by content or filename.
-    
-    Args:
-        query: Search query
-        project_id: Optional project ID to filter by
-        limit: Maximum number of results
-        
-    Returns:
-        List of matching scripts
-    """
     try:
         current_user = await get_current_user(token)
         
-        # If project ID specified, validate access
         if project_id:
             user_projects = db_service.get_user_projects(current_user["id"])
             has_access = any(p["id"] == project_id for p in user_projects)
@@ -493,7 +332,6 @@ async def search_scripts(
             if not has_access:
                 raise HTTPException(status_code=403, detail="Access denied to this project")
         
-        # Search scripts
         results = db_service.search_scripts(
             project_id=project_id,
             query=query,
@@ -512,21 +350,13 @@ async def load_existing_script(
     current_user: Dict[str, Any] = Depends(get_current_user)
 ) -> Dict[str, Any]:
     """
-    Load an existing script and return its parsed tree structure.
-    
-    Args:
-        script_id: The ID of the script to load
-        
-    Returns:
-        JSON representation of the script with parsed tree
+    Load an existing script. Returns only content, parsing is done client-side.
     """
     try:
-        # Get script from database
         script = db_service.get_script(script_id)
         if not script:
             raise ResourceNotFoundException("Script", script_id)
         
-        # Validate user has access to the script's project
         project_id = script["project_id"]
         user_projects = db_service.get_user_projects(current_user["id"])
         has_access = any(p["id"] == project_id for p in user_projects)
@@ -534,30 +364,13 @@ async def load_existing_script(
         if not has_access:
             raise HTTPException(status_code=403, detail="Access denied to this script")
         
-        # Parse the script content to build tree
-        temp_dir = Path(tempfile.gettempdir()) / "renpy_editor" / str(uuid.uuid4())
-        temp_dir.mkdir(parents=True, exist_ok=True)
-        
-        temp_file = temp_dir / script["filename"]
-        with open(temp_file, "w", encoding='utf-8') as f:
-            f.write(script["content"])
-        
-        try:
-            # Parse the file to build the tree
-            parsed_tree = await parser.parse_async(str(temp_file))
-            
-            # Return result
-            result = {
-                "script_id": script_id,
-                "filename": script["filename"],
-                "tree": node_to_dict(parsed_tree)
-            }
-            
-            return result
-        finally:
-            # Clean up temp file
-            import shutil
-            shutil.rmtree(temp_dir, ignore_errors=True)
+        # Return content without parsing
+        return {
+            "script_id": script_id,
+            "filename": script["filename"],
+            "content": script["content"]
+            # "tree": ... # Removed
+        }
             
     except ResourceNotFoundException as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -565,5 +378,3 @@ async def load_existing_script(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error loading script: {str(e)}")
-
-# TODO: Add endpoints for version history retrieval - #issue/129

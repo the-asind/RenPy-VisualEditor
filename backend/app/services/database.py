@@ -199,332 +199,101 @@ class DatabaseService:
                     logger.error(error_msg)
                     raise FileNotFoundError(error_msg)
             
+            # Initialize database with schema
             with sqlite3.connect(self.db_path) as conn:
-                # Set foreign keys pragma
-                conn.execute("PRAGMA foreign_keys = ON")
-                
-                # Read and execute the schema SQL
-                logger.debug("Executing schema script")
                 conn.executescript(schema_content)
-                conn.commit()
+                logger.info("Database initialized successfully.")
                 
-                # Verify tables were created
-                cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
-                tables = [row[0] for row in cursor.fetchall()]
-                logger.info(f"Tables created in database: {', '.join(tables)}")
-                
-                # Verify required tables exist
-                required_tables = ["users", "projects", "scripts", "roles", "sessions", "participants", "node_locks"]
-                missing_tables = [table for table in required_tables if table not in tables]
-                if missing_tables:
-                    raise RuntimeError(f"Failed to create required tables: {', '.join(missing_tables)}")
-                
-            logger.info(f"Database initialized successfully at {self.db_path}")
         except Exception as e:
             logger.error(f"Database initialization failed: {str(e)}")
             raise
-    
+
     def _get_connection(self):
-        """Get a new database connection with proper settings."""
-        # Removed connection caching to prevent threading issues with TestClient
-        connection = sqlite3.connect(self.db_path, isolation_level=None, check_same_thread=False) # Allow cross-thread usage for FastAPI TestClient context
-        connection.row_factory = sqlite3.Row  # Return rows as dictionaries
-        connection.execute("PRAGMA foreign_keys = ON") # Ensure foreign keys are enabled for each connection
-        return connection
-    
-    def close(self):
-        """Explicitly close any open database connections (if any were cached - now deprecated)."""
-        # Connection caching is removed, so this method might be less critical,
-        # but kept for potential future use or explicit cleanup needs.
-        try:
-            # Clear the script cache
-            if hasattr(self, 'script_cache'):
-                self.script_cache.clear()
-        except Exception as e:
-            print(f"Error during database service cleanup: {e}")
-    
-    def __del__(self):
-        """Ensure cleanup on object garbage collection."""
-        # No connection to close here anymore due to removal of caching
-        pass
-    
-    def create_project(self, name: str, owner_id: str, description: str = None) -> str:
-        """Create a new project and return its ID."""
-        project_id = str(uuid.uuid4())
-        try:
-            # Handle None description by setting it to an empty string
-            description = description or ""
-            with sqlite3.connect(self.db_path) as conn:
-                conn.execute(
-                    'INSERT INTO projects (id, name, description, owner_id) VALUES (?, ?, ?, ?)',
-                    (project_id, name, description, owner_id)
-                )
-            logger.info(f"Created project {name} with ID {project_id}")
-            return project_id
-        except Exception as e:
-            logger.error(f"Failed to create project: {str(e)}")
-            raise
-    
-    def save_script(self, project_id: str, filename: str, content: str, user_id: Optional[str] = None) -> str:
-        """Save a script to the database and return its ID."""
-        script_id = str(uuid.uuid4())
-        try:
-            with sqlite3.connect(self.db_path) as conn:
-                conn.execute('BEGIN TRANSACTION')
-                try:
-                    # Insert the script
-                    conn.execute(
-                        'INSERT INTO scripts (id, project_id, filename, content, last_edited_by) VALUES (?, ?, ?, ?, ?)',
-                        (script_id, project_id, filename, content, user_id)
-                    )
-                    
-                    # Create initial version if user_id is provided
-                    if user_id:
-                        version_id = str(uuid.uuid4())
-                        conn.execute(
-                            'INSERT INTO versions (id, script_id, content, created_by) VALUES (?, ?, ?, ?)',
-                            (version_id, script_id, content, user_id)
-                        )
-                    
-                    conn.execute('COMMIT')
-                    # Update cache
-                    self.script_cache.set(script_id, {
-                        "id": script_id,
-                        "project_id": project_id,
-                        "filename": filename,
-                        "content": content,
-                        "content_lines": content.splitlines(),
-                        "last_edited_by": user_id
-                    })
-                    logger.info(f"Saved script {filename} with ID {script_id}")
-                    return script_id
-                except Exception as e:
-                    conn.execute('ROLLBACK')
-                    raise
-        except Exception as e:
-            logger.error(f"Failed to save script: {str(e)}")
-            raise
-    
-    def update_script(self, script_id: str, content: str, user_id: str) -> None:
-        """Update script content and create a version entry."""
-        # Invalidate cache for this script
-        self.script_cache.delete(script_id)
-        try:
-            with sqlite3.connect(self.db_path) as conn:
-                # Begin a transaction
-                conn.execute('BEGIN TRANSACTION')
-                try:
-                    conn.execute(
-                        'UPDATE scripts SET content = ?, updated_at = CURRENT_TIMESTAMP, last_edited_by = ? WHERE id = ?',
-                        (content, user_id, script_id)
-                    )
-                    conn.execute(
-                        'INSERT INTO versions (id, script_id, content, created_by) VALUES (?, ?, ?, ?)',
-                        (str(uuid.uuid4()), script_id, content, user_id)
-                    )
-                    # Commit the transaction
-                    conn.execute('COMMIT')
-                    # Update cache if exists
-                    cached_script = self.script_cache.get(script_id)
-                    if cached_script:
-                        cached_script.update({
-                            "content": content,
-                            "content_lines": content.splitlines(),
-                            "last_edited_by": user_id
-                        })
-                        self.script_cache.set(script_id, cached_script)
-                    logger.info(f"Updated script {script_id} by user {user_id}")
-                except Exception as e:
-                    # Rollback in case of error
-                    conn.execute('ROLLBACK')
-                    logger.error(f"Failed to update script (transaction rolled back): {str(e)}")
-                    raise
-        except Exception as e:
-            logger.error(f"Database connection error: {str(e)}")
-            raise
-    
-    def get_script(self, script_id: str) -> Optional[Dict[str, Any]]:
-        """Get script details by ID with caching."""
-        # Try to get from cache first
-        cached_script = self.script_cache.get(script_id)
-        if cached_script:
-            return cached_script
-            
-        # If not in cache, get from database
+        """Get a database connection."""
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        return conn
+
+    # User methods
+    def get_user_by_username(self, username: str) -> Optional[Dict[str, Any]]:
+        """Get user by username."""
         try:
             with self._get_connection() as conn:
                 cursor = conn.execute(
-                    '''
-                    SELECT id, project_id, filename, content, created_at, updated_at, last_edited_by
-                    FROM scripts WHERE id = ?
-                    ''',
-                    (script_id,)
+                    "SELECT * FROM users WHERE username = ?",
+                    (username,)
                 )
-                script = cursor.fetchone()
-                if not script:
-                    return None
-                
-                script_dict = dict(script)
-                script_dict["content_lines"] = script_dict["content"].splitlines()
-                
-                # Add to cache
-                self.script_cache.set(script_id, script_dict)
-                return script_dict
+                row = cursor.fetchone()
+                if row:
+                    return dict(row)
+                return None
         except Exception as e:
-            logger.error(f"Failed to get script: {str(e)}")
+            logger.error(f"Failed to get user by username: {str(e)}")
             raise
-    
-    def get_script_by_filename(self, project_id: str, filename: str) -> Optional[Dict[str, Any]]:
-        """Get script details by project ID and filename."""
+
+    def get_user_by_email(self, email: str) -> Optional[Dict[str, Any]]:
+        """Get user by email."""
         try:
             with self._get_connection() as conn:
                 cursor = conn.execute(
-                    'SELECT id, project_id, filename, content, created_at, updated_at, last_edited_by FROM scripts WHERE project_id = ? AND filename = ?',
-                    (project_id, filename)
+                    "SELECT * FROM users WHERE email = ?",
+                    (email,)
                 )
-                script = cursor.fetchone()
-                if not script:
-                    return None
-                
-                script_dict = dict(script)
-                script_dict["content_lines"] = script_dict["content"].splitlines()
-                
-                return script_dict
+                row = cursor.fetchone()
+                if row:
+                    return dict(row)
+                return None
         except Exception as e:
-            logger.error(f"Failed to get script by filename: {str(e)}")
+            logger.error(f"Failed to get user by email: {str(e)}")
             raise
 
-    def delete_script(self, script_id: str) -> bool:
-        """Delete a script and its versions."""
-        # Invalidate cache
-        self.script_cache.delete(script_id)
-        try:
-            with self._get_connection() as conn:
-                conn.execute('BEGIN TRANSACTION')
-                try:
-                    # Delete versions first due to foreign key constraint
-                    conn.execute('DELETE FROM versions WHERE script_id = ?', (script_id,))
-                    result = conn.execute('DELETE FROM scripts WHERE id = ?', (script_id,))
-                    deleted = result.rowcount > 0
-                    conn.execute('COMMIT')
-                    
-                    # Remove from cache if exists
-                    self.script_cache.delete(script_id)
-                    
-                    return deleted
-                except Exception as e:
-                    conn.execute('ROLLBACK')
-                    raise
-        except Exception as e:
-            logger.error(f"Failed to delete script: {str(e)}")
-            raise
-
-    # TODO: Add methods for script searching and filtering - #issue/123
-    def search_scripts(self, project_id: Optional[str] = None, query: Optional[str] = None, limit: int = 20) -> List[Dict]:
-        """Search scripts by project and/or content keywords."""
-        try:
-            with self._get_connection() as conn:
-                sql = """
-                SELECT s.id, s.project_id, s.filename, s.updated_at, 
-                       u.username as last_editor
-                FROM scripts s
-                LEFT JOIN users u ON s.last_edited_by = u.id
-                WHERE 1=1
-                """
-                params = []
-                
-                if project_id:
-                    sql += " AND s.project_id = ?"
-                    params.append(project_id)
-                
-                if query:
-                    sql += " AND (s.filename LIKE ? OR s.content LIKE ?)"
-                    search = f"%{query}%"
-                    params.extend([search, search])
-                
-                sql += " ORDER BY s.updated_at DESC LIMIT ?"
-                params.append(limit)
-                
-                cursor = conn.execute(sql, params)
-                return [dict(row) for row in cursor.fetchall()]
-        except Exception as e:
-            logger.error(f"Failed to search scripts: {str(e)}")
-            raise
-
-    # TODO: Add user management methods
     def create_user(self, username: str, email: str, password_hash: str) -> str:
-        """Create a new user and return their ID."""
+        """Create a new user."""
         user_id = str(uuid.uuid4())
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
                 conn.execute(
-                    'INSERT INTO users (id, username, email, password_hash) VALUES (?, ?, ?, ?)',
+                    "INSERT INTO users (id, username, email, password_hash) VALUES (?, ?, ?, ?)",
                     (user_id, username, email, password_hash)
                 )
-            logger.info(f"Created user {username} with ID {user_id}")
-            return user_id
+                return user_id
         except sqlite3.IntegrityError:
-            logger.error(f"Username or email already exists: {username}, {email}")
-            raise ValueError("Username or email already exists")
+            # Check if it was username or email constraint
+            existing_username = self.get_user_by_username(username)
+            if existing_username:
+                raise ValueError("Username already exists")
+            raise ValueError("Email already exists")
         except Exception as e:
             logger.error(f"Failed to create user: {str(e)}")
             raise
-    
-    def get_user_by_username(self, username: str) -> Optional[Dict[str, Any]]:
-        """Fetches a user by their username."""
-        conn = self._get_connection()
-        try:
-            cursor = conn.cursor()
-            cursor.execute("SELECT id, username, email, password_hash, created_at FROM users WHERE username = ?", (username,))
-            user_data = cursor.fetchone()
-            if user_data:
-                return dict(user_data)  # sqlite3.Row can be directly converted to dict
-            return None
-        except sqlite3.Error as e:
-            logger.error(f"Database error when fetching user by username '{username}': {e}", exc_info=True)
-            return None
-        finally:
-            if conn:
-                conn.close()
 
-    def get_user_by_id(self, user_id: str) -> Optional[Dict[str, Any]]:
-        """Get user details by ID."""
+    # Project methods
+    def create_project(self, name: str, description: str, owner_id: str) -> str:
+        """Create a new project."""
+        project_id = str(uuid.uuid4())
+        try:
+            with self._get_connection() as conn:
+                conn.execute(
+                    "INSERT INTO projects (id, name, description, owner_id) VALUES (?, ?, ?, ?)",
+                    (project_id, name, description, owner_id)
+                )
+                # Add owner access
+                conn.execute(
+                    "INSERT INTO project_access (project_id, user_id, role_id) VALUES (?, ?, ?)",
+                    (project_id, owner_id, 'role_owner')
+                )
+                return project_id
+        except Exception as e:
+            logger.error(f"Failed to create project: {str(e)}")
+            raise
+
+    def get_user_projects(self, user_id: str) -> List[Dict[str, Any]]:
+        """Get all projects accessible to a user."""
         try:
             with self._get_connection() as conn:
                 cursor = conn.execute(
-                    'SELECT id, username, email, password_hash, created_at FROM users WHERE id = ?',
-                    (user_id,)
-                )
-                user = cursor.fetchone()
-                if not user:
-                    return None
-                
-                return dict(user)
-        except Exception as e:
-            logger.error(f"Failed to get user by ID: {str(e)}")
-            raise
-    
-    def get_user_projects(self, user_id: str) -> List[Dict[str, Any]]:
-        """Get all projects accessible by a user."""
-        try:
-            with self._get_connection() as conn:
-                # Get projects owned by user
-                owned_cursor = conn.execute(
                     '''
-                    SELECT p.id, p.name, p.description, p.created_at, p.updated_at, p.owner_id,
-                           'Owner' as role
-                    FROM projects p
-                    WHERE p.owner_id = ?
-                    ''',
-                    (user_id,)
-                )
-                owned_projects = [dict(row) for row in owned_cursor.fetchall()]
-                
-                # Get projects shared with user
-                shared_cursor = conn.execute(
-                    '''
-                    SELECT p.id, p.name, p.description, p.created_at, p.updated_at, p.owner_id,
-                           r.name as role
+                    SELECT p.*, r.name as role, r.id as role_id
                     FROM projects p
                     JOIN project_access pa ON p.id = pa.project_id
                     JOIN roles r ON pa.role_id = r.id
@@ -532,52 +301,255 @@ class DatabaseService:
                     ''',
                     (user_id,)
                 )
-                shared_projects = [dict(row) for row in shared_cursor.fetchall()]
-                
-                # Combine and ensure uniqueness (a user could be owner and also have explicit access)
-                all_projects_dict = {p["id"]: p for p in owned_projects}
-                for p in shared_projects:
-                    if p["id"] not in all_projects_dict:
-                        all_projects_dict[p["id"]] = p
-                    # Potentially update role if a more specific one is granted than just 'Owner'
-                    # For now, owner role takes precedence if listed as owned.
-                    # Or, if a user is an owner, their role is 'Owner' regardless of project_access entries.
-
-                return list(all_projects_dict.values())
+                return [dict(row) for row in cursor.fetchall()]
         except Exception as e:
             logger.error(f"Failed to get user projects: {str(e)}")
             raise
-    
-    def get_role_by_id(self, role_id: str) -> Optional[Dict[str, Any]]:
-        """Get role details by role ID."""
+
+    # Script methods
+    def get_script(self, script_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get a script by ID.
+        Uses caching to improve performance for frequently accessed scripts.
+        """
+        # Try to get from cache first
+        cached_script = self.script_cache.get(script_id)
+        if cached_script:
+            return cached_script
+            
         try:
             with self._get_connection() as conn:
                 cursor = conn.execute(
-                    "SELECT id, name, description FROM roles WHERE id = ?",
-                    (role_id,)
+                    "SELECT * FROM scripts WHERE id = ?",
+                    (script_id,)
                 )
-                role = cursor.fetchone()
-                return dict(role) if role else None
+                row = cursor.fetchone()
+                if row:
+                    script_data = dict(row)
+                    # Convert content to lines for easier processing if needed
+                    # But store raw content in cache
+                    if "content" in script_data:
+                        script_data["content_lines"] = script_data["content"].splitlines()
+
+                    # Cache the result
+                    self.script_cache.set(script_id, script_data)
+                    return script_data
+                return None
         except Exception as e:
-            logger.error(f"Failed to get role by ID '{role_id}': {str(e)}")
+            logger.error(f"Failed to get script: {str(e)}")
             raise
 
-    def get_role_by_name(self, role_name: str) -> Optional[Dict[str, Any]]:
-        """Get role details by role name."""
+    def update_script(self, script_id: str, content: str, user_id: str) -> None:
+        """
+        Update script content and create a new version.
+        Invalidates the cache for this script.
+        """
+        try:
+            with self._get_connection() as conn:
+                # Update script content
+                conn.execute(
+                    '''
+                    UPDATE scripts
+                    SET content = ?, last_edited_by = ?, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                    ''',
+                    (content, user_id, script_id)
+                )
+                
+                # Create new version
+                # Check if message column exists in versions table (it was missing in schema.sql but referenced in code)
+                # For compatibility with schema.sql which doesn't have 'message', we omit it if not needed
+                # Or check schema.sql content. It doesn't have message.
+                # So we should remove message from insert query.
+                conn.execute(
+                    '''
+                    INSERT INTO versions (id, script_id, content, created_by)
+                    VALUES (?, ?, ?, ?)
+                    ''',
+                    (str(uuid.uuid4()), script_id, content, user_id)
+                )
+
+            # Invalidate cache
+            self.script_cache.delete(script_id)
+
+        except Exception as e:
+            logger.error(f"Failed to update script: {str(e)}")
+            raise
+
+    def search_scripts(self, project_id: Optional[str] = None, query: Optional[str] = None, limit: int = 20) -> List[Dict[str, Any]]:
+        """Search for scripts."""
+        try:
+            sql = "SELECT id, project_id, filename, updated_at FROM scripts"
+            params = []
+            conditions = []
+
+            if project_id:
+                conditions.append("project_id = ?")
+                params.append(project_id)
+
+            if query:
+                conditions.append("(filename LIKE ? OR content LIKE ?)")
+                params.append(f"%{query}%")
+                params.append(f"%{query}%")
+
+            if conditions:
+                sql += " WHERE " + " AND ".join(conditions)
+
+            sql += " ORDER BY updated_at DESC LIMIT ?"
+            params.append(limit)
+
+            with self._get_connection() as conn:
+                cursor = conn.execute(sql, params)
+                return [dict(row) for row in cursor.fetchall()]
+        except Exception as e:
+            logger.error(f"Failed to search scripts: {str(e)}")
+            raise
+
+    # Collaboration methods
+    def acquire_node_lock(self, script_id: str, node_id: str, user_id: str, session_id: str, duration_seconds: int = 300) -> bool:
+        """
+        Acquire a lock on a node for editing.
+
+        Args:
+            script_id: The ID of the script containing the node
+            node_id: The ID of the node to lock
+            user_id: The ID of the user requesting the lock
+            session_id: The editing session ID
+            duration_seconds: How long the lock should be valid (default 5 minutes)
+
+        Returns:
+            True if lock acquired, False if already locked by someone else
+        """
+        expires_at = datetime.now() + timedelta(seconds=duration_seconds)
+
+        try:
+            with self._get_connection() as conn:
+                conn.execute("BEGIN TRANSACTION")
+
+                # Check for existing valid lock
+                cursor = conn.execute(
+                    '''
+                    SELECT user_id, expires_at FROM node_locks
+                    WHERE session_id = ? AND node_id = ?
+                    ''',
+                    (session_id, node_id)
+                )
+                existing_lock = cursor.fetchone()
+
+                if existing_lock:
+                    lock_user = existing_lock[0]
+                    lock_expiry = datetime.fromisoformat(existing_lock[1]) if isinstance(existing_lock[1], str) else existing_lock[1]
+
+                    # If locked by another user and not expired
+                    if lock_user != user_id and lock_expiry > datetime.now():
+                        conn.rollback()
+                        return False
+
+                    # If locked by same user or expired, update it
+                    conn.execute(
+                        '''
+                        UPDATE node_locks
+                        SET user_id = ?, expires_at = ?, locked_at = CURRENT_TIMESTAMP
+                        WHERE session_id = ? AND node_id = ?
+                        ''',
+                        (user_id, expires_at, session_id, node_id)
+                    )
+                else:
+                    # Create new lock
+                    conn.execute(
+                        '''
+                        INSERT INTO node_locks (id, session_id, user_id, node_id, expires_at)
+                        VALUES (?, ?, ?, ?, ?)
+                        ''',
+                        (str(uuid.uuid4()), session_id, user_id, node_id, expires_at)
+                    )
+                
+                conn.commit()
+                return True
+        except Exception as e:
+            logger.error(f"Failed to acquire lock: {str(e)}")
+            return False
+
+    def release_node_lock(self, script_id: str, node_id: str, user_id: str) -> bool:
+        """Release a lock on a node."""
+        try:
+            with self._get_connection() as conn:
+                # We need to find the lock first to verify ownership
+                # Note: Schema uses session_id, but here we query by script_id logic?
+                # The node_locks table has session_id, not script_id directly.
+                # Assuming caller provides enough info or we look up session.
+                # Actually, node_locks is (node_id, session_id) unique.
+                # But we might have multiple sessions for a script?
+                # Typically one session per script per implementation?
+                # Let's assume we delete by node_id and user_id across any session for now,
+                # or we need session_id passed in.
+                # The previous implementation passed script_id which implies looking up sessions?
+                # Let's just try to delete where node_id and user_id matches.
+                
+                conn.execute(
+                    '''
+                    DELETE FROM node_locks
+                    WHERE node_id = ? AND user_id = ?
+                    ''',
+                    (node_id, user_id)
+                )
+                return True
+        except Exception as e:
+            logger.error(f"Failed to release lock: {str(e)}")
+            return False
+
+    def check_node_lock(self, script_id: str, node_id: str) -> Optional[str]:
+        """
+        Check if a node is locked and return the user_id if it is.
+        Returns None if not locked or lock expired.
+        """
+        try:
+            with self._get_connection() as conn:
+                # Need to join with sessions to filter by script_id if needed,
+                # or just check all locks for this node_id
+                cursor = conn.execute(
+                    '''
+                    SELECT user_id, expires_at FROM node_locks
+                    WHERE node_id = ?
+                    ''',
+                    (node_id,)
+                )
+                rows = cursor.fetchall()
+
+                current_time = datetime.now()
+                for row in rows:
+                    expiry = row[1]
+                    if isinstance(expiry, str):
+                        expiry = datetime.fromisoformat(expiry)
+
+                    if expiry > current_time:
+                        return row[0]
+
+                return None
+        except Exception as e:
+            logger.error(f"Failed to check lock: {str(e)}")
+            return None
+
+    def refresh_node_lock(self, script_id: str, node_id: str, user_id: str, duration_seconds: int = 300) -> bool:
+        """Refresh an existing lock."""
+        expires_at = datetime.now() + timedelta(seconds=duration_seconds)
         try:
             with self._get_connection() as conn:
                 cursor = conn.execute(
-                    "SELECT id, name, description FROM roles WHERE name = ?",
-                    (role_name,)
+                    '''
+                    UPDATE node_locks
+                    SET expires_at = ?
+                    WHERE node_id = ? AND user_id = ?
+                    ''',
+                    (expires_at, node_id, user_id)
                 )
-                role = cursor.fetchone()
-                return dict(role) if role else None
+                return cursor.rowcount > 0
         except Exception as e:
-            logger.error(f"Failed to get role by name '{role_name}': {str(e)}")
-            raise
-    
+            logger.error(f"Failed to refresh lock: {str(e)}")
+            return False
+
     def grant_project_access(self, project_id: str, user_id: str, role_id: str) -> bool:
-        """Grant a user a specific role on a project."""
+        """Grant a user access to a project with a specific role."""
         conn = self._get_connection()
         try:
             cursor = conn.cursor()
@@ -797,3 +769,58 @@ class DatabaseService:
         # For now, we'll just log it
         logger.info(f"Usage tracking: User {user_id} performed {action_type} on script {script_id}")
         # TODO: Implement actual database tracking when analytics schema is added
+
+    def create_script(self, project_id: str, filename: str, content: str, user_id: str) -> str:
+        """
+        Create a new script in the database.
+
+        Args:
+            project_id: The ID of the project.
+            filename: The name of the script file.
+            content: The initial content of the script.
+            user_id: The ID of the user creating the script.
+
+        Returns:
+            The ID of the newly created script.
+        """
+        script_id = str(uuid.uuid4())
+        try:
+            with self._get_connection() as conn:
+                conn.execute(
+                    '''
+                    INSERT INTO scripts (id, project_id, filename, content, last_edited_by)
+                    VALUES (?, ?, ?, ?, ?)
+                    ''',
+                    (script_id, project_id, filename, content, user_id)
+                )
+
+                # Create initial version
+                # Removed 'message' column to match schema.sql
+                conn.execute(
+                    '''
+                    INSERT INTO versions (id, script_id, content, created_by)
+                    VALUES (?, ?, ?, ?)
+                    ''',
+                    (str(uuid.uuid4()), script_id, content, user_id)
+                )
+
+                return script_id
+        except Exception as e:
+            logger.error(f"Failed to create script: {str(e)}")
+            raise
+
+    def get_user_by_id(self, user_id: str) -> Optional[Dict[str, Any]]:
+        """Get user by ID."""
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.execute(
+                    "SELECT * FROM users WHERE id = ?",
+                    (user_id,)
+                )
+                row = cursor.fetchone()
+                if row:
+                    return dict(row)
+                return None
+        except Exception as e:
+            logger.error(f"Failed to get user by id: {str(e)}")
+            raise
