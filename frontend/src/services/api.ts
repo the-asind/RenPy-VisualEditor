@@ -1,5 +1,6 @@
 /// <reference types="vite/client" />
 import axios, { AxiosError } from 'axios';
+import { RenPyParser } from './RenPyParser';
 
 export interface ParsedScriptResponse {
   script_id: string;
@@ -58,6 +59,15 @@ apiClient.interceptors.request.use((config) => {
  * @returns The parsed script data (script_id, filename, tree).
  */
 export const parseScript = async (file: File, projectId?: string): Promise<ParsedScriptResponse> => {
+  // 1. Read file locally
+  const text = await file.text();
+
+  // 2. Parse locally to validate and get the tree
+  const parser = new RenPyParser();
+  const tree = parser.parse(text);
+  console.log('[Frontend Parser] Parsed local file:', file.name);
+
+  // 3. Upload to backend (to save)
   const formData = new FormData();
   formData.append('file', file);
   
@@ -75,8 +85,16 @@ export const parseScript = async (file: File, projectId?: string): Promise<Parse
         'Content-Type': 'multipart/form-data',
       },
     });
-    console.log('[API Response] parseScript successful:', response.data);
-    return response.data;
+    console.log('[API Response] parseScript successful (backend saved):', response.data);
+
+    // 4. Return combined result (local tree + backend IDs)
+    // Note: response.data.tree might come from backend if backend still parses,
+    // but we prefer local parsing as per requirement.
+    return {
+      script_id: response.data.script_id,
+      filename: response.data.filename,
+      tree: tree // Use locally parsed tree
+    };
   } catch (error) {
     // --- Enhanced Error Logging ---
     console.error('[API Error] Failed during parseScript call.');
@@ -86,23 +104,16 @@ export const parseScript = async (file: File, projectId?: string): Promise<Parse
     const axiosError = error as AxiosError;
     
     if (axiosError.response) {
-      // The request was made and the server responded with a status code
-      // that falls out of the range of 2xx
       console.error('Error Response Data:', axiosError.response.data);
       console.error('Error Response Status:', axiosError.response.status);
       console.error('Error Response Headers:', axiosError.response.headers);
     } else if (axiosError.request) {
-      // The request was made but no response was received
       console.error('Error Request:', axiosError.request);
-      console.error('No response received from server. Check network connection and backend status.');
     } else {
-      // Something happened in setting up the request that triggered an Error
       console.error('Error Message:', axiosError.message);
     }
     console.error('Full Error Object:', error);
-    // --- End Enhanced Error Logging ---
 
-    // Re-throw a more informative error if possible, otherwise the original
     throw axiosError.response?.data || new Error(`Failed to parse script '${file.name}'. Status: ${axiosError.response?.status || 'unknown'}. ${axiosError.message}`);
   }
 };
@@ -296,13 +307,25 @@ export const getScriptContent = async (scriptId: string): Promise<string> => {
  * @returns The script content and parsed tree data.
  */
 export const loadExistingScript = async (scriptId: string): Promise<ParsedScriptResponse> => {
-  const targetUrl = `${apiClient.defaults.baseURL}/scripts/load/${scriptId}`;
-  console.log(`[API Request] GET ${targetUrl} to load existing script`);
+  console.log(`[Frontend Logic] Loading script ${scriptId} and parsing locally...`);
   
+  // 1. Fetch content (using existing download endpoint logic)
   try {
-    const response = await apiClient.get<ParsedScriptResponse>(`/scripts/load/${scriptId}`);
-    console.log('[API Response] loadExistingScript successful:', response.data);
-    return response.data;
+    const response = await apiClient.get<{content: string, filename: string}>(`/scripts/download/${scriptId}`);
+    const { content, filename } = response.data;
+    console.log(`[Frontend Logic] Content fetched for ${filename}. Size: ${content.length}`);
+
+    // 2. Parse locally
+    const parser = new RenPyParser();
+    const tree = parser.parse(content);
+    console.log('[Frontend Logic] Local parsing successful.');
+
+    // 3. Return result
+    return {
+      script_id: scriptId,
+      filename: filename,
+      tree: tree
+    };
   } catch (error) {
     console.error('[API Error] Failed during loadExistingScript call.');
     console.error('Script ID:', scriptId);
@@ -312,10 +335,6 @@ export const loadExistingScript = async (scriptId: string): Promise<ParsedScript
     if (axiosError.response) {
       console.error('Error Response Data:', axiosError.response.data);
       console.error('Error Response Status:', axiosError.response.status);
-    } else if (axiosError.request) {
-      console.error('Error Request:', axiosError.request);
-    } else {
-      console.error('Error Message:', axiosError.message);
     }
     
     throw axiosError.response?.data || new Error(`Failed to load script. Status: ${axiosError.response?.status || 'unknown'}. ${axiosError.message}`);
