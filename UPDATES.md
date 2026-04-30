@@ -106,6 +106,23 @@ Result:
 4. Label parsing intentionally remains out of scope until Master Item 1.4.
 5. Tests passed: `python -m pytest backend\tests\test_project_graph_importer.py` and `python -m pytest backend\tests\test_mouse_renpy_fixtures.py`.
 
+
+### Sprint 1 / Master Item 1.3 Persistent Generated IDs
+
+Added snapshot and edit helpers for the ProjectGraph shell.
+
+Files:
+
+1. `backend/app/services/project_graph/snapshot.py`
+2. `backend/app/services/project_graph/editor.py`
+3. `backend/tests/test_project_graph_ids.py`
+
+Result:
+
+1. `ProjectGraphSnapshotCodec.dump/load()` preserves generated file IDs across snapshot roundtrip.
+2. `ProjectGraphEditor.update_source_content()` updates source text without changing file frame identity.
+3. Tests passed: `python -m pytest backend\tests\test_project_graph_ids.py` and `python -m pytest backend\tests\test_project_graph_importer.py backend\tests\test_mouse_renpy_fixtures.py`.
+
 ## 2026-04-30
 
 ### Branch And Initial Architecture
