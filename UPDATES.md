@@ -262,6 +262,19 @@ Result:
 6. Safe raw/action/dialogue/comment nodes do not create diagnostics.
 7. Snapshot roundtrip preserves diagnostics.
 8. Tests passed: `python -m pytest backend\tests\test_project_graph_diagnostics.py backend\tests\test_project_graph_resolver.py backend\tests\test_project_graph_conditionals.py backend\tests\test_project_graph_actions.py backend\tests\test_project_graph_menus.py backend\tests\test_project_graph_labels.py backend\tests\test_project_graph_importer.py backend\tests\test_project_graph_ids.py backend\tests\test_mouse_renpy_fixtures.py`.
+### Sprint 1+2 Black-box Contract Test
+
+Added one large integration-style black-box test that validates the combined output of Sprint 1 and Sprint 2 from the full mouse RenPy corpus.
+
+Files:
+
+1. `backend/tests/test_project_graph_sprint_1_2_blackbox.py`
+
+Result:
+
+1. The test imports and resolves all three fixture files as one ProjectGraph.
+2. It verifies file frames, label frames, label start nodes, menu semantics, conditionals, comments, raw/action preservation, scoped edges, diagnostics, and snapshot roundtrip in one contract.
+3. The full current ProjectGraph test set passed: `python -m pytest backend\tests\test_project_graph_sprint_1_2_blackbox.py backend\tests\test_project_graph_diagnostics.py backend\tests\test_project_graph_resolver.py backend\tests\test_project_graph_conditionals.py backend\tests\test_project_graph_actions.py backend\tests\test_project_graph_menus.py backend\tests\test_project_graph_labels.py backend\tests\test_project_graph_importer.py backend\tests\test_project_graph_ids.py backend\tests\test_mouse_renpy_fixtures.py`.
 ## 2026-04-30
 
 ### Branch And Initial Architecture
