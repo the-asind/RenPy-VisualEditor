@@ -87,6 +87,25 @@ Coverage:
 5. Comments, scene/show/with/audio action statements, ATL-like raw block, Python raw block.
 6. Duplicate labels, unresolved target, dynamic jump, and raw fallback loop case.
 
+
+### Sprint 1 / Master Item 1.2 Multi-file Import
+
+Added the first ProjectGraph importer shell.
+
+Files:
+
+1. `backend/app/services/project_graph/models.py`
+2. `backend/app/services/project_graph/importer.py`
+3. `backend/tests/test_project_graph_importer.py`
+
+Result:
+
+1. `ProjectGraphImporter.import_files()` imports a list of `.rpy` paths into one `ProjectGraph`.
+2. Each source file becomes a `FileFrame` with generated persisted-style UUID, stable order string, initial canvas position, and source index entry.
+3. Import rejects missing files, non-`.rpy` files, missing project ID, and empty file lists.
+4. Label parsing intentionally remains out of scope until Master Item 1.4.
+5. Tests passed: `python -m pytest backend\tests\test_project_graph_importer.py` and `python -m pytest backend\tests\test_mouse_renpy_fixtures.py`.
+
 ## 2026-04-30
 
 ### Branch And Initial Architecture
