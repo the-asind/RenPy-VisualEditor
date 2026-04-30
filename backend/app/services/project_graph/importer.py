@@ -82,16 +82,23 @@ class ProjectGraphImporter:
                 content=content,
                 labels=labels,
             )
-            action_nodes = self._scan_action_and_raw_nodes(
+            conditional_nodes, consumed_conditional_lines = self._scan_conditional_nodes(
                 file_id=file_id,
                 content=content,
                 labels=labels,
                 consumed_lines=consumed_menu_lines,
             )
+            action_nodes = self._scan_action_and_raw_nodes(
+                file_id=file_id,
+                content=content,
+                labels=labels,
+                consumed_lines=consumed_menu_lines | consumed_conditional_lines,
+            )
 
             label_frames.extend(labels)
             label_starts.extend(starts)
             scenario_nodes.extend(action_nodes)
+            scenario_nodes.extend(conditional_nodes)
             scenario_nodes.extend(menu_nodes)
 
         return ProjectGraph(
@@ -322,6 +329,93 @@ class ProjectGraphImporter:
 
         return nodes, consumed_lines
 
+    def _scan_conditional_nodes(
+        self,
+        file_id: str,
+        content: str,
+        labels: list[LabelFrame],
+        consumed_lines: set[int],
+    ) -> tuple[list[ScenarioNode], set[int]]:
+        lines = content.splitlines()
+        labels_by_start = self._labels_by_start(labels)
+        current_label: LabelFrame | None = None
+        nodes: list[ScenarioNode] = []
+        conditional_lines: set[int] = set()
+        node_order = 0
+        index = 0
+
+        while index < len(lines):
+            if index in labels_by_start:
+                current_label = labels_by_start[index]
+                index += 1
+                continue
+
+            if index in consumed_lines:
+                index += 1
+                continue
+
+            stripped = lines[index].strip()
+            branch_type = self._conditional_node_type(stripped)
+            if current_label is None or branch_type is None:
+                index += 1
+                continue
+
+            branch_indent = self._indent_level(lines[index])
+            branch_id = str(uuid4())
+            conditional_lines.add(index)
+            nodes.append(
+                self._make_node(
+                    file_id=file_id,
+                    label_id=current_label.id,
+                    parent_node_id=None,
+                    node_type=branch_type,
+                    content=stripped,
+                    order=node_order,
+                    line_number=index,
+                    metadata={"condition": self._conditional_condition(stripped)},
+                    node_id=branch_id,
+                )
+            )
+            node_order += 1
+            index += 1
+
+            while index < len(lines):
+                child_line = lines[index]
+                child = child_line.strip()
+                child_indent = self._indent_level(child_line)
+
+                if not child:
+                    conditional_lines.add(index)
+                    index += 1
+                    continue
+
+                if self._extract_label_name(child) is not None or child_indent <= branch_indent:
+                    break
+
+                conditional_lines.add(index)
+                child_type = self._statement_node_type(child)
+                if child.startswith("#"):
+                    child_type = "comment"
+                elif child_type == "raw_action" and self._is_dialogue_line(child):
+                    child_type = "dialogue"
+
+                nodes.append(
+                    self._make_node(
+                        file_id=file_id,
+                        label_id=current_label.id,
+                        parent_node_id=branch_id,
+                        node_type=child_type,
+                        content=child,
+                        order=node_order,
+                        line_number=index,
+                        metadata={},
+                    )
+                )
+                node_order += 1
+                index += 1
+
+        return nodes, conditional_lines
+
     def _scan_action_and_raw_nodes(
         self,
         file_id: str,
@@ -347,7 +441,24 @@ class ProjectGraphImporter:
                 continue
 
             stripped = lines[index].strip()
-            if current_label is None or not stripped or stripped.startswith("#"):
+            if current_label is None or not stripped:
+                index += 1
+                continue
+
+            if stripped.startswith("#"):
+                nodes.append(
+                    self._make_node(
+                        file_id=file_id,
+                        label_id=current_label.id,
+                        parent_node_id=None,
+                        node_type="comment",
+                        content=stripped,
+                        order=node_order,
+                        line_number=index,
+                        metadata={},
+                    )
+                )
+                node_order += 1
                 index += 1
                 continue
 
@@ -486,6 +597,24 @@ class ProjectGraphImporter:
             "choice_text": choice_text,
             "condition": condition,
         }
+
+    @staticmethod
+    def _conditional_node_type(statement: str) -> str | None:
+        if statement.startswith("if ") and statement.endswith(":"):
+            return "if"
+        if statement.startswith("elif ") and statement.endswith(":"):
+            return "elif"
+        if statement == "else:":
+            return "else"
+        return None
+
+    @staticmethod
+    def _conditional_condition(statement: str) -> str | None:
+        if statement.startswith("if ") and statement.endswith(":"):
+            return statement[len("if "):-1].strip()
+        if statement.startswith("elif ") and statement.endswith(":"):
+            return statement[len("elif "):-1].strip()
+        return None
 
     @staticmethod
     def _statement_node_type(statement: str) -> str:

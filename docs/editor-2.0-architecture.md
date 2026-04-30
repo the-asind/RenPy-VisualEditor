@@ -581,6 +581,18 @@ Atomic actions:
 4. Реализовать action/raw mapper.
 5. Проверить tests.
 
+#### Master Item 1.7: If/Elif/Else And Comments
+
+Black-box expectation: runtime `if`/`elif`/`else` chains and comments inside editable label blocks import as first-class `ScenarioNode`s and survive snapshot roundtrip.
+
+Atomic actions:
+
+1. Reuse mouse fixture `if`/`elif`/`else` chain and label comments.
+2. Write black-box parser tests for branch nodes and branch child statements.
+3. Write black-box parser tests for comment nodes.
+4. Implement conditional/comment mapping without duplicating consumed lines in action/raw scan.
+5. Verify Sprint 1 tests.
+
 ### Sprint 2. Resolver And Diagnostics
 
 Цель: надежно разрешать `jump/call` на уровне проекта.

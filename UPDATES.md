@@ -182,6 +182,25 @@ Result:
 4. Safe action/raw nodes do not create diagnostics.
 5. Tests passed: `python -m pytest backend\tests\test_project_graph_actions.py backend\tests\test_project_graph_menus.py backend\tests\test_project_graph_labels.py backend\tests\test_project_graph_importer.py backend\tests\test_project_graph_ids.py backend\tests\test_mouse_renpy_fixtures.py`.
 
+
+### Sprint 1 / Master Item 1.7 If/Elif/Else And Comments
+
+Added first-class import support for runtime conditionals and editable comments.
+
+Files:
+
+1. `backend/app/services/project_graph/importer.py`
+2. `backend/tests/test_project_graph_conditionals.py`
+3. `docs/editor-2.0-architecture.md`
+
+Result:
+
+1. `if`, `elif`, and `else` import as first-class `ScenarioNode`s with preserved condition metadata.
+2. Statements inside conditional branches import as child nodes of the corresponding branch node.
+3. Comments inside label bodies import as `ScenarioNode(type="comment")`.
+4. Conditional and comment nodes survive snapshot roundtrip with IDs, parent links, and metadata intact.
+5. Tests passed: `python -m pytest backend\tests\test_project_graph_conditionals.py backend\tests\test_project_graph_actions.py backend\tests\test_project_graph_menus.py backend\tests\test_project_graph_labels.py backend\tests\test_project_graph_importer.py backend\tests\test_project_graph_ids.py backend\tests\test_mouse_renpy_fixtures.py`.
+
 ## 2026-04-30
 
 ### Branch And Initial Architecture
