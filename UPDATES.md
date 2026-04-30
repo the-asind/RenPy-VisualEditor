@@ -40,6 +40,20 @@ The user asked to start by deleting everything that will not be useful for MVP 2
 
 Next cleanup master item: classify existing backend, frontend, tests, parser, storage, and websocket code as `keep`, `adapt`, `replace`, or `delete`. Only delete code after that classification is recorded.
 
+
+### Sprint 0 / Master Item 0.2 Inventory
+
+Created `docs/mvp-1-inventory.md` with `keep/adapt/replace/delete` classification for backend, frontend, parser, websocket, database, tests, config, and local ignored artifacts.
+
+Result:
+
+1. Parser, old script line-range API, JSON lock-based websocket collaboration, old flow transformer, and branch snippet insertion are classified as `replace`.
+2. Auth, project permissions, database foundation, UI shell, node editor shell, themes/layout/i18n, and project services are classified as `adapt` or `keep`.
+3. Local ignored `.notes/`, `reactflow-DOCS/`, pytest caches, and debug databases are classified as `delete` when deletion is permitted by the environment.
+4. No tracked code should be deleted before its replacement exists and tests pass.
+
+Next sprint gate: Master Item 0.3 parser coverage matrix from official Ren'Py docs/parser before Sprint 1 parser implementation.
+
 ## 2026-04-30
 
 ### Branch And Initial Architecture
