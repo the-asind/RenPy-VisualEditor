@@ -21,8 +21,8 @@ def test_imports_multiple_rpy_files_into_one_project_graph():
     assert [file.path for file in graph.files] == [path.name for path in files]
     assert [file.order for file in graph.files] == ["0000", "0001", "0002"]
     assert len({file.id for file in graph.files}) == 3
-    assert graph.labels == []
-    assert graph.label_starts == []
+    assert len(graph.labels) > 0
+    assert len(graph.label_starts) == len(graph.labels)
     assert graph.nodes == []
     assert graph.edges == []
 

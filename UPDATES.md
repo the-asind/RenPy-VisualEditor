@@ -123,6 +123,26 @@ Result:
 2. `ProjectGraphEditor.update_source_content()` updates source text without changing file frame identity.
 3. Tests passed: `python -m pytest backend\tests\test_project_graph_ids.py` and `python -m pytest backend\tests\test_project_graph_importer.py backend\tests\test_mouse_renpy_fixtures.py`.
 
+
+### Sprint 1 / Master Item 1.4 Label Frames And LabelStartNode
+
+Added first label parsing into the ProjectGraph importer.
+
+Files:
+
+1. `backend/app/services/project_graph/models.py`
+2. `backend/app/services/project_graph/importer.py`
+3. `backend/app/services/project_graph/snapshot.py`
+4. `backend/tests/test_project_graph_labels.py`
+
+Result:
+
+1. Global labels now import as `LabelFrame(scope="global")`.
+2. Local `.name` labels import as nested/local `LabelFrame(scope="local")` under the owning global label.
+3. Every label gets exactly one `LabelStartNode`.
+4. `LabelFrame.label_start_node_id` points to the start node, and snapshot roundtrip preserves label/start IDs.
+5. Tests passed: `python -m pytest backend\tests\test_project_graph_labels.py backend\tests\test_project_graph_importer.py backend\tests\test_project_graph_ids.py backend\tests\test_mouse_renpy_fixtures.py`.
+
 ## 2026-04-30
 
 ### Branch And Initial Architecture
