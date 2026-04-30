@@ -66,12 +66,21 @@ class ScenarioNode:
 
 
 @dataclass(frozen=True)
+class FlowEdge:
+    id: str
+    source_node_id: str
+    target_node_id: str
+    kind: Literal["jump", "call"]
+    metadata: dict[str, Any]
+
+
+@dataclass(frozen=True)
 class ProjectGraph:
     project_id: str
     files: list[FileFrame] = field(default_factory=list)
     labels: list[LabelFrame] = field(default_factory=list)
     label_starts: list[LabelStartNode] = field(default_factory=list)
     nodes: list[ScenarioNode] = field(default_factory=list)
-    edges: list[Any] = field(default_factory=list)
+    edges: list[FlowEdge] = field(default_factory=list)
     diagnostics: list[Any] = field(default_factory=list)
     source_index: dict[str, Any] = field(default_factory=dict)

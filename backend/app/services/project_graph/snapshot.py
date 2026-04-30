@@ -2,6 +2,7 @@ from typing import Any
 
 from .models import (
     FileFrame,
+    FlowEdge,
     FramePosition,
     FrameSize,
     FrameVisual,
@@ -96,7 +97,16 @@ class ProjectGraphSnapshotCodec:
                 }
                 for node in graph.nodes
             ],
-            "edges": graph.edges,
+            "edges": [
+                {
+                    "id": edge.id,
+                    "source_node_id": edge.source_node_id,
+                    "target_node_id": edge.target_node_id,
+                    "kind": edge.kind,
+                    "metadata": edge.metadata,
+                }
+                for edge in graph.edges
+            ],
             "diagnostics": graph.diagnostics,
             "source_index": graph.source_index,
         }
@@ -153,13 +163,24 @@ class ProjectGraphSnapshotCodec:
             for node in snapshot.get("nodes", [])
         ]
 
+        edges = [
+            FlowEdge(
+                id=edge["id"],
+                source_node_id=edge["source_node_id"],
+                target_node_id=edge["target_node_id"],
+                kind=edge["kind"],
+                metadata=dict(edge.get("metadata", {})),
+            )
+            for edge in snapshot.get("edges", [])
+        ]
+
         return ProjectGraph(
             project_id=snapshot["project_id"],
             files=files,
             labels=labels,
             label_starts=label_starts,
             nodes=nodes,
-            edges=list(snapshot.get("edges", [])),
+            edges=edges,
             diagnostics=list(snapshot.get("diagnostics", [])),
             source_index=dict(snapshot.get("source_index", {})),
         )

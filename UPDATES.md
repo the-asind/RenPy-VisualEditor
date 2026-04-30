@@ -201,6 +201,26 @@ Result:
 4. Conditional and comment nodes survive snapshot roundtrip with IDs, parent links, and metadata intact.
 5. Tests passed: `python -m pytest backend\tests\test_project_graph_conditionals.py backend\tests\test_project_graph_actions.py backend\tests\test_project_graph_menus.py backend\tests\test_project_graph_labels.py backend\tests\test_project_graph_importer.py backend\tests\test_project_graph_ids.py backend\tests\test_mouse_renpy_fixtures.py`.
 
+### Sprint 2 / Master Item 2.1 Global And Cross-file Resolver
+
+Started Sprint 2 by adding the first resolver pass for static global `jump` and `call` targets.
+
+Files:
+
+1. `backend/app/services/project_graph/models.py`
+2. `backend/app/services/project_graph/resolver.py`
+3. `backend/app/services/project_graph/snapshot.py`
+4. `backend/tests/test_project_graph_resolver.py`
+
+Result:
+
+1. Added `FlowEdge` as the ProjectGraph node-to-node relation model.
+2. `ProjectGraphResolver.resolve()` builds a project-wide global label index.
+3. Static global `jump` targets resolve to the destination `LabelStartNode`.
+4. Static global `call` targets with args and `from` labels resolve to the destination `LabelStartNode` and preserve call metadata.
+5. Local `.label` and qualified `global.local` targets intentionally remain unresolved until Master Item 2.2.
+6. Snapshot roundtrip preserves resolved edges.
+7. Tests passed: `python -m pytest backend\tests\test_project_graph_resolver.py backend\tests\test_project_graph_conditionals.py backend\tests\test_project_graph_actions.py backend\tests\test_project_graph_menus.py backend\tests\test_project_graph_labels.py backend\tests\test_project_graph_importer.py backend\tests\test_project_graph_ids.py backend\tests\test_mouse_renpy_fixtures.py`.
 ## 2026-04-30
 
 ### Branch And Initial Architecture
