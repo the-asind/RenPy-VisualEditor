@@ -6,6 +6,7 @@ from .models import (
     FramePosition,
     FrameSize,
     FrameVisual,
+    GraphDiagnostic,
     LabelFrame,
     LabelStartNode,
     ProjectGraph,
@@ -107,7 +108,21 @@ class ProjectGraphSnapshotCodec:
                 }
                 for edge in graph.edges
             ],
-            "diagnostics": graph.diagnostics,
+            "diagnostics": [
+                {
+                    "id": diagnostic.id,
+                    "code": diagnostic.code,
+                    "severity": diagnostic.severity,
+                    "message": diagnostic.message,
+                    "blocking": diagnostic.blocking,
+                    "file_id": diagnostic.file_id,
+                    "label_id": diagnostic.label_id,
+                    "node_id": diagnostic.node_id,
+                    "source_span": diagnostic.source_span,
+                    "metadata": diagnostic.metadata,
+                }
+                for diagnostic in graph.diagnostics
+            ],
             "source_index": graph.source_index,
         }
 
@@ -174,6 +189,22 @@ class ProjectGraphSnapshotCodec:
             for edge in snapshot.get("edges", [])
         ]
 
+        diagnostics = [
+            GraphDiagnostic(
+                id=diagnostic["id"],
+                code=diagnostic["code"],
+                severity=diagnostic["severity"],
+                message=diagnostic["message"],
+                blocking=bool(diagnostic.get("blocking", False)),
+                file_id=diagnostic.get("file_id"),
+                label_id=diagnostic.get("label_id"),
+                node_id=diagnostic.get("node_id"),
+                source_span=diagnostic.get("source_span"),
+                metadata=dict(diagnostic.get("metadata", {})),
+            )
+            for diagnostic in snapshot.get("diagnostics", [])
+        ]
+
         return ProjectGraph(
             project_id=snapshot["project_id"],
             files=files,
@@ -181,6 +212,6 @@ class ProjectGraphSnapshotCodec:
             label_starts=label_starts,
             nodes=nodes,
             edges=edges,
-            diagnostics=list(snapshot.get("diagnostics", [])),
+            diagnostics=diagnostics,
             source_index=dict(snapshot.get("source_index", {})),
         )

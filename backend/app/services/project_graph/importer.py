@@ -636,6 +636,8 @@ class ProjectGraphImporter:
             return "show"
         if statement.startswith("image "):
             return "image"
+        if statement.startswith("while "):
+            return "while"
         return None
 
     @staticmethod

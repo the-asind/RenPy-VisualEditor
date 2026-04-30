@@ -240,6 +240,28 @@ Result:
 4. Same local names in different global scopes resolve to different `LabelStartNode`s.
 5. Global resolver behavior from Master Item 2.1 remains intact.
 6. Tests passed: `python -m pytest backend\tests\test_project_graph_resolver.py backend\tests\test_project_graph_conditionals.py backend\tests\test_project_graph_actions.py backend\tests\test_project_graph_menus.py backend\tests\test_project_graph_labels.py backend\tests\test_project_graph_importer.py backend\tests\test_project_graph_ids.py backend\tests\test_mouse_renpy_fixtures.py`.
+### Sprint 2 / Master Item 2.3 Diagnostics MVP
+
+Added non-blocking resolver/import diagnostics for the MVP ProjectGraph.
+
+Files:
+
+1. `backend/app/services/project_graph/models.py`
+2. `backend/app/services/project_graph/importer.py`
+3. `backend/app/services/project_graph/resolver.py`
+4. `backend/app/services/project_graph/snapshot.py`
+5. `backend/tests/test_project_graph_diagnostics.py`
+
+Result:
+
+1. Added `GraphDiagnostic` with severity, blocking flag, source links, and metadata.
+2. Duplicate global labels create non-blocking `duplicate_global_label` warnings.
+3. Unresolved static jump/call targets create non-blocking `unresolved_target` warnings and no edge.
+4. Dynamic jump/call targets create non-blocking `dynamic_target` info diagnostics and no edge.
+5. Unsupported `while` blocks preserve source text as `raw_block` and create non-blocking `unsupported_raw_block` warnings.
+6. Safe raw/action/dialogue/comment nodes do not create diagnostics.
+7. Snapshot roundtrip preserves diagnostics.
+8. Tests passed: `python -m pytest backend\tests\test_project_graph_diagnostics.py backend\tests\test_project_graph_resolver.py backend\tests\test_project_graph_conditionals.py backend\tests\test_project_graph_actions.py backend\tests\test_project_graph_menus.py backend\tests\test_project_graph_labels.py backend\tests\test_project_graph_importer.py backend\tests\test_project_graph_ids.py backend\tests\test_mouse_renpy_fixtures.py`.
 ## 2026-04-30
 
 ### Branch And Initial Architecture

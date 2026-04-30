@@ -75,6 +75,20 @@ class FlowEdge:
 
 
 @dataclass(frozen=True)
+class GraphDiagnostic:
+    id: str
+    code: str
+    severity: Literal["info", "warning", "error"]
+    message: str
+    blocking: bool
+    file_id: str | None
+    label_id: str | None
+    node_id: str | None
+    source_span: dict[str, int] | None
+    metadata: dict[str, Any]
+
+
+@dataclass(frozen=True)
 class ProjectGraph:
     project_id: str
     files: list[FileFrame] = field(default_factory=list)
@@ -82,5 +96,5 @@ class ProjectGraph:
     label_starts: list[LabelStartNode] = field(default_factory=list)
     nodes: list[ScenarioNode] = field(default_factory=list)
     edges: list[FlowEdge] = field(default_factory=list)
-    diagnostics: list[Any] = field(default_factory=list)
+    diagnostics: list[GraphDiagnostic] = field(default_factory=list)
     source_index: dict[str, Any] = field(default_factory=dict)

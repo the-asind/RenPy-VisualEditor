@@ -1,7 +1,7 @@
 from dataclasses import replace
 from uuid import uuid4
 
-from .models import FlowEdge, LabelFrame, LabelStartNode, ProjectGraph, ScenarioNode
+from .models import FlowEdge, GraphDiagnostic, LabelFrame, ProjectGraph, ScenarioNode
 
 
 class ProjectGraphResolver:
@@ -13,9 +13,27 @@ class ProjectGraphResolver:
         labels_by_qualified_name = {label.qualified_name: label for label in graph.labels}
         starts_by_label_id = {start.label_id: start for start in graph.label_starts}
         edges: list[FlowEdge] = []
+        diagnostics: list[GraphDiagnostic] = list(graph.diagnostics)
+        diagnostics.extend(self._duplicate_global_label_diagnostics(graph.labels))
 
         for node in graph.nodes:
             if node.type not in {"jump", "call"}:
+                continue
+
+            dynamic_target = self._dynamic_target(node)
+            if dynamic_target is not None:
+                diagnostics.append(
+                    self._diagnostic(
+                        code="dynamic_target",
+                        severity="info",
+                        message="Dynamic jump/call target is preserved but cannot be resolved statically in MVP.",
+                        file_id=node.file_id,
+                        label_id=node.label_id,
+                        node_id=node.id,
+                        source_span=node.source_span,
+                        metadata={"statement": node.content, "target_expression": dynamic_target},
+                    )
+                )
                 continue
 
             target_info = self._static_target(node)
@@ -30,6 +48,21 @@ class ProjectGraphResolver:
                 labels_by_qualified_name=labels_by_qualified_name,
             )
             if target_label is None:
+                diagnostics.append(
+                    self._diagnostic(
+                        code="unresolved_target",
+                        severity="warning",
+                        message="Static jump/call target could not be resolved to a label in the project.",
+                        file_id=node.file_id,
+                        label_id=node.label_id,
+                        node_id=node.id,
+                        source_span=node.source_span,
+                        metadata={
+                            **target_info,
+                            "source_label_id": node.label_id,
+                        },
+                    )
+                )
                 continue
 
             target_start = starts_by_label_id.get(target_label.id)
@@ -50,7 +83,81 @@ class ProjectGraphResolver:
                 )
             )
 
-        return replace(graph, edges=edges)
+        diagnostics.extend(self._raw_block_diagnostics(graph.nodes))
+        return replace(graph, edges=edges, diagnostics=diagnostics)
+
+    def _duplicate_global_label_diagnostics(self, labels: list[LabelFrame]) -> list[GraphDiagnostic]:
+        labels_by_name: dict[str, list[LabelFrame]] = {}
+        for label in labels:
+            if label.parent_label_id is None and label.scope == "global":
+                labels_by_name.setdefault(label.qualified_name, []).append(label)
+
+        diagnostics: list[GraphDiagnostic] = []
+        for qualified_name, duplicates in labels_by_name.items():
+            if len(duplicates) < 2:
+                continue
+
+            first = duplicates[0]
+            diagnostics.append(
+                self._diagnostic(
+                    code="duplicate_global_label",
+                    severity="warning",
+                    message="Duplicate global label names make jump/call resolution ambiguous.",
+                    file_id=first.file_id,
+                    label_id=first.id,
+                    node_id=None,
+                    source_span=first.source_span,
+                    metadata={
+                        "qualified_name": qualified_name,
+                        "label_ids": [label.id for label in duplicates],
+                    },
+                )
+            )
+        return diagnostics
+
+    def _raw_block_diagnostics(self, nodes: list[ScenarioNode]) -> list[GraphDiagnostic]:
+        diagnostics: list[GraphDiagnostic] = []
+        for node in nodes:
+            if node.type != "raw_block" or node.metadata.get("raw_block_type") != "while":
+                continue
+
+            diagnostics.append(
+                self._diagnostic(
+                    code="unsupported_raw_block",
+                    severity="warning",
+                    message="Unsupported control-flow block is preserved as raw text for MVP.",
+                    file_id=node.file_id,
+                    label_id=node.label_id,
+                    node_id=node.id,
+                    source_span=node.source_span,
+                    metadata={"raw_block_type": node.metadata.get("raw_block_type")},
+                )
+            )
+        return diagnostics
+
+    def _diagnostic(
+        self,
+        code: str,
+        severity: str,
+        message: str,
+        file_id: str | None,
+        label_id: str | None,
+        node_id: str | None,
+        source_span: dict[str, int] | None,
+        metadata: dict[str, object],
+    ) -> GraphDiagnostic:
+        return GraphDiagnostic(
+            id=str(uuid4()),
+            code=code,
+            severity=severity,  # type: ignore[arg-type]
+            message=message,
+            blocking=False,
+            file_id=file_id,
+            label_id=label_id,
+            node_id=node_id,
+            source_span=source_span,
+            metadata=metadata,
+        )
 
     @staticmethod
     def _global_label_index(labels: list[LabelFrame]) -> dict[str, LabelFrame]:
@@ -94,6 +201,14 @@ class ProjectGraphResolver:
         if current is None or current.scope != "global":
             return None
         return current
+
+    def _dynamic_target(self, node: ScenarioNode) -> str | None:
+        content = node.content.strip()
+        if node.type == "jump" and content.startswith("jump expression "):
+            return content[len("jump expression "):].strip()
+        if node.type == "call" and content.startswith("call expression "):
+            return content[len("call expression "):].strip()
+        return None
 
     def _static_target(self, node: ScenarioNode) -> dict[str, str | None] | None:
         content = node.content.strip()
