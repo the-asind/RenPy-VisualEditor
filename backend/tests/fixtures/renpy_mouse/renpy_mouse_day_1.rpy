@@ -8,6 +8,7 @@ label start:
     show renpy curious at left with dissolve
     r "I smell a cheese commit."
     "The tiny editor cursor blinks like a lighthouse."
+    jump .shared_nook
 
     menu:
         "Which snack path should RenPy inspect?"
@@ -29,6 +30,10 @@ label .crumb_trail:
 
     show renpy happy at right with hpunch
     jump day_two.cheese_cache
+
+label .shared_nook:
+    r "This nook belongs to the first crumb map."
+    return
 
 label ask_duck(topic="crumbs"):
     # The duck says nothing, which RenPy treats as approval.

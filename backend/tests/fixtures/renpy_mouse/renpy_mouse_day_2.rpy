@@ -6,6 +6,7 @@ label day_two:
     scene pantry dusk
     play music "tiny_footsteps.ogg" fadein 1.0
     r "A second file, a single monster canvas."
+    jump .shared_nook
 
     call cheese_count(crumb_count) from day_two_after_count
     jump .cheese_cache
@@ -30,6 +31,10 @@ label .cheese_cache:
             $ next_snack_label = "ending_dynamic"
             call expression next_snack_label pass (crumb_count)
             return
+
+label .shared_nook:
+    r "This nook belongs to the second cheese route."
+    return
 
 label cheese_count(amount=0):
     r "Counting [amount] crumbs before touching the cheese."

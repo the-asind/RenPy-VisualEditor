@@ -9,6 +9,8 @@ class ProjectGraphResolver:
 
     def resolve(self, graph: ProjectGraph) -> ProjectGraph:
         global_labels = self._global_label_index(graph.labels)
+        labels_by_id = {label.id: label for label in graph.labels}
+        labels_by_qualified_name = {label.qualified_name: label for label in graph.labels}
         starts_by_label_id = {start.label_id: start for start in graph.label_starts}
         edges: list[FlowEdge] = []
 
@@ -20,11 +22,13 @@ class ProjectGraphResolver:
             if target_info is None:
                 continue
 
-            target_name = target_info["target"]
-            if "." in target_name:
-                continue
-
-            target_label = global_labels.get(target_name)
+            target_label = self._resolve_target_label(
+                target_name=target_info["target"],
+                source_label=labels_by_id.get(node.label_id),
+                global_labels=global_labels,
+                labels_by_id=labels_by_id,
+                labels_by_qualified_name=labels_by_qualified_name,
+            )
             if target_label is None:
                 continue
 
@@ -55,6 +59,41 @@ class ProjectGraphResolver:
             for label in labels
             if label.parent_label_id is None and label.scope == "global"
         }
+
+    def _resolve_target_label(
+        self,
+        target_name: str | None,
+        source_label: LabelFrame | None,
+        global_labels: dict[str, LabelFrame],
+        labels_by_id: dict[str, LabelFrame],
+        labels_by_qualified_name: dict[str, LabelFrame],
+    ) -> LabelFrame | None:
+        if not target_name:
+            return None
+
+        if target_name.startswith("."):
+            owning_global = self._owning_global_label(source_label, labels_by_id)
+            if owning_global is None:
+                return None
+            return labels_by_qualified_name.get(f"{owning_global.qualified_name}{target_name}")
+
+        if "." in target_name:
+            return labels_by_qualified_name.get(target_name)
+
+        return global_labels.get(target_name)
+
+    def _owning_global_label(
+        self,
+        label: LabelFrame | None,
+        labels_by_id: dict[str, LabelFrame],
+    ) -> LabelFrame | None:
+        current = label
+        while current is not None and current.parent_label_id is not None:
+            current = labels_by_id.get(current.parent_label_id)
+
+        if current is None or current.scope != "global":
+            return None
+        return current
 
     def _static_target(self, node: ScenarioNode) -> dict[str, str | None] | None:
         content = node.content.strip()

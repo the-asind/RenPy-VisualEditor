@@ -221,6 +221,25 @@ Result:
 5. Local `.label` and qualified `global.local` targets intentionally remain unresolved until Master Item 2.2.
 6. Snapshot roundtrip preserves resolved edges.
 7. Tests passed: `python -m pytest backend\tests\test_project_graph_resolver.py backend\tests\test_project_graph_conditionals.py backend\tests\test_project_graph_actions.py backend\tests\test_project_graph_menus.py backend\tests\test_project_graph_labels.py backend\tests\test_project_graph_importer.py backend\tests\test_project_graph_ids.py backend\tests\test_mouse_renpy_fixtures.py`.
+### Sprint 2 / Master Item 2.2 Local Resolver
+
+Added scoped local label resolution for `.local` and explicit `global.local` targets.
+
+Files:
+
+1. `backend/app/services/project_graph/resolver.py`
+2. `backend/tests/test_project_graph_resolver.py`
+3. `backend/tests/fixtures/renpy_mouse/renpy_mouse_day_1.rpy`
+4. `backend/tests/fixtures/renpy_mouse/renpy_mouse_day_2.rpy`
+
+Result:
+
+1. `.local` jump/call targets resolve relative to the source node's owning global label.
+2. Explicit `global.local` targets resolve directly by qualified label name.
+3. The mouse fixture now has matching `.shared_nook` local labels under two different global labels to prove scope isolation.
+4. Same local names in different global scopes resolve to different `LabelStartNode`s.
+5. Global resolver behavior from Master Item 2.1 remains intact.
+6. Tests passed: `python -m pytest backend\tests\test_project_graph_resolver.py backend\tests\test_project_graph_conditionals.py backend\tests\test_project_graph_actions.py backend\tests\test_project_graph_menus.py backend\tests\test_project_graph_labels.py backend\tests\test_project_graph_importer.py backend\tests\test_project_graph_ids.py backend\tests\test_mouse_renpy_fixtures.py`.
 ## 2026-04-30
 
 ### Branch And Initial Architecture

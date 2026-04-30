@@ -54,15 +54,49 @@ def test_global_call_with_arguments_resolves_to_target_label_start_node():
     assert edge.metadata["from_label"] == "day_two_after_count"
 
 
-def test_resolver_does_not_create_edges_for_local_targets_in_global_master_item():
+def test_local_jump_resolves_inside_owning_global_label():
     graph = resolve_mouse_graph()
-    local_jump = next(node for node in graph.nodes if node.content == "jump .crumb_trail")
-    qualified_local_jump = next(node for node in graph.nodes if node.content == "jump day_two.cheese_cache")
+    source = next(node for node in graph.nodes if node.content == "jump .crumb_trail")
+    target = label_start_by_name(graph, "start.crumb_trail")
 
-    edge_sources = {edge.source_node_id for edge in graph.edges}
+    edge = next(edge for edge in graph.edges if edge.source_node_id == source.id)
 
-    assert local_jump.id not in edge_sources
-    assert qualified_local_jump.id not in edge_sources
+    assert edge.kind == "jump"
+    assert edge.target_node_id == target.id
+    assert edge.metadata["target"] == ".crumb_trail"
+    assert edge.metadata["resolved_qualified_name"] == "start.crumb_trail"
+
+
+def test_qualified_local_jump_resolves_to_explicit_label_start_node():
+    graph = resolve_mouse_graph()
+    source = next(node for node in graph.nodes if node.content == "jump day_two.cheese_cache")
+    target = label_start_by_name(graph, "day_two.cheese_cache")
+
+    edge = next(edge for edge in graph.edges if edge.source_node_id == source.id)
+
+    assert edge.kind == "jump"
+    assert edge.target_node_id == target.id
+    assert edge.metadata["target"] == "day_two.cheese_cache"
+    assert edge.metadata["resolved_qualified_name"] == "day_two.cheese_cache"
+
+
+def test_same_local_name_resolves_by_source_scope():
+    graph = resolve_mouse_graph()
+    shared_jumps = [node for node in graph.nodes if node.content == "jump .shared_nook"]
+    assert len(shared_jumps) == 2
+
+    edges_by_source = {edge.source_node_id: edge for edge in graph.edges}
+    labels_by_id = {label.id: label for label in graph.labels}
+
+    resolved_pairs = {
+        labels_by_id[source.label_id].qualified_name: edges_by_source[source.id].metadata["resolved_qualified_name"]
+        for source in shared_jumps
+    }
+
+    assert resolved_pairs == {
+        "start": "start.shared_nook",
+        "day_two": "day_two.shared_nook",
+    }
 
 
 def test_resolved_edges_survive_snapshot_roundtrip():
