@@ -66,6 +66,27 @@ Result:
 4. Blocking diagnostics are limited to cases where containment or safe export cannot be preserved.
 5. Sprint 1 should begin with the mouse RenPy fixture corpus and ProjectGraph black-box parser tests.
 
+
+### Sprint 1 / Master Item 1.1 Mouse RenPy Fixture Corpus
+
+Started Sprint 1 by adding the shared Ren'Py fixture corpus for parser/resolver/export/layout tests.
+
+Files:
+
+1. `backend/tests/fixtures/renpy_mouse/renpy_mouse_day_1.rpy`
+2. `backend/tests/fixtures/renpy_mouse/renpy_mouse_day_2.rpy`
+3. `backend/tests/fixtures/renpy_mouse/renpy_mouse_diagnostics.rpy`
+4. `backend/tests/test_mouse_renpy_fixtures.py`
+
+Coverage:
+
+1. Multi-file project flow.
+2. Global labels, local labels, qualified local references, and label parameters.
+3. Dialogue, menu prompt text, menu choices, menu choice conditions.
+4. If/elif/else, jump, call, call expression, call from, return.
+5. Comments, scene/show/with/audio action statements, ATL-like raw block, Python raw block.
+6. Duplicate labels, unresolved target, dynamic jump, and raw fallback loop case.
+
 ## 2026-04-30
 
 ### Branch And Initial Architecture
