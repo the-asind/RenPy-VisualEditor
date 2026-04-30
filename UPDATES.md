@@ -291,6 +291,21 @@ Result:
 3. Single-file `import -> resolve -> export -> import -> resolve` preserves MVP semantics for labels, nodes, comments, action/raw text, and diagnostics.
 4. Export uses stable normalized indentation rather than exact original formatting.
 5. Tests passed: `python -m pytest backend\tests\test_project_graph_exporter.py backend\tests\test_project_graph_sprint_1_2_blackbox.py backend\tests\test_project_graph_diagnostics.py backend\tests\test_project_graph_resolver.py backend\tests\test_project_graph_conditionals.py backend\tests\test_project_graph_actions.py backend\tests\test_project_graph_menus.py backend\tests\test_project_graph_labels.py backend\tests\test_project_graph_importer.py backend\tests\test_project_graph_ids.py backend\tests\test_mouse_renpy_fixtures.py`.
+### Sprint 3 / Master Item 3.2 Multi-file Roundtrip
+
+Added multi-file export roundtrip coverage for ProjectGraph files and destinations.
+
+Files:
+
+1. `backend/tests/test_project_graph_exporter.py`
+
+Result:
+
+1. Export returns one `.rpy` text per `FileFrame.path` in stable `FileFrame.order` order.
+2. Labels and nodes stay in their owning source files after export.
+3. Re-importing exported files preserves label names, node type counts, and resolved jump/call edge destinations.
+4. Cross-file and scoped local destinations survive normalized export and re-import.
+5. Tests passed: `python -m pytest backend\tests\test_project_graph_exporter.py backend\tests\test_project_graph_sprint_1_2_blackbox.py backend\tests\test_project_graph_diagnostics.py backend\tests\test_project_graph_resolver.py backend\tests\test_project_graph_conditionals.py backend\tests\test_project_graph_actions.py backend\tests\test_project_graph_menus.py backend\tests\test_project_graph_labels.py backend\tests\test_project_graph_importer.py backend\tests\test_project_graph_ids.py backend\tests\test_mouse_renpy_fixtures.py`.
 ## 2026-04-30
 
 ### Branch And Initial Architecture
