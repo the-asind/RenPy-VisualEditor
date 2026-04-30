@@ -77,9 +77,22 @@ class ProjectGraphImporter:
             }
 
             labels, starts = self._scan_labels(file_id=file_id, content=content)
+            menu_nodes, consumed_menu_lines = self._scan_menu_nodes(
+                file_id=file_id,
+                content=content,
+                labels=labels,
+            )
+            action_nodes = self._scan_action_and_raw_nodes(
+                file_id=file_id,
+                content=content,
+                labels=labels,
+                consumed_lines=consumed_menu_lines,
+            )
+
             label_frames.extend(labels)
             label_starts.extend(starts)
-            scenario_nodes.extend(self._scan_menu_nodes(file_id=file_id, content=content, labels=labels))
+            scenario_nodes.extend(action_nodes)
+            scenario_nodes.extend(menu_nodes)
 
         return ProjectGraph(
             project_id=project_id,
@@ -176,15 +189,17 @@ class ProjectGraphImporter:
 
         return labels, starts
 
-    def _scan_menu_nodes(self, file_id: str, content: str, labels: list[LabelFrame]) -> list[ScenarioNode]:
+    def _scan_menu_nodes(
+        self,
+        file_id: str,
+        content: str,
+        labels: list[LabelFrame],
+    ) -> tuple[list[ScenarioNode], set[int]]:
         lines = content.splitlines()
-        labels_by_start = {
-            label.source_span["start_line"]: label
-            for label in labels
-            if label.source_span is not None
-        }
+        labels_by_start = self._labels_by_start(labels)
         current_label: LabelFrame | None = None
         nodes: list[ScenarioNode] = []
+        consumed_lines: set[int] = set()
         node_order = 0
         index = 0
 
@@ -201,19 +216,21 @@ class ProjectGraphImporter:
 
             menu_indent = self._indent_level(lines[index])
             menu_id = str(uuid4())
-            menu_node = self._make_node(
-                file_id=file_id,
-                label_id=current_label.id,
-                parent_node_id=None,
-                node_type="menu",
-                content=stripped,
-                order=node_order,
-                line_number=index,
-                metadata={},
-                node_id=menu_id,
+            consumed_lines.add(index)
+            nodes.append(
+                self._make_node(
+                    file_id=file_id,
+                    label_id=current_label.id,
+                    parent_node_id=None,
+                    node_type="menu",
+                    content=stripped,
+                    order=node_order,
+                    line_number=index,
+                    metadata={},
+                    node_id=menu_id,
+                )
             )
             node_order += 1
-            nodes.append(menu_node)
             index += 1
 
             while index < len(lines):
@@ -222,6 +239,7 @@ class ProjectGraphImporter:
                 child = line.strip()
 
                 if not child:
+                    consumed_lines.add(index)
                     index += 1
                     continue
 
@@ -229,6 +247,7 @@ class ProjectGraphImporter:
                     break
 
                 if self._is_menu_prompt_line(child):
+                    consumed_lines.add(index)
                     nodes.append(
                         self._make_node(
                             file_id=file_id,
@@ -246,6 +265,7 @@ class ProjectGraphImporter:
                     continue
 
                 if self._is_menu_choice_line(child):
+                    consumed_lines.add(index)
                     choice_id = str(uuid4())
                     choice_metadata = self._parse_choice_metadata(child)
                     nodes.append(
@@ -271,12 +291,14 @@ class ProjectGraphImporter:
                         statement_indent = self._indent_level(statement_line)
 
                         if not statement:
+                            consumed_lines.add(index)
                             index += 1
                             continue
 
                         if self._extract_label_name(statement) is not None or statement_indent <= choice_indent:
                             break
 
+                        consumed_lines.add(index)
                         statement_type = self._statement_node_type(statement)
                         nodes.append(
                             self._make_node(
@@ -295,7 +317,89 @@ class ProjectGraphImporter:
 
                     continue
 
+                consumed_lines.add(index)
                 index += 1
+
+        return nodes, consumed_lines
+
+    def _scan_action_and_raw_nodes(
+        self,
+        file_id: str,
+        content: str,
+        labels: list[LabelFrame],
+        consumed_lines: set[int],
+    ) -> list[ScenarioNode]:
+        lines = content.splitlines()
+        labels_by_start = self._labels_by_start(labels)
+        current_label: LabelFrame | None = None
+        nodes: list[ScenarioNode] = []
+        node_order = 0
+        index = 0
+
+        while index < len(lines):
+            if index in labels_by_start:
+                current_label = labels_by_start[index]
+                index += 1
+                continue
+
+            if index in consumed_lines:
+                index += 1
+                continue
+
+            stripped = lines[index].strip()
+            if current_label is None or not stripped or stripped.startswith("#"):
+                index += 1
+                continue
+
+            block_type = self._raw_block_type(stripped)
+            if block_type is not None:
+                block_indent = self._indent_level(lines[index])
+                block_start = index
+                block_lines = [stripped]
+                index += 1
+                while index < len(lines):
+                    child = lines[index]
+                    child_stripped = child.strip()
+                    if child_stripped and self._indent_level(child) <= block_indent:
+                        break
+                    block_lines.append(child.rstrip())
+                    index += 1
+
+                nodes.append(
+                    self._make_node(
+                        file_id=file_id,
+                        label_id=current_label.id,
+                        parent_node_id=None,
+                        node_type="raw_block",
+                        content="\n".join(block_lines).rstrip(),
+                        order=node_order,
+                        line_number=block_start,
+                        metadata={"raw_block_type": block_type},
+                    )
+                )
+                node_order += 1
+                continue
+
+            node_type = self._statement_node_type(stripped)
+            if node_type == "raw_action" and self._is_dialogue_line(stripped):
+                node_type = "dialogue"
+
+            if node_type != "raw_action" or self._is_safe_raw_action(stripped) or node_type == "dialogue":
+                nodes.append(
+                    self._make_node(
+                        file_id=file_id,
+                        label_id=current_label.id,
+                        parent_node_id=None,
+                        node_type=node_type,
+                        content=stripped,
+                        order=node_order,
+                        line_number=index,
+                        metadata={},
+                    )
+                )
+                node_order += 1
+
+            index += 1
 
         return nodes
 
@@ -342,6 +446,14 @@ class ProjectGraphImporter:
         return label_header or None
 
     @staticmethod
+    def _labels_by_start(labels: list[LabelFrame]) -> dict[int, LabelFrame]:
+        return {
+            label.source_span["start_line"]: label
+            for label in labels
+            if label.source_span is not None
+        }
+
+    @staticmethod
     def _indent_level(line: str) -> int:
         return len(line) - len(line.lstrip(" "))
 
@@ -384,3 +496,40 @@ class ProjectGraphImporter:
         if statement.startswith("return"):
             return "return"
         return "raw_action"
+
+    @staticmethod
+    def _raw_block_type(statement: str) -> str | None:
+        if not statement.endswith(":"):
+            return None
+        if statement.startswith("python"):
+            return "python"
+        if statement.startswith("show "):
+            return "show"
+        if statement.startswith("image "):
+            return "image"
+        return None
+
+    @staticmethod
+    def _is_dialogue_line(statement: str) -> bool:
+        if '"' not in statement or not statement.rstrip().endswith('"'):
+            return False
+        return statement.startswith('"') or ' "' in statement
+
+    @staticmethod
+    def _is_safe_raw_action(statement: str) -> bool:
+        prefixes = (
+            "scene ",
+            "show ",
+            "hide ",
+            "with ",
+            "play ",
+            "queue ",
+            "stop ",
+            "voice ",
+            "image ",
+            "define ",
+            "default ",
+            "$ ",
+            "pass",
+        )
+        return statement.startswith(prefixes)

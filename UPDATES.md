@@ -164,6 +164,24 @@ Result:
 5. Snapshot roundtrip preserves scenario node IDs and parent relationships.
 6. Tests passed: `python -m pytest backend\tests\test_project_graph_menus.py backend\tests\test_project_graph_labels.py backend\tests\test_project_graph_importer.py backend\tests\test_project_graph_ids.py backend\tests\test_mouse_renpy_fixtures.py`.
 
+
+### Sprint 1 / Master Item 1.6 Action And Raw Preservation
+
+Added safe action/raw preservation for non-branching Ren'Py statements.
+
+Files:
+
+1. `backend/app/services/project_graph/importer.py`
+2. `backend/tests/test_project_graph_actions.py`
+
+Result:
+
+1. Presentation lines like `scene`, `show`, `with`, and `play` import as `raw_action` nodes.
+2. Dialogue and narration lines import as `dialogue` nodes.
+3. `python:` and ATL-like `show ...:` blocks import as `raw_block` nodes.
+4. Safe action/raw nodes do not create diagnostics.
+5. Tests passed: `python -m pytest backend\tests\test_project_graph_actions.py backend\tests\test_project_graph_menus.py backend\tests\test_project_graph_labels.py backend\tests\test_project_graph_importer.py backend\tests\test_project_graph_ids.py backend\tests\test_mouse_renpy_fixtures.py`.
+
 ## 2026-04-30
 
 ### Branch And Initial Architecture
