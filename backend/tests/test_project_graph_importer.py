@@ -23,7 +23,7 @@ def test_imports_multiple_rpy_files_into_one_project_graph():
     assert len({file.id for file in graph.files}) == 3
     assert len(graph.labels) > 0
     assert len(graph.label_starts) == len(graph.labels)
-    assert graph.nodes == []
+    assert len(graph.nodes) > 0
     assert graph.edges == []
 
 

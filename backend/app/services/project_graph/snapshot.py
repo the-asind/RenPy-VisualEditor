@@ -8,6 +8,7 @@ from .models import (
     LabelFrame,
     LabelStartNode,
     ProjectGraph,
+    ScenarioNode,
 )
 
 
@@ -80,7 +81,21 @@ class ProjectGraphSnapshotCodec:
                 }
                 for start in graph.label_starts
             ],
-            "nodes": graph.nodes,
+            "nodes": [
+                {
+                    "id": node.id,
+                    "file_id": node.file_id,
+                    "label_id": node.label_id,
+                    "parent_node_id": node.parent_node_id,
+                    "type": node.type,
+                    "content": node.content,
+                    "order": node.order,
+                    "source_span": node.source_span,
+                    "metadata": node.metadata,
+                    "visual": _dump_visual(node.visual),
+                }
+                for node in graph.nodes
+            ],
             "edges": graph.edges,
             "diagnostics": graph.diagnostics,
             "source_index": graph.source_index,
@@ -122,13 +137,28 @@ class ProjectGraphSnapshotCodec:
             )
             for start in snapshot.get("label_starts", [])
         ]
+        nodes = [
+            ScenarioNode(
+                id=node["id"],
+                file_id=node["file_id"],
+                label_id=node["label_id"],
+                parent_node_id=node.get("parent_node_id"),
+                type=node["type"],
+                content=node["content"],
+                order=node["order"],
+                source_span=node.get("source_span"),
+                metadata=dict(node.get("metadata", {})),
+                visual=_load_visual(node.get("visual", {})),
+            )
+            for node in snapshot.get("nodes", [])
+        ]
 
         return ProjectGraph(
             project_id=snapshot["project_id"],
             files=files,
             labels=labels,
             label_starts=label_starts,
-            nodes=list(snapshot.get("nodes", [])),
+            nodes=nodes,
             edges=list(snapshot.get("edges", [])),
             diagnostics=list(snapshot.get("diagnostics", [])),
             source_index=dict(snapshot.get("source_index", {})),

@@ -52,12 +52,26 @@ class LabelStartNode:
 
 
 @dataclass(frozen=True)
+class ScenarioNode:
+    id: str
+    file_id: str
+    label_id: str
+    parent_node_id: str | None
+    type: str
+    content: str
+    order: str
+    source_span: dict[str, int] | None
+    metadata: dict[str, Any]
+    visual: FrameVisual
+
+
+@dataclass(frozen=True)
 class ProjectGraph:
     project_id: str
     files: list[FileFrame] = field(default_factory=list)
     labels: list[LabelFrame] = field(default_factory=list)
     label_starts: list[LabelStartNode] = field(default_factory=list)
-    nodes: list[Any] = field(default_factory=list)
+    nodes: list[ScenarioNode] = field(default_factory=list)
     edges: list[Any] = field(default_factory=list)
     diagnostics: list[Any] = field(default_factory=list)
     source_index: dict[str, Any] = field(default_factory=dict)

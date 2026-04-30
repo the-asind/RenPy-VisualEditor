@@ -10,6 +10,7 @@ from .models import (
     LabelFrame,
     LabelStartNode,
     ProjectGraph,
+    ScenarioNode,
 )
 
 
@@ -24,6 +25,8 @@ class ProjectGraphImporter:
     DEFAULT_LABEL_GAP = 96.0
     DEFAULT_LABEL_START_WIDTH = 280.0
     DEFAULT_LABEL_START_HEIGHT = 72.0
+    DEFAULT_NODE_WIDTH = 320.0
+    DEFAULT_NODE_HEIGHT = 88.0
 
     def import_files(self, project_id: str, files: Iterable[str | Path]) -> ProjectGraph:
         paths = [Path(file) for file in files]
@@ -37,6 +40,7 @@ class ProjectGraphImporter:
         file_frames: list[FileFrame] = []
         label_frames: list[LabelFrame] = []
         label_starts: list[LabelStartNode] = []
+        scenario_nodes: list[ScenarioNode] = []
         source_files: dict[str, dict[str, str]] = {}
 
         for index, path in enumerate(paths):
@@ -75,12 +79,14 @@ class ProjectGraphImporter:
             labels, starts = self._scan_labels(file_id=file_id, content=content)
             label_frames.extend(labels)
             label_starts.extend(starts)
+            scenario_nodes.extend(self._scan_menu_nodes(file_id=file_id, content=content, labels=labels))
 
         return ProjectGraph(
             project_id=project_id,
             files=file_frames,
             labels=label_frames,
             label_starts=label_starts,
+            nodes=scenario_nodes,
             source_index={"files": source_files},
         )
 
@@ -170,6 +176,157 @@ class ProjectGraphImporter:
 
         return labels, starts
 
+    def _scan_menu_nodes(self, file_id: str, content: str, labels: list[LabelFrame]) -> list[ScenarioNode]:
+        lines = content.splitlines()
+        labels_by_start = {
+            label.source_span["start_line"]: label
+            for label in labels
+            if label.source_span is not None
+        }
+        current_label: LabelFrame | None = None
+        nodes: list[ScenarioNode] = []
+        node_order = 0
+        index = 0
+
+        while index < len(lines):
+            if index in labels_by_start:
+                current_label = labels_by_start[index]
+                index += 1
+                continue
+
+            stripped = lines[index].strip()
+            if current_label is None or not self._is_menu_line(stripped):
+                index += 1
+                continue
+
+            menu_indent = self._indent_level(lines[index])
+            menu_id = str(uuid4())
+            menu_node = self._make_node(
+                file_id=file_id,
+                label_id=current_label.id,
+                parent_node_id=None,
+                node_type="menu",
+                content=stripped,
+                order=node_order,
+                line_number=index,
+                metadata={},
+                node_id=menu_id,
+            )
+            node_order += 1
+            nodes.append(menu_node)
+            index += 1
+
+            while index < len(lines):
+                line = lines[index]
+                child_indent = self._indent_level(line)
+                child = line.strip()
+
+                if not child:
+                    index += 1
+                    continue
+
+                if self._extract_label_name(child) is not None or child_indent <= menu_indent:
+                    break
+
+                if self._is_menu_prompt_line(child):
+                    nodes.append(
+                        self._make_node(
+                            file_id=file_id,
+                            label_id=current_label.id,
+                            parent_node_id=menu_id,
+                            node_type="menu_prompt",
+                            content=child,
+                            order=node_order,
+                            line_number=index,
+                            metadata={"prompt_text": child.strip('"')},
+                        )
+                    )
+                    node_order += 1
+                    index += 1
+                    continue
+
+                if self._is_menu_choice_line(child):
+                    choice_id = str(uuid4())
+                    choice_metadata = self._parse_choice_metadata(child)
+                    nodes.append(
+                        self._make_node(
+                            file_id=file_id,
+                            label_id=current_label.id,
+                            parent_node_id=menu_id,
+                            node_type="menu_choice",
+                            content=child,
+                            order=node_order,
+                            line_number=index,
+                            metadata=choice_metadata,
+                            node_id=choice_id,
+                        )
+                    )
+                    node_order += 1
+                    choice_indent = child_indent
+                    index += 1
+
+                    while index < len(lines):
+                        statement_line = lines[index]
+                        statement = statement_line.strip()
+                        statement_indent = self._indent_level(statement_line)
+
+                        if not statement:
+                            index += 1
+                            continue
+
+                        if self._extract_label_name(statement) is not None or statement_indent <= choice_indent:
+                            break
+
+                        statement_type = self._statement_node_type(statement)
+                        nodes.append(
+                            self._make_node(
+                                file_id=file_id,
+                                label_id=current_label.id,
+                                parent_node_id=choice_id,
+                                node_type=statement_type,
+                                content=statement,
+                                order=node_order,
+                                line_number=index,
+                                metadata={},
+                            )
+                        )
+                        node_order += 1
+                        index += 1
+
+                    continue
+
+                index += 1
+
+        return nodes
+
+    def _make_node(
+        self,
+        file_id: str,
+        label_id: str,
+        parent_node_id: str | None,
+        node_type: str,
+        content: str,
+        order: int,
+        line_number: int,
+        metadata: dict[str, object],
+        node_id: str | None = None,
+    ) -> ScenarioNode:
+        return ScenarioNode(
+            id=node_id or str(uuid4()),
+            file_id=file_id,
+            label_id=label_id,
+            parent_node_id=parent_node_id,
+            type=node_type,
+            content=content,
+            order=f"{order:04d}",
+            source_span={"start_line": line_number, "end_line": line_number},
+            metadata=metadata,
+            visual=FrameVisual(
+                position=FramePosition(x=96.0, y=136.0 + order * 112.0),
+                size=FrameSize(width=self.DEFAULT_NODE_WIDTH, height=self.DEFAULT_NODE_HEIGHT),
+            ),
+        )
+
     @staticmethod
     def _extract_label_name(stripped_line: str) -> str | None:
         if not stripped_line.startswith("label ") or not stripped_line.endswith(":"):
@@ -183,3 +340,47 @@ class ProjectGraphImporter:
             label_header = label_header.split("(", 1)[0].strip()
 
         return label_header or None
+
+    @staticmethod
+    def _indent_level(line: str) -> int:
+        return len(line) - len(line.lstrip(" "))
+
+    @staticmethod
+    def _is_menu_line(stripped_line: str) -> bool:
+        return stripped_line.startswith("menu") and stripped_line.endswith(":")
+
+    @staticmethod
+    def _is_menu_prompt_line(stripped_line: str) -> bool:
+        return stripped_line.startswith('"') and stripped_line.endswith('"')
+
+    @staticmethod
+    def _is_menu_choice_line(stripped_line: str) -> bool:
+        return stripped_line.startswith('"') and stripped_line.endswith(":")
+
+    @staticmethod
+    def _parse_choice_metadata(choice_line: str) -> dict[str, str | None]:
+        without_colon = choice_line[:-1].strip()
+        closing_quote_index = without_colon.find('"', 1)
+        if closing_quote_index == -1:
+            return {"choice_text": without_colon.strip('"'), "condition": None}
+
+        choice_text = without_colon[1:closing_quote_index]
+        suffix = without_colon[closing_quote_index + 1:].strip()
+        condition = None
+        if suffix.startswith("if "):
+            condition = suffix[len("if "):].strip()
+
+        return {
+            "choice_text": choice_text,
+            "condition": condition,
+        }
+
+    @staticmethod
+    def _statement_node_type(statement: str) -> str:
+        if statement.startswith("jump "):
+            return "jump"
+        if statement.startswith("call "):
+            return "call"
+        if statement.startswith("return"):
+            return "return"
+        return "raw_action"

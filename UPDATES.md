@@ -143,6 +143,27 @@ Result:
 4. `LabelFrame.label_start_node_id` points to the start node, and snapshot roundtrip preserves label/start IDs.
 5. Tests passed: `python -m pytest backend\tests\test_project_graph_labels.py backend\tests\test_project_graph_importer.py backend\tests\test_project_graph_ids.py backend\tests\test_mouse_renpy_fixtures.py`.
 
+
+### Sprint 1 / Master Item 1.5 Menu Semantics
+
+Added first ProjectGraph scenario nodes for Ren'Py menu semantics.
+
+Files:
+
+1. `backend/app/services/project_graph/models.py`
+2. `backend/app/services/project_graph/importer.py`
+3. `backend/app/services/project_graph/snapshot.py`
+4. `backend/tests/test_project_graph_menus.py`
+
+Result:
+
+1. `menu:` and named menus import as `ScenarioNode(type="menu")`.
+2. Prompt/caption text imports as `ScenarioNode(type="menu_prompt")`.
+3. Choices import as `ScenarioNode(type="menu_choice")` with `choice_text` and optional `condition` metadata.
+4. Initial statements inside choices import as child nodes; current MVP mapper recognizes `jump`, `call`, `return`, and safe `raw_action`.
+5. Snapshot roundtrip preserves scenario node IDs and parent relationships.
+6. Tests passed: `python -m pytest backend\tests\test_project_graph_menus.py backend\tests\test_project_graph_labels.py backend\tests\test_project_graph_importer.py backend\tests\test_project_graph_ids.py backend\tests\test_mouse_renpy_fixtures.py`.
+
 ## 2026-04-30
 
 ### Branch And Initial Architecture

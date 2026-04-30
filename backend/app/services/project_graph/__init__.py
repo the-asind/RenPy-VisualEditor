@@ -1,6 +1,6 @@
 from .editor import ProjectGraphEditor
 from .importer import ProjectGraphImporter
-from .models import FileFrame, LabelFrame, LabelStartNode, ProjectGraph
+from .models import FileFrame, LabelFrame, LabelStartNode, ProjectGraph, ScenarioNode
 from .snapshot import ProjectGraphSnapshotCodec
 
 __all__ = [
@@ -11,4 +11,5 @@ __all__ = [
     "ProjectGraphEditor",
     "ProjectGraphImporter",
     "ProjectGraphSnapshotCodec",
+    "ScenarioNode",
 ]
