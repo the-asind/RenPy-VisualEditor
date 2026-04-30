@@ -17,7 +17,7 @@ class ProjectGraphExporter:
 
         exported: dict[str, str] = {}
         for file in sorted(graph.files, key=lambda item: item.order):
-            lines: list[str] = []
+            lines: list[str] = self._file_prelude(graph, file)
             labels = sorted(labels_by_file.get(file.id, []), key=self._source_order)
             for label in labels:
                 start = starts_by_label_id[label.id]
@@ -31,6 +31,23 @@ class ProjectGraphExporter:
             exported[file.path] = "\n".join(lines).rstrip() + "\n"
 
         return exported
+
+    @staticmethod
+    def _file_prelude(graph: ProjectGraph, file: FileFrame) -> list[str]:
+        source_file = graph.source_index.get("files", {}).get(file.id, {})
+        content = source_file.get("content", "")
+        if not content:
+            return []
+
+        prelude: list[str] = []
+        for line in content.splitlines():
+            if line.strip().startswith("label "):
+                break
+            prelude.append(line.rstrip())
+
+        while prelude and not prelude[-1].strip():
+            prelude.pop()
+        return prelude
 
     @staticmethod
     def _labels_by_file(labels: list[LabelFrame]) -> dict[str, list[LabelFrame]]:

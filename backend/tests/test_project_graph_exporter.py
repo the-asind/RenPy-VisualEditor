@@ -77,6 +77,66 @@ def test_single_file_roundtrip_preserves_mvp_semantics(tmp_path):
 
     assert semantic_signature(roundtripped) == semantic_signature(graph)
 
+
+def test_single_file_export_matches_expected_normalized_renpy_text(tmp_path):
+    source = tmp_path / "single_mouse_story.rpy"
+    source.write_text(
+        "\n".join(
+            [
+                'define r = Character("RenPy")',
+                "",
+                "label start:",
+                "    # Comment stays editable.",
+                "    scene kitchen morning",
+                "    r \"Roundtrip smells like cheese.\"",
+                "    menu:",
+                "        \"Pick a route.\"",
+                "        \"Nibble\" if True:",
+                "            jump .nibble",
+                "    if True:",
+                "        r \"The branch survives.\"",
+                "    else:",
+                "        r \"The fallback survives.\"",
+                "",
+                "label .nibble:",
+                "    show renpy happy:",
+                "        xalign 0.5",
+                "        linear 0.2 yoffset -10",
+                "    return",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    graph = import_and_resolve(source)
+    exported = ProjectGraphExporter().export(graph)
+
+    assert exported["single_mouse_story.rpy"] == "\n".join(
+        [
+            'define r = Character("RenPy")',
+            "",
+            "label start:",
+            "    # Comment stays editable.",
+            "    scene kitchen morning",
+            "    r \"Roundtrip smells like cheese.\"",
+            "    menu:",
+            "        \"Pick a route.\"",
+            "        \"Nibble\" if True:",
+            "            jump .nibble",
+            "    if True:",
+            "        r \"The branch survives.\"",
+            "    else:",
+            "        r \"The fallback survives.\"",
+            "",
+            "label .nibble:",
+            "    show renpy happy:",
+            "        xalign 0.5",
+            "        linear 0.2 yoffset -10",
+            "    return",
+            "",
+        ]
+    )
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "renpy_mouse"
 
 
