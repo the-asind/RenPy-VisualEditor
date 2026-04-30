@@ -1,44 +1,45 @@
-# RenPy Visual Editor 2.0 Architecture Plan
+# RenPy Visual Editor 2.0 Architecture
 
-Дата фиксации: 2026-04-30
+Дата фиксации: 2026-05-01
+
+Статус: архитектурная и миграционная ветка `codex/editor-2-architecture`.
 
 ## 1. Цель
 
-Версия 2.0 должна заменить текущую модель "один файл = один граф" на единый проектный холст. Холст отображает все `.rpy` файлы проекта, глобальные и локальные label-фреймы, statement-ноды и отдельный слой отношений для `jump` / `call`.
+MVP 2.0 должен заменить модель `один файл = один граф` на модель `один проект = один большой холст`.
 
-Главная цель: сделать редактор предсказуемым для одиночной и совместной работы. React Flow должен быть только визуальной проекцией доменной модели, а не источником правды.
+На холсте видны все `.rpy` файлы проекта, все глобальные labels, все локальные/nested labels и все ноды, которые нужны автору для понимания повествования и переходов. React Flow показывает проекцию доменной модели. Он не является источником правды.
 
-## 2. Критерии Качества и Базовые Решения
+Источник правды MVP 2.0 - `ProjectGraph`, сохраненный в CRDT-состоянии проекта.
 
-Я считаю понимание качественным только если оно проверяется по внешним критериям, а не по ощущению стройности архитектуры.
+## 2. Критерии Качества Понимания
 
-Критерии качества для архитектуры 2.0:
+Архитектура считается понятой качественно только если она проверяется внешними критериями:
 
-1. Пользовательский сценарий объясняется без внутренних деталей: автор видит один проектный холст, файлы, label-фреймы, локальные label-фреймы и ноды сценария.
-2. Семантика Ren'Py не искажается ради красивого графа: containment, runtime flow и visual layout разделены.
-3. MVP отделен от полировки: все, что не нужно для первого рабочего 2.0, фиксируется как задел, но не блокирует основной путь.
-4. Каждый master item имеет black-box expectation и может быть закрыт через TDD-круг.
-5. Любое решение по React Flow, Loro и Ren'Py сверяется с официальной документацией перед реализацией.
-6. Если реализация показывает, что прежнее решение дорого или неверно, документ обновляется до продолжения разработки.
+1. Автор видит один холст проекта: файлы, label-фреймы, вложенные label-фреймы, стартовые ноды labels и сценарные ноды.
+2. Containment, runtime flow и visual layout не смешиваются.
+3. `jump` и `call` не перестраивают дерево владения, но дают relation edges и layout hints.
+4. Все связи React Flow идут только между нодами.
+5. Каждый sprint делится на master items, а каждый master item является завершенным TDD-кругом.
+6. Внутри master item есть атомарные действия с ясным способом выполнения.
+7. MVP отделен от полировки. История, viewport persistence и сложная диагностика не блокируют MVP, если они не нужны для главного цикла.
+8. Перед реализацией каждого master item проверяются официальные docs Ren'Py, React Flow или Loro.
+9. Если официальная документация или тесты противоречат плану, меняется план.
+10. Документы `AGENTS.md`, `UPDATES.md` и этот файл остаются синхронизированными.
 
-Базовые решения:
+## 3. Документационные Столпы
 
-1. Серверный parser остается владельцем Ren'Py-семантики.
-2. Клиент отвечает за визуальное представление, layout и React Flow projection.
-3. Источником правды 2.0 становится `ProjectGraph`, сохраненный в CRDT-модели.
-4. `.rpy` файлы после импорта становятся источником начальной семантики и provenance, но не источником live-состояния холста.
-5. Экспорт генерирует `.rpy` файлы из `ProjectGraph`.
-6. WebSocket в целевой модели пересылает бинарные CRDT updates, а не JSON-патчи структуры.
-7. Один проект использует один LoroDoc, потому что целевой UX - один монстр-холст проекта.
-8. Фреймы и ноды можно двигать; их позиции сохраняются и синхронизируются как часть проекта.
-9. Viewport и zoom являются персональными и не входят в MVP 2.0. Серверное хранение последнего viewport пользователя - полировка после MVP.
-10. Официальная документация является обязательным источником перед каждым архитектурным или API-решением.
+Каждый агент перед изменением кода читает:
 
-## 3. Источники Официальной Документации
+1. `AGENTS.md`
+2. `UPDATES.md`
+3. `docs/editor-2.0-architecture.md`
 
-Перед реализацией каждого мастер-пункта нужно сверяться с актуальной официальной документацией и фиксировать использованные ссылки в decision log этого файла или в отдельном ADR.
+Старый README и MVP 1.0 реализация не являются источником архитектурной истины.
 
-Основные источники:
+## 4. Официальные Источники
+
+Перед master item нужно сверяться с актуальными официальными источниками:
 
 - Ren'Py latest: https://www.renpy.org/latest.html
 - Ren'Py Language Basics: https://www.renpy.org/doc/html/language_basics.html
@@ -48,37 +49,71 @@
 - React Flow docs: https://reactflow.dev/learn
 - React Flow sub-flows / parent-child nodes: https://reactflow.dev/learn/layouting/sub-flows
 - React Flow layouting: https://reactflow.dev/learn/layouting/layouting
-- React Flow collaborative guidance: https://reactflow.dev/learn/advanced-use/multiplayer
+- React Flow multiplayer guidance: https://reactflow.dev/learn/advanced-use/multiplayer
 - Loro docs: https://www.loro.dev/docs
 - Loro Tree tutorial: https://www.loro.dev/docs/tutorial/tree
 - Loro encoding / updates: https://www.loro.dev/docs/tutorial/encoding
 - Loro Python package: https://pypi.org/project/loro/
 
-Правило: если документация React Flow, Loro или Ren'Py противоречит нашим предположениям, меняется план, а не документация игнорируется.
+Если будет найден сторонний ANTLR/grammar-файл для Ren'Py, его можно использовать только как подсказку. Источник правды остается официальный Ren'Py parser и официальная документация.
 
-## 4. Термины
+## 5. Простые Термины
 
 `ProjectGraph` - доменная модель всего Ren'Py-проекта.
 
-`FileFrame` - визуальная область файла `.rpy` на общем холсте.
+`FileFrame` - прямоугольник файла `.rpy` на общем холсте.
 
-`LabelFrame` - визуальный прямоугольный фрейм глобального или локального label. Label-фрейм является ориентиром на холсте и entry point для переходов.
+`LabelFrame` - прямоугольник label. Может быть глобальным или вложенным.
 
-`StatementNode` - визуальная нода конкретного Ren'Py statement или блока statements.
+`LabelStartNode` - видимая мастер-нода начала label внутри `LabelFrame`. Именно к ней ведут `jump` и `call`.
 
-`RelationEdge` - не-древовидная связь, например `jump`, `call`, unresolved dynamic relation, reference или diagnostic relation.
+`ScenarioNode` - нода содержимого: диалог, меню, условие, переход, комментарий, action/raw блок.
 
-`TreeEdge` - связь владения: file содержит label, label содержит statement, label может содержать вложенный label.
+`FlowEdge` - связь между двумя нодами. Связей frame-to-frame в MVP 2.0 нет.
 
-`Projection` - преобразование `ProjectGraph` в React Flow `nodes` / `edges`.
+`Containment` - владение: файл содержит label, label содержит вложенный label или ноду.
 
-`Sprint` - крупная waterfall-фаза с definition of done.
+`Projection` - превращение `ProjectGraph` в React Flow nodes/edges.
 
-`Master Item` - завершенный TDD-круг внутри спринта. Для него заранее ясно ожидаемое поведение, можно написать black-box tests, реализовать код и закрыть пункт проверкой.
+`Master Item` - законченный TDD-круг внутри спринта: black-box test, код, проверка.
 
-`Atomic Action` - маленькое действие внутри master item. Оно не обязано быть самостоятельным TDD-кругом, но должно иметь очевидный результат и способ выполнения.
+`Atomic Action` - маленькое действие внутри master item с очевидным результатом.
 
-## 5. ProjectGraph IR
+## 6. Холст 2.0
+
+На итоговом холсте ничего не складывается и не сворачивается. Это важно для коллаборации: все участники видят один и тот же структурный контекст.
+
+Структура:
+
+```text
+Project Canvas
+  FileFrame script_a.rpy
+    LabelFrame start
+      LabelStartNode start
+      ScenarioNode dialogue/action/menu/if/jump/call
+      LabelFrame .local
+        LabelStartNode start.local
+        ScenarioNode ...
+  FileFrame day_2.rpy
+    LabelFrame day_two
+      LabelStartNode day_two
+      ScenarioNode ...
+```
+
+Правила холста:
+
+1. Все файлы проекта отображаются как `FileFrame`.
+2. Все глобальные labels отображаются как `LabelFrame` внутри файла.
+3. Локальные и nested labels отображаются как вложенные `LabelFrame`.
+4. Каждый `LabelFrame` содержит ровно один `LabelStartNode`.
+5. Все связи идут только между нодами.
+6. `jump/call source node -> target LabelStartNode`.
+7. Sibling фреймы не пересекаются.
+8. Фрейм может содержать фрейм, но containment не должен теряться системно.
+9. Layout строится преимущественно по flow-связям; source order является fallback.
+10. Search, minimap и problems/log panel являются MVP-навигацией вместо collapse.
+
+## 7. ProjectGraph IR
 
 Минимальная целевая форма:
 
@@ -87,15 +122,15 @@ type ProjectGraph = {
   projectId: string;
   files: FileFrame[];
   labels: LabelFrame[];
-  statements: StatementNode[];
-  treeEdges: TreeEdge[];
-  relationEdges: RelationEdge[];
+  labelStarts: LabelStartNode[];
+  nodes: ScenarioNode[];
+  edges: FlowEdge[];
   diagnostics: GraphDiagnostic[];
   sourceIndex: SourceIndex;
 };
 ```
 
-`FileFrame` - глобальный контейнер файла на холсте:
+Фрейм файла:
 
 ```ts
 type FileFrame = {
@@ -103,22 +138,23 @@ type FileFrame = {
   path: string;
   order: string;
   visual: {
-    position: { x: number; y: number }; // absolute canvas position
+    position: { x: number; y: number }; // global canvas position
     size: { width: number; height: number };
   };
 };
 ```
 
-`LabelFrame` - одновременно визуальный контейнер и техническая React Flow node, к которой можно вести relation edge. Отдельная `LabelEntryNode` не является обязательной для MVP.
+Фрейм label:
 
 ```ts
 type LabelFrame = {
   id: string;
   fileId: string;
+  parentLabelId: string | null;
   name: string;
   qualifiedName: string;
-  scope: "global" | "local";
-  parentLabelId: string | null;
+  scope: "global" | "local" | "nested";
+  labelStartNodeId: string;
   sourceSpan: SourceSpan | null;
   visual: {
     position: { x: number; y: number }; // local to parent frame
@@ -128,19 +164,32 @@ type LabelFrame = {
 };
 ```
 
-`StatementNode` - нода сценарного содержимого. Все обычные Ren'Py-строки, которые parser пока не выделяет как особую конструкцию, остаются нормальными raw/default statement nodes, а не ошибками.
+Старт-нода label:
 
 ```ts
-type StatementNode = {
+type LabelStartNode = {
   id: string;
   fileId: string;
   labelId: string;
-  parentStatementId: string | null;
+  qualifiedName: string;
+  content: string; // usually "label name:"
+  visual: {
+    position: { x: number; y: number }; // local to owning LabelFrame
+    size: { width: number; height: number };
+  };
+};
+```
+
+Сценарная нода:
+
+```ts
+type ScenarioNode = {
+  id: string;
+  fileId: string;
+  labelId: string;
+  parentNodeId: string | null;
   type:
     | "dialogue"
-    | "scene"
-    | "show"
-    | "hide"
     | "menu"
     | "menu_prompt"
     | "menu_choice"
@@ -150,653 +199,665 @@ type StatementNode = {
     | "jump"
     | "call"
     | "return"
-    | "python"
     | "comment"
-    | "raw_statement"
+    | "action"
+    | "raw_action"
     | "raw_block";
-  content: string; // plain text, close to .rpy source content
+  content: string;
   order: string;
   sourceSpan: SourceSpan | null;
   metadata: Record<string, unknown>;
   visual: {
-    position: { x: number; y: number }; // local to parent label/statement frame
+    position: { x: number; y: number }; // local to parent label/node frame
     size: { width: number; height: number };
   };
 };
 ```
 
-`RelationEdge` - связь только между React Flow nodes. Source чаще всего statement node (`jump` / `call`), target может быть `LabelFrame` node или другой `StatementNode`, если речь о ветке внутри label.
+Связь:
 
 ```ts
-type RelationEdge = {
+type FlowEdge = {
   id: string;
-  kind: "jump" | "call" | "dynamic_jump" | "dynamic_call" | "reference" | "diagnostic";
-  sourceId: string;
-  targetId: string | null;
+  kind: "sequence" | "branch" | "jump" | "call" | "dynamic" | "diagnostic";
+  sourceNodeId: string;
+  targetNodeId: string | null;
   targetRef: string | null;
   resolved: boolean;
   derived: boolean;
   visual: {
-    style: "dashed" | "solid" | "faded";
+    style: "solid" | "dashed" | "faded";
     opacity: number;
   };
 };
 ```
 
-Позиционная модель:
+ID policy:
 
-1. `FileFrame.position` хранится в координатах всего холста.
-2. `LabelFrame.position` хранится локально относительно parent frame.
-3. `StatementNode.position` хранится локально относительно parent label/statement frame.
-4. Перемещения фреймов и нод сохраняются в CRDT и видны другим участникам.
-5. Viewport/zoom не сохраняются в ProjectGraph.
+1. При первичном импорте можно генерировать UUID.
+2. Детерминированность ID между двумя независимыми импортами не является требованием MVP.
+3. После импорта ID должны храниться в `ProjectGraph`/CRDT и не меняться при редактировании, сохранении, загрузке, перемещениях и коллаборации.
+4. Запрещены ID на основе адреса объекта в памяти, индекса массива как единственного идентификатора или временной позиции на холсте.
 
-## 6. Холст 2.0
+Позиции:
 
-На итоговом холсте 2.0 ничего не должно складываться или сворачиваться. Для коллаборационной работы сворачивание контринтуитивно: один участник может потерять визуальный контекст другого.
+1. `FileFrame.position` - глобальная позиция на холсте.
+2. `LabelFrame.position` - локальная позиция относительно parent frame.
+3. `LabelStartNode.position` и `ScenarioNode.position` - локальные позиции относительно owning label/node frame.
+4. Движение нод и фреймов сохраняется в CRDT и видно другим участникам.
+5. Viewport, zoom и текущий фокус пользователя персональные и не входят в MVP ProjectGraph.
 
-Ориентир: ясная генерация и оформление всего холста, чтобы пользователь мог зумить, перемещаться, искать и быстро находить нужный узел.
+## 8. Parser Strategy
 
-Структура холста:
+MVP parser должен быть качественным уже в первой версии. Качество означает не максимальное количество special nodes, а корректное сохранение смысла и структуры.
 
-```text
-Canvas
-  FileFrame
-    Global LabelFrame
-      Local/Nested LabelFrame
-        StatementNode
-        StatementNode
-        If/Menu branch nodes
-```
+Граница parser:
 
-Обязательные UX-решения:
+1. First-class nodes нужны для повествования, ветвлений, переходов и редактируемых автором блоков.
+2. Непереходные presentation/action statements не создают отдельную сложную графовую семантику.
+3. `scene`, `show`, `hide`, `with`, audio, image/effect blocks, python snippets и похожие statements становятся `action`, `raw_action` или `raw_block`, если они не создают ветку графа.
+4. Строка вроде `show eileen happy at left with dissolve` никогда не является проблемой построения графа сама по себе.
+5. Если parser не понимает statement, но может безопасно сохранить его как текст, он создает raw/action node и предупреждение максимум informational/warning уровня.
+6. Blocking diagnostic нужен только когда нельзя безопасно сохранить/экспортировать структуру или становится неоднозначной вложенность.
+7. Если сложный parent block невозможно разобрать безопасно, весь parent block сохраняется как `raw_block` с предупреждением.
 
-1. Все файлы проекта видимы как `FileFrame`.
-2. Все глобальные и локальные labels видимы как `LabelFrame`.
-3. Sibling label-фреймы не пересекаются.
-4. Вложенные labels отображаются как frame внутри frame.
-5. Связи отображаются только между React Flow nodes.
-6. `jump` / `call` не перестраивают containment tree. Они создают relation edges и layout constraints.
-7. Relation edge для `jump` / `call` может идти напрямую к label-frame, потому что label-frame сам является React Flow node. Отдельная visible `LabelEntryNode` не нужна для MVP.
-8. Если в будущем прямое подключение к frame ухудшит routing/handles, можно добавить скрытые технические handles внутри label-frame без введения отдельной видимой ноды.
-9. Layout всего холста строится по flow-связям, а не по source order. Source order остается fallback и экспортным порядком, если flow-связь не дает ответа.
-10. Навигация MVP опирается на zoom, minimap, search и problems/log panel, но не на collapse.
+MVP first-class subset:
 
-Почему не нужна обязательная `LabelEntryNode`:
+1. Global label.
+2. Local label.
+3. Nested label.
+4. `LabelStartNode`.
+5. Dialogue/say.
+6. Comment inside editable block.
+7. Menu block.
+8. Menu prompt text.
+9. Menu choice text.
+10. Menu choice condition.
+11. Statements inside menu choice.
+12. `if` / `elif` / `else`.
+13. `jump`.
+14. `call`.
+15. `return`.
+16. Action/raw line.
+17. Action/raw block.
 
-1. React Flow group/frame тоже является node, если мы реализуем label-frame как custom node.
-2. Edge может вести на label-frame node напрямую.
-3. Отдельная entry-нода нужна только если мы хотим иметь стабильную видимую точку входа внутри frame, но это усложняет холст.
-4. Для MVP проще и понятнее: `jump/call statement node -> target label-frame node`.
+Тестовые fixtures должны быть общими для parser/resolver/export/layout. Они рассказывают историю про мышонка Ренпи и покрывают все инварианты применения `.rpy`, которые входят в MVP.
 
-## 7. Parser Strategy
+## 9. Label Semantics
 
-У Ren'Py нет очевидного официального ANTLR-файла. Практический источник правды - официальный Python parser, lexer и AST.
-
-Стратегия:
-
-1. Закрепить версию Ren'Py, относительно которой проект проверяется.
-2. Построить matrix statements по официальному `renpy/parser.py`.
-3. Разделить statements на first-class nodes, raw/default statement nodes, preserved raw blocks и blocking diagnostics.
-4. Начать с narrative/control-flow subset.
-5. Все parser-расширения писать через fixtures и black-box tests.
-
-Критический инвариант: строка Ren'Py внутри label не становится проблемой только потому, что parser пока не знает ее как отдельный typed statement. Например `show eileen happy at left with dissolve` для MVP может стать обычной `raw_statement` нодой и спокойно экспортироваться.
-
-Минимальный parser subset для 2.0 MVP:
-
-- global label;
-- local label;
-- nested label;
-- dialogue / say;
-- comments inside editable block;
-- raw/default statement;
-- raw/default block;
-- menu prompt text;
-- menu choice;
-- menu choice condition;
-- if / elif / else;
-- jump;
-- call;
-- return.
-
-## 8. Label Semantics
-
-Глобальные и локальные labels являются frame'ами на доске.
+Labels являются фреймами, а начало label является нодой.
 
 Правила:
 
-1. Global label создает top-level `LabelFrame` внутри `FileFrame`.
-2. Local label начинается с `.` и получает `parentLabelId`.
-3. Nested label создает вложенный `LabelFrame`.
-4. Label-фреймы одного уровня не должны пересекаться.
-5. Вложенность frame'ов отражает лексическое положение в исходниках, а не runtime-переходы.
-6. Resolver обязан различать `jump label`, `jump .local`, `jump global.local`, dynamic jump/call.
-7. Runtime-связи между labels используются для layout constraints и relation overlay, но не меняют containment.
-8. Связи должны идти между nodes: jump/call statement node -> target label-frame node.
+1. `label start:` создает `LabelFrame` и `LabelStartNode`.
+2. `label .local:` создает вложенный `LabelFrame` внутри owning global label.
+3. Nested labels создают вложенные `LabelFrame` по лексической структуре.
+4. `LabelStartNode` принадлежит своему `LabelFrame` и является первой нодой label.
+5. `jump label`, `jump .local`, `jump global.local`, `call label` резолвятся к `LabelStartNode`.
+6. Dynamic targets создают unresolved/dynamic edge и diagnostic, но не ломают холст.
+7. Runtime flow не меняет containment.
+8. Фрейм не является endpoint связи.
 
-## 9. Menu Semantics
+Почему нужен `LabelStartNode`:
 
-Меню нельзя считать только набором choice-веток.
+1. Пользователь уже ожидает отдельную мастер-ноду начала label.
+2. Правило `edges only between nodes` остается строгим.
+3. React Flow routing и handles проще: переход идет в конкретную ноду, а не в визуальный контейнер.
+4. Label frame остается контейнером и визуальным ориентиром, а не смешивается с runtime endpoint.
 
-Нужные элементы:
+## 10. React Flow Projection And Layout
 
-1. `menu:` или named menu.
-2. Prompt/caption text, отображаемый во время выбора.
-3. Choice text.
-4. Choice condition.
-5. Choice arguments.
-6. Statements внутри choice.
-7. Unknown menu children preserved with diagnostic.
+React Flow получает только проекцию `ProjectGraph`.
 
-## 10. CRDT Strategy
+Правила projection:
 
-Целевой CRDT-слой должен хранить `ProjectGraph`, а не React Flow state напрямую.
+1. `FileFrame` и `LabelFrame` являются parent/group nodes React Flow.
+2. `LabelStartNode` и `ScenarioNode` являются обычными visible nodes.
+3. Containment передается через parent-child model, а не через видимые tree edges.
+4. `FlowEdge` отображается только между node endpoints.
+5. `jump`/`call` edge должен быть пунктирным или полупрозрачным, чтобы отличаться от локального flow.
+6. Unresolved/dynamic edge может отображаться faded и попадать в problems/log panel.
 
-MVP-модель:
+Layout MVP:
 
-1. Один LoroDoc на проект.
-2. Loro Tree хранит containment hierarchy: file -> label -> local/nested label -> statement.
-3. Loro Map/List хранит attributes: text content, visual positions, metadata, diagnostics и cached relation edges.
-4. Позиции file frames глобальные; позиции label frames и statement nodes локальные относительно parent frame.
-5. Текст statement node хранится как plain string, близко к `.rpy`.
-6. Relation edges для `jump/call` считаются derived from content, но могут кэшироваться в CRDT для быстрых projection/layout.
-7. React Flow projection подписывается на изменения CRDT-документа.
-8. UI operations превращаются в доменные операции, затем в CRDT operations.
-9. Сервер принимает и ретранслирует бинарные updates.
-10. Сервер периодически сохраняет snapshot и, если это дешево, append-only update log.
+1. Начать с flow-first hybrid layout.
+2. Source order использовать только как fallback.
+3. File frames расположить на общем холсте так, чтобы связанные flow-файлы были ближе.
+4. Labels внутри file frame расположить по flow-связям и fallback order.
+5. Nodes внутри label расположить по локальному flow.
+6. Sibling frames не должны пересекаться.
+7. Parent frame bounds считаются из children плюс padding.
+8. Manual positions после drag сохраняются и не перетираются автоматическим relayout без явной команды.
+9. Перед implementation проверить официальные React Flow docs по sub-flows/layouting. Если Dagre конфликтует с nested frames и внешними edges, перейти к ELK или гибридному layout.
 
-История редактирования:
+## 11. Loro CRDT Strategy
 
-1. Loro имеет OpLog, version/frontiers и time travel. Это значит, что фундамент истории уже есть в библиотеке.
-2. Для MVP не строим полноценный UI истории редактирования.
-3. Если timestamp recording и update log подключаются без существенной сложности, включаем их как технический фундамент.
-4. Пользовательский timeline, откаты, сравнения версий и удобный history UI остаются полировкой после MVP.
+Один проект использует один LoroDoc.
 
-Персональное состояние:
+Целевая модель:
 
-1. Viewport, zoom, выбранные панели и последний фокус пользователя не входят в ProjectGraph MVP.
-2. Их можно хранить на сервере позже как user preferences, чтобы пользователь возвращался туда, где остановился.
+1. Loro Tree хранит containment: file -> label -> nested label -> label start/scenario node.
+2. Loro Map/List хранит attributes: content, positions, sizes, metadata, diagnostics, cached edges.
+3. UI operation превращается в domain operation.
+4. Domain operation меняет CRDT state.
+5. React Flow подписывается на projection из CRDT state.
+6. WebSocket передает binary CRDT updates.
+7. Сервер на hot path не интерпретирует graph, а ретранслирует updates по комнате.
+8. Сервер сохраняет snapshots и, если дешево, append-only update log.
 
-## 11. Persistence Strategy
+История:
 
-Целевая БД должна хранить не только текст scripts, но и проектное состояние.
+1. Loro имеет технические primitives истории/version/frontiers.
+2. Если их включение дешево, сохраняем как фундамент.
+3. Пользовательский history UI, откаты и сравнение версий - полировка после MVP.
 
-Минимальные сущности MVP:
+## 12. Persistence And Export
 
-- project graph snapshot;
-- optional CRDT update log, если стоимость внедрения мала;
-- source file records;
-- export versions;
-- import provenance;
-- diagnostics/log records для клиента.
+Persistence MVP:
 
-SQLite допустим для локального MVP, но схема не должна мешать PostgreSQL.
+1. Project graph snapshot обязателен.
+2. Update log желателен, если естественно ложится на Loro updates.
+3. Source file records нужны для import provenance.
+4. Diagnostics/log records нужны, чтобы клиент мог показывать проблемы.
+5. SQLite можно оставить для локального MVP, если схема не мешает PostgreSQL.
 
-Политика snapshot/update log:
+Export MVP:
 
-1. Snapshot - обязательный механизм восстановления проекта.
-2. Update log - желателен, особенно если он естественно ложится на Loro updates.
-3. Старые updates можно compact'ить после нового snapshot.
-4. Полный пользовательский edit history не блокирует MVP 2.0.
+1. Экспорт генерирует набор `.rpy` файлов из `ProjectGraph`.
+2. `FileFrame.path` определяет файл назначения.
+3. Labels и statements экспортируются в стабильном нормализованном виде.
+4. Raw/action nodes экспортируются спокойно.
+5. Comments сохраняются в соответствующем block UI и экспортируются.
+6. Пустые строки и точная исходная indent/formatting не являются MVP-гарантией.
+7. Metadata редактора не попадает в `.rpy`.
+8. Export блокируется только high-risk diagnostics, которые явно мешают compile/export safety.
 
-## 12. Export Strategy
+## 13. Diagnostics, Logs And Search
 
-Экспорт должен генерировать обратно набор `.rpy` файлов.
+MVP diagnostics должны помогать, но не превращаться в отдельный продукт.
 
-Правила MVP:
+MVP включает:
 
-1. `FileFrame.path` определяет файл назначения.
-2. Порядок labels/statements определяется flow-layout order там, где он однозначен, и source/order fallback там, где flow не дает ответа.
-3. Raw/default statements экспортируются спокойно.
-4. Comments сохраняются внутри соответствующего editable block и видны пользователю при редактировании этого блока.
-5. Пустые строки и точные исходные отступы не обязаны сохраняться.
-6. Export нормализует форматирование и делает стабильный `.rpy` output.
-7. Metadata редактора не записывается в `.rpy` при экспорте.
-8. Blocking diagnostics для MVP минимальны: по возможности экспортируем с предупреждением, а не блокируем.
-9. Export blocker нужен только когда есть высокий риск создать код, который Ren'Py не сможет скомпилировать или который потеряет смысл.
-10. Экспорт должен иметь semantic roundtrip tests.
+1. Problems/log panel.
+2. Поиск по словам внутри node content.
+3. Переход к найденной ноде.
+4. Warnings для unresolved/dynamic references.
+5. Warnings для raw parent block fallback.
+6. Blocking только для случаев, где нельзя безопасно сохранить/export.
 
-## 13. Метод Разработки
+Не MVP:
 
-Разработка идет waterfall-спринтами. Каждый спринт содержит master items. Каждый master item является законченным TDD-кругом:
+1. Подсветка всех affected frames.
+2. Большой performance diagnostics UI.
+3. Полноценная история редактирования в интерфейсе.
+4. Персональное сохранение viewport/zoom.
 
-1. Описать black-box ожидание.
-2. Написать тесты до реализации.
-3. Убедиться, что тесты падают по ожидаемой причине.
-4. Реализовать минимальный код.
-5. Запустить тесты.
-6. Обновить документацию/decision log.
-7. Закрыть master item.
+## 14. Cleanup And Migration Policy
 
-Внутри master item есть atomic actions. Atomic actions должны быть мелкими, однозначными и проверяемыми по локальному результату. Они могут быть техническими шагами, но не заменяют black-box тест master item.
+Пользователь хочет удалить все, что не пригодится для MVP 2.0. Это правильно, но удаление должно идти после инвентаризации.
 
-Шаблон master item:
+Старый код классифицируется:
+
+1. `keep` - можно использовать напрямую.
+2. `adapt` - полезно, но нужно привести к 2.0.
+3. `replace` - концепт нужен, реализацию лучше переписать.
+4. `delete` - мешает или вводит в заблуждение.
+
+Первый cleanup master item должен зафиксировать классификацию backend, frontend, parser, websocket, storage, tests и fixtures. После этого можно делать focused deletion commits.
+
+## 15. TDD Process
+
+Sprint - крупная waterfall-фаза.
+
+Master item - завершенный TDD-круг внутри sprint:
+
+1. Black-box expectation.
+2. Fixture/test first.
+3. Минимальная implementation.
+4. Test verification.
+5. Update docs/log.
+6. Close.
+
+Atomic actions - мелкие шаги внутри master item. Они помогают выполнить item, но не заменяют тест.
+
+Шаблон:
 
 ```md
-#### Master Item N.M: Название
+#### Master Item N.M: Name
 
-Black-box expectation: ясное внешнее ожидание, проверяемое тестом.
+Black-box expectation: внешнее поведение, проверяемое тестом.
 
 Atomic actions:
 
-1. Маленькое действие с очевидным способом выполнения.
-2. Следующее действие.
-3. Проверка результата.
+1. Действие с ясным результатом.
+2. Действие с ясным результатом.
+3. Проверка.
 ```
 
-## 14. Waterfall Sprints
+## 16. Waterfall Sprints
 
-### Sprint 0. Architecture Freeze
+### Sprint 0. Architecture Freeze And Cleanup Gate
 
-Цель: зафиксировать язык, границы и инварианты 2.0.
-
-Definition of Done:
-
-- принят `ProjectGraph IR`;
-- принят подход label-frame;
-- принят запрет на collapse;
-- принят docs-first процесс;
-- создан parser coverage matrix;
-- определен первый набор master items.
-
-#### Master Item 0.1: Architecture Document
-
-Black-box expectation: в репозитории есть документ, по которому разработчик может понять целевую модель 2.0, TDD-процесс и ограничения холста.
-
-Atomic actions:
-
-1. Создать `docs/editor-2.0-architecture.md`.
-2. Описать цель 2.0.
-3. Описать `ProjectGraph`.
-4. Описать label-frame модель.
-5. Зафиксировать отсутствие collapse.
-6. Зафиксировать docs-first правило.
-7. Описать waterfall sprints.
-8. Описать master item / atomic action workflow.
-9. Закоммитить документ в отдельной ветке.
-
-#### Master Item 0.2: Parser Coverage Matrix
-
-Black-box expectation: есть таблица statements из официального parser'а Ren'Py с решением `first-class`, `raw/default`, `preserved raw block`, `blocking diagnostic`.
-
-Atomic actions:
-
-1. Проверить актуальный Ren'Py release.
-2. Открыть официальный `renpy/parser.py`.
-3. Найти statement handlers.
-4. Выписать initial matrix.
-5. Пометить MVP subset.
-6. Добавить ссылки на официальную документацию.
-7. Создать тестовый список fixtures, которые понадобятся в Sprint 1.
-
-### Sprint 1. ProjectGraph IR And Parser MVP
-
-Цель: получить доменную модель из одного или нескольких файлов без UI.
+Цель: закрепить правила MVP 2.0 и не дать старой базе путать разработку.
 
 Definition of Done:
 
-- parser imports multi-file project;
-- stable IDs не зависят от адресов объектов в памяти;
-- global/local/nested labels представлены как frames;
-- menu prompt и choices представлены отдельно;
-- jump/call извлекаются как relation edges;
-- fixtures покрыты black-box tests.
+- README не содержит старую MVP 1.0 roadmap как источник правды.
+- `AGENTS.md`, `UPDATES.md`, architecture doc существуют.
+- LabelStartNode принят как обязательная нода.
+- Parser/action/raw boundary принят.
+- Есть cleanup inventory перед удалением кода.
 
-#### Master Item 1.1: Stable ID Import
+#### Master Item 0.1: Documentation Pillars
 
-Black-box expectation: один и тот же входной проект при двух импортах создает одинаковые deterministic IDs для импортированных сущностей.
-
-Atomic actions:
-
-1. Написать fixture с одним файлом и двумя labels.
-2. Написать тест двойного импорта.
-3. Убедиться, что текущая реализация с `id(node)` тест проваливает.
-4. Спроектировать deterministic ID format.
-5. Реализовать ID builder.
-6. Подключить ID builder в parser serialization.
-7. Проверить тест.
-
-#### Master Item 1.2: Multi-file Project Import
-
-Black-box expectation: два `.rpy` файла импортируются в один `ProjectGraph` с двумя `FileFrame`.
+Black-box expectation: новый агент может открыть repo и понять, какие документы являются источником истины.
 
 Atomic actions:
 
-1. Создать fixture `script_a.rpy`.
-2. Создать fixture `script_b.rpy`.
-3. Написать black-box тест на количество files и labels.
-4. Добавить import service для списка файлов.
-5. Сохранить file path/order в IR.
-6. Проверить тест.
+1. Создать/заменить `AGENTS.md`.
+2. Создать `UPDATES.md`.
+3. Заменить старую README roadmap на указатель к новым документам.
+4. Обновить architecture doc по последним решениям.
+5. Проверить список tracked `.md`.
+6. Закоммитить изменения.
 
-#### Master Item 1.3: Label Frames
+#### Master Item 0.2: MVP 1.0 Inventory
 
-Black-box expectation: global, local и nested labels импортируются как `LabelFrame` с корректными `scope`, `parentLabelId` и `qualifiedName`.
-
-Atomic actions:
-
-1. Создать fixture с global label.
-2. Добавить local label `.local`.
-3. Добавить nested label внутри label/block.
-4. Написать тест ожидаемых frames.
-5. Реализовать label scope detection.
-6. Реализовать parent label tracking.
-7. Проверить тест.
-
-#### Master Item 1.4: Menu Prompt And Choices
-
-Black-box expectation: menu text, choice text и statements внутри choice представлены разными IR-узлами.
+Black-box expectation: перед удалением есть таблица `keep/adapt/replace/delete` по текущему коду и тестам.
 
 Atomic actions:
 
-1. Создать fixture с `menu:` и prompt text.
-2. Добавить несколько choices.
-3. Добавить choice condition.
-4. Написать тест структуры меню.
-5. Расширить parser.
-6. Проверить тест.
+1. Просмотреть backend modules.
+2. Просмотреть frontend modules.
+3. Просмотреть parser and flow transformer.
+4. Просмотреть websocket/collab code.
+5. Просмотреть tests and fixtures.
+6. Записать классификацию в `UPDATES.md` или migration note.
+7. Удалять только файлы, помеченные `delete`.
 
-#### Master Item 1.5: Jump/Call Relations
+#### Master Item 0.3: Parser Coverage Matrix
 
-Black-box expectation: `jump` и `call` создают `RelationEdge`, не меняя tree hierarchy.
+Black-box expectation: есть matrix Ren'Py statements с решением `first-class`, `action/raw`, `raw_block`, `blocking`.
 
 Atomic actions:
 
-1. Создать fixture с `jump target`.
-2. Создать fixture с `call target`.
-3. Добавить local label target.
-4. Добавить unresolved target.
-5. Написать тест relation edges и diagnostics.
-6. Реализовать relation extraction.
-7. Проверить тест.
+1. Проверить актуальные Ren'Py docs.
+2. Проверить официальный `renpy/parser.py`.
+3. Выписать statement categories.
+4. Отметить MVP subset.
+5. Отметить post-MVP subset.
+6. Добавить ссылки на docs.
+7. Связать matrix с будущими fixtures про мышонка Ренпи.
 
-### Sprint 2. Label Resolver And Diagnostics
+### Sprint 1. Fixtures And Parser MVP
 
-Цель: надежно разрешать связи на уровне проекта.
+Цель: получить `ProjectGraph` из multi-file `.rpy` проекта без UI.
 
 Definition of Done:
 
-- global labels ищутся по всему проекту;
-- local labels резолвятся относительно owning global label;
-- duplicates диагностируются;
-- unresolved/dynamic targets диагностируются;
-- relation layer отделен от tree layer.
+- Есть fixture corpus про мышонка Ренпи.
+- Multi-file import создает один `ProjectGraph`.
+- Labels превращаются в frames и start nodes.
+- Menu prompt text поддержан.
+- Unknown/action statements сохраняются.
+- IDs стабильны после импорта и сохранения.
 
-#### Master Item 2.1: Global Resolver
+#### Master Item 1.1: Mouse RenPy Fixture Corpus
 
-Black-box expectation: `jump label_in_other_file` резолвится к label-frame другого файла.
+Black-box expectation: тестовый проект содержит multi-file историю про мышонка Ренпи и покрывает MVP parser invariants.
 
 Atomic actions:
 
-1. Создать multi-file fixture.
-2. Написать тест cross-file jump.
-3. Реализовать project label index.
-4. Реализовать relation target resolution.
-5. Проверить тест.
+1. Создать fixture file for day one.
+2. Создать fixture file for day two.
+3. Добавить global labels.
+4. Добавить local/nested labels.
+5. Добавить menus with prompt text and conditions.
+6. Добавить if/elif/else.
+7. Добавить jump/call/return.
+8. Добавить comments/action/raw blocks.
+9. Добавить duplicate/unresolved/dynamic reference fixtures для diagnostics.
+
+#### Master Item 1.2: Multi-file Import
+
+Black-box expectation: список `.rpy` файлов импортируется в один `ProjectGraph` с несколькими `FileFrame`.
+
+Atomic actions:
+
+1. Написать black-box test на fixture corpus.
+2. Найти текущую MVP 1.0 загрузку нескольких файлов.
+3. Решить `adapt` или `replace`.
+4. Реализовать project import service.
+5. Сохранить file path/order.
+6. Проверить test.
+
+#### Master Item 1.3: Persistent Generated IDs
+
+Black-box expectation: после import -> snapshot -> load -> edit IDs тех же сущностей не меняются.
+
+Atomic actions:
+
+1. Написать test на сохранение IDs после load.
+2. Написать test на сохранение IDs после content edit.
+3. Убрать ID на основе runtime object identity.
+4. Генерировать UUID при создании сущности.
+5. Сохранять UUID в ProjectGraph/CRDT payload.
+6. Проверить tests.
+
+#### Master Item 1.4: Label Frames And LabelStartNode
+
+Black-box expectation: global/local/nested labels импортируются как `LabelFrame`, и каждый имеет `LabelStartNode`.
+
+Atomic actions:
+
+1. Написать test на global label frame.
+2. Написать test на local label frame.
+3. Написать test на nested label frame.
+4. Написать test на ровно один start node per label.
+5. Реализовать scope/parent tracking.
+6. Проверить tests.
+
+#### Master Item 1.5: Menu Semantics
+
+Black-box expectation: menu prompt text, choice text, choice condition и statements внутри choice представлены отдельно.
+
+Atomic actions:
+
+1. Написать fixture menu with prompt text.
+2. Написать fixture choices with conditions.
+3. Написать black-box parser test.
+4. Реализовать menu parser mapping.
+5. Проверить tests.
+
+#### Master Item 1.6: Action And Raw Preservation
+
+Black-box expectation: `show`, `scene`, effects, python/action lines and unknown safe blocks становятся action/raw nodes и экспортируются без потери текста.
+
+Atomic actions:
+
+1. Добавить action/raw examples в mouse fixture.
+2. Написать parser test.
+3. Написать export preservation test stub or expectation.
+4. Реализовать action/raw mapper.
+5. Проверить tests.
+
+### Sprint 2. Resolver And Diagnostics
+
+Цель: надежно разрешать `jump/call` на уровне проекта.
+
+Definition of Done:
+
+- Global labels ищутся по проекту.
+- Local labels резолвятся в своем scope.
+- Cross-file jumps работают.
+- Edges target `LabelStartNode`.
+- Dynamic/unresolved references диагностируются.
+
+#### Master Item 2.1: Global And Cross-file Resolver
+
+Black-box expectation: `jump label_in_other_file` создает resolved edge к `LabelStartNode` другого файла.
+
+Atomic actions:
+
+1. Написать cross-file fixture.
+2. Написать resolver test.
+3. Создать project label index.
+4. Resolve target to LabelStartNode.
+5. Проверить test.
 
 #### Master Item 2.2: Local Resolver
 
-Black-box expectation: `jump .local` резолвится к local label внутри текущего global scope.
+Black-box expectation: `jump .local` резолвится внутри owning global label, даже если другое `.local` есть в соседнем label.
 
 Atomic actions:
 
-1. Создать fixture с global label и `.local`.
-2. Добавить второй global label с `.local` того же имени.
-3. Написать тест scope isolation.
-4. Реализовать local scope index.
-5. Проверить тест.
+1. Добавить два global labels с одинаковыми local names.
+2. Написать scope isolation test.
+3. Реализовать local index.
+4. Resolve local target to LabelStartNode.
+5. Проверить test.
 
-#### Master Item 2.3: Resolver Diagnostics
+#### Master Item 2.3: Diagnostics MVP
 
-Black-box expectation: duplicate global labels, unresolved targets и dynamic targets возвращаются как diagnostics.
+Black-box expectation: duplicate labels, unresolved targets and dynamic targets попадают в diagnostics/log, но безопасные raw/action nodes не блокируют graph.
 
 Atomic actions:
 
-1. Создать duplicate labels fixture.
-2. Создать missing target fixture.
-3. Создать dynamic jump/call fixture.
-4. Написать тест diagnostics.
+1. Написать duplicate label test.
+2. Написать unresolved target test.
+3. Написать dynamic target test.
+4. Написать safe raw/action non-error test.
 5. Реализовать diagnostic builder.
-6. Проверить тест.
+6. Проверить tests.
 
 ### Sprint 3. Export Roundtrip
 
-Цель: научиться возвращать `ProjectGraph` в `.rpy` файлы.
+Цель: генерировать `.rpy` из `ProjectGraph`.
 
 Definition of Done:
 
-- import -> export -> import дает semantic equivalence для MVP subset;
-- файл назначения сохраняется;
-- unknown preserved statements не теряются;
-- blocking diagnostics останавливают export.
+- Import -> export -> import сохраняет семантику MVP subset.
+- Multi-file destinations сохраняются.
+- Raw/action content не теряется.
+- Editor metadata не попадает в `.rpy`.
 
-#### Master Item 3.1: Single-file Export
+#### Master Item 3.1: Single-file Roundtrip
 
-Black-box expectation: простой файл импортируется и экспортируется без потери семантики.
+Black-box expectation: простой file fixture roundtrip сохраняет labels, nodes, comments, action/raw text.
 
 Atomic actions:
 
-1. Создать simple fixture.
-2. Написать semantic roundtrip test.
-3. Реализовать statement renderer.
+1. Написать semantic equivalence test.
+2. Реализовать node renderer.
+3. Реализовать label renderer.
 4. Реализовать file renderer.
-5. Проверить тест.
+5. Проверить test.
 
-#### Master Item 3.2: Multi-file Export
+#### Master Item 3.2: Multi-file Roundtrip
 
-Black-box expectation: nodes возвращаются в исходные файлы по `FileFrame.path`.
+Black-box expectation: nodes экспортируются в файлы по `FileFrame.path`.
 
 Atomic actions:
 
-1. Создать multi-file fixture.
-2. Написать roundtrip test.
-3. Реализовать per-file grouping.
-4. Реализовать deterministic output ordering.
-5. Проверить тест.
+1. Написать multi-file export test.
+2. Реализовать per-file grouping.
+3. Реализовать stable normalized ordering.
+4. Убедиться, что metadata не экспортируется.
+5. Проверить test.
 
-### Sprint 4. React Flow Projection
+### Sprint 4. React Flow Projection And Layout
 
-Цель: показать `ProjectGraph` на холсте без collapse.
+Цель: показать весь `ProjectGraph` на холсте без collapse.
 
 Definition of Done:
 
-- file frames, label frames и statements отображаются;
-- nested label frames отображаются как frame inside frame;
-- sibling frames не пересекаются;
-- relation overlay отделен от tree edges;
-- связи между labels/нелокальными переходами идут только между React Flow nodes;
-- layout использует flow-связи как главный источник расположения;
-- поведение согласовано с официальной документацией React Flow.
+- File frames, label frames, LabelStartNode and scenario nodes отображаются.
+- Parent-child containment не теряется.
+- Sibling frames не пересекаются.
+- Edges только node-to-node.
+- Layout flow-first.
 
-#### Master Item 4.1: Static Frame Projection
+#### Master Item 4.1: Static Projection
 
-Black-box expectation: `ProjectGraph` с двумя файлами и nested labels превращается в React Flow nodes с parent-child relations.
+Black-box expectation: `ProjectGraph` превращается в React Flow nodes/edges with correct parent-child ids.
 
 Atomic actions:
 
-1. Проверить актуальную документацию React Flow по sub-flows.
+1. Проверить React Flow sub-flow docs.
 2. Написать projection unit test.
-3. Создать `projectGraphToFlow` adapter.
-4. Реализовать file frame nodes.
-5. Реализовать label frame nodes.
-6. Реализовать statement nodes.
-7. Реализовать direct relation edge to label-frame node.
-8. Проверить тест.
+3. Реализовать FileFrame nodes.
+4. Реализовать LabelFrame group nodes.
+5. Реализовать LabelStartNode nodes.
+6. Реализовать ScenarioNode nodes.
+7. Реализовать FlowEdge projection.
+8. Проверить test.
 
-#### Master Item 4.2: Flow-first Layout Without Collapse
+#### Master Item 4.2: Flow-first Layout
 
-Black-box expectation: layout генерирует непересекающиеся sibling frames, корректные bounds parent frame и располагает файлы/labels по flow-связям, а не только по source order.
+Black-box expectation: layout располагает files/labels/nodes по flow-связям, не пересекает siblings и не использует collapse.
 
 Atomic actions:
 
-1. Проверить официальную документацию React Flow по layouting.
-2. Учесть официальный риск Dagre для sub-flows со связями наружу.
+1. Проверить React Flow layout docs.
+2. Проверить Dagre limitations for sub-flows.
 3. Написать layout invariant tests.
-4. Сначала реализовать простой MVP layout: statements inside labels, labels inside files, files on canvas.
-5. Использовать flow-связи как главный ordering signal.
-6. Использовать source order только как fallback.
-7. Сохранять manual positions после пользовательского drag.
-8. Не перетирать manual positions автоматическим relayout без явной команды пользователя.
-9. Проверить тест.
+4. Реализовать simple hybrid layout.
+5. Добавить source order fallback.
+6. Сохранить manual positions after drag.
+7. Проверить tests.
 
-#### Master Item 4.3: Relation Overlay
+#### Master Item 4.3: Search And Problems Panel
 
-Black-box expectation: jump/call relation edges отображаются отдельно от tree edges и ведут к target label-frame node.
+Black-box expectation: пользователь ищет текст и переходит к найденной ноде; diagnostics доступны в log panel.
 
 Atomic actions:
 
-1. Написать projection test для jump/call.
-2. Добавить handles на label-frame node, если они нужны React Flow routing.
-3. Реализовать dashed/faded edge style.
-4. Реализовать unresolved relation visual как warning/log, без блокировки холста.
-5. Проверить тест.
+1. Написать search test over ProjectGraph.
+2. Реализовать node text index.
+3. Реализовать navigation target.
+4. Реализовать problems/log projection.
+5. Проверить tests.
 
 ### Sprint 5. Loro CRDT Adapter
 
-Цель: хранить `ProjectGraph` в CRDT и получать convergence.
+Цель: хранить ProjectGraph в Loro и получать convergence.
 
 Definition of Done:
 
-- два клиента сходятся после независимых операций;
-- hierarchy changes не создают циклы;
-- relation/metadata/positions синхронизируются;
-- adapter покрыт tests без UI.
+- Snapshot roundtrip работает.
+- Два клиента сходятся после обмена updates.
+- Containment operations не теряют вложенность.
+- Positions/content/metadata синхронизируются.
 
-#### Master Item 5.1: Loro Container Proof
+#### Master Item 5.1: Loro Storage Proof
 
-Black-box expectation: минимальный `ProjectGraph` сохраняется в LoroDoc, экспортируется, импортируется и восстанавливается.
+Black-box expectation: minimal ProjectGraph сохраняется в LoroDoc and restores back equal by semantics and IDs.
 
 Atomic actions:
 
-1. Проверить официальную документацию Loro Tree.
-2. Проверить официальную документацию Loro encoding.
+1. Проверить Loro Tree docs.
+2. Проверить Loro encoding docs.
 3. Написать snapshot roundtrip test.
-4. Реализовать minimal Loro adapter.
-5. Проверить тест.
+4. Реализовать minimal adapter.
+5. Проверить test.
 
 #### Master Item 5.2: CRDT Convergence
 
-Black-box expectation: две независимые копии документа после обмена updates сходятся к одинаковому `ProjectGraph`.
+Black-box expectation: две копии после независимых edits and update exchange converge to same ProjectGraph.
 
 Atomic actions:
 
-1. Написать тест с двумя LoroDoc.
-2. Смоделировать edit metadata на клиенте A.
-3. Смоделировать move/order на клиенте B.
-4. Обменять updates.
-5. Реализовать missing adapter operations.
-6. Проверить тест.
+1. Написать two-doc convergence test.
+2. Изменить content на client A.
+3. Переместить node/frame на client B.
+4. Обменять binary updates.
+5. Реализовать missing operations.
+6. Проверить test.
 
 ### Sprint 6. WebSocket Relay And Persistence
 
-Цель: заменить JSON structure updates бинарными CRDT updates.
+Цель: заменить JSON structure updates binary CRDT relay.
 
 Definition of Done:
 
-- WebSocket route принимает binary update;
-- server не интерпретирует update на hot path;
-- остальные клиенты получают update;
-- snapshot сохраняется и загружается;
-- tests покрывают relay и persistence.
+- WebSocket принимает binary updates.
+- Server routes by project room.
+- Presence/log messages отделены от CRDT updates.
+- Snapshot save/load работает.
 
 #### Master Item 6.1: Binary Relay
 
-Black-box expectation: update, отправленный клиентом A, доставляется клиенту B без JSON-transform.
+Black-box expectation: update from client A reaches client B byte-for-byte enough for CRDT merge.
 
 Atomic actions:
 
-1. Написать WebSocket integration test.
+1. Написать websocket integration test.
 2. Добавить binary receive path.
-3. Добавить room broadcast bytes.
-4. Сохранить presence messages отдельно от CRDT channel.
-5. Проверить тест.
+3. Broadcast bytes to room.
+4. Keep presence as separate channel/message type.
+5. Проверить test.
 
 #### Master Item 6.2: Snapshot Persistence
 
-Black-box expectation: после сохранения snapshot новый клиент открывает проект с тем же `ProjectGraph`.
+Black-box expectation: after snapshot save, new client opens same ProjectGraph with same IDs.
 
 Atomic actions:
 
 1. Спроектировать DB migration.
 2. Написать persistence test.
-3. Добавить snapshot table.
+3. Добавить snapshot table/model.
 4. Добавить save/load service.
-5. Проверить тест.
+5. Проверить test.
 
 ### Sprint 7. Editor Migration
 
-Цель: перевести UI на `ProjectGraph` projection и CRDT operations.
+Цель: перевести UI на ProjectGraph/CRDT without old line-range source of truth.
 
 Definition of Done:
 
-- старый line-range editing больше не является live source of truth;
-- React Flow events становятся domain operations;
-- node editor пишет в CRDT;
-- export работает из `ProjectGraph`;
-- collaborative editing проходит end-to-end tests.
+- UI открывает project graph snapshot.
+- Node editor writes domain operations.
+- React Flow drag writes positions to CRDT.
+- Collaboration end-to-end работает.
+- Export uses ProjectGraph.
 
-#### Master Item 7.1: Read-only ProjectGraph Canvas
+#### Master Item 7.1: Read-only Canvas 2.0
 
-Black-box expectation: UI открывает проектный graph snapshot и отображает весь холст 2.0.
+Black-box expectation: UI opens project graph and renders one full canvas with files, labels and nodes.
 
 Atomic actions:
 
-1. Добавить route/load path для graph snapshot.
-2. Подключить projection adapter.
-3. Отрисовать file/label frames.
-4. Отрисовать relation overlay.
-5. Добавить smoke test.
+1. Add load route for ProjectGraph snapshot.
+2. Connect projection adapter.
+3. Render frames and nodes.
+4. Render node-to-node edges.
+5. Add smoke test.
 
-#### Master Item 7.2: Editable ProjectGraph Canvas
+#### Master Item 7.2: Editable Collaborative Canvas
 
-Black-box expectation: изменение node content в UI меняет `ProjectGraph`, синхронизируется через CRDT и сохраняется.
+Black-box expectation: content edit or drag changes CRDT state, appears on second client and survives reload.
 
 Atomic actions:
 
 1. Написать UI/domain operation test.
-2. Подключить node editor к domain operation.
-3. Преобразовать operation в Loro update.
-4. Проверить второй клиент.
-5. Проверить persistence.
+2. Connect node editor to domain operation.
+3. Connect drag to position operation.
+4. Convert operations to Loro updates.
+5. Verify second client.
+6. Verify persistence.
 
-## 15. Decision Log
+## 17. Decision Log
+
+### 2026-05-01
+
+1. `LabelStartNode` обязателен. Это видимая мастер-нода начала label.
+2. `jump/call` target is `LabelStartNode`, not `LabelFrame`.
+3. Edges only between nodes.
+4. `LabelFrame` is a frame/container, not runtime endpoint.
+5. ID determinism across independent imports is not MVP requirement. Stable persisted IDs after import are required.
+6. Parser MVP must be high quality: safe unknown/action statements become action/raw nodes, not graph errors.
+7. Presentation/effect statements that do not create narrative branches are action/raw nodes.
+8. Test fixtures must tell a story about a mouse named RenPy and cover MVP invariants.
+9. Old MVP 1.0 README roadmap replaced with pointers to MVP 2.0 artifacts.
+10. Broad code deletion requires inventory first.
 
 ### 2026-04-30
 
-1. Label должен быть визуальным frame, а не обычной карточкой.
-2. Global и local labels могут быть frame'ами на холсте.
-3. Вложенные labels отображаются frame inside frame.
-4. Sibling frames не должны пересекаться.
-5. `jump` / `call` отображаются как relation overlay и layout constraints, но не как containment hierarchy.
-6. Relation edge может идти напрямую к label-frame node; отдельная visible `LabelEntryNode` не нужна для MVP.
-7. Холст 2.0 не использует collapse/fold.
-8. Связи на холсте идут только между React Flow nodes.
-9. Layout должен быть flow-first: source order является fallback.
-10. Ноды и фреймы можно двигать; позиции сохраняются и синхронизируются.
-11. Viewport/zoom персональные и не входят в MVP 2.0.
-12. Один проект использует один LoroDoc.
-13. Текст нод хранится как plain text.
-14. Relation edges derived from content, но могут кэшироваться.
-15. Loro history/time travel считаем техническим фундаментом; полноценный history UI - полировка после MVP.
-16. Обычные непонятые Ren'Py-строки внутри label становятся `raw_statement`, а не проблемой.
-17. Comments сохраняются и видны при редактировании блока.
-18. Пустые строки и точное исходное форматирование не сохраняются как обязательство MVP.
-19. Metadata редактора не экспортируется в `.rpy`.
-20. Стабильный нормализованный export важнее похожести на исходный файл.
-21. Разработка идет через waterfall sprints.
-22. Каждый master item является завершенным TDD-кругом.
-23. Atomic actions живут внутри master item и должны быть маленькими и однозначными.
-24. Официальная документация React Flow, Loro и Ren'Py обязательна перед реализацией.
+1. One project uses one large canvas.
+2. One project uses one LoroDoc.
+3. File frames and label frames are visual anchors.
+4. Nested labels are frames inside frames.
+5. No collapse/fold in MVP 2.0.
+6. Layout is flow-first; source order is fallback.
+7. Viewport/zoom are personal and not part of MVP ProjectGraph.
+8. Comments are preserved and visible in related block UI.
+9. Stable normalized export is more important than exact source formatting.
+10. Official docs are mandatory before implementation decisions.
 
-## 16. Remaining Questions
+## 18. Open Questions That Do Not Block MVP
 
-Эти вопросы не блокируют MVP 2.0, но должны быть закрыты по мере разработки master items.
-
-1. Exact Loro container layout: подтвердить через proof-of-concept, что Tree + Map/List структура удобна для ProjectGraph.
-2. Update log scope: включить, если он естественно ложится на Loro updates; полноценный user-facing history оставить после MVP.
-3. Layout engine: начать с простого flow-first hybrid, но после первых tests решить, нужен ли ELK вместо Dagre из-за nested frames и внешних связей.
-4. Diagnostics UX: для MVP сделать problems/log panel, search и переход к найденной ноде; подсветку фреймов оставить позже.
-5. Export blockers: для MVP блокировать только высокорисковые случаи, которые явно мешают Ren'Py compile/export safety.
-6. Raw block fallback: если parser понимает, что внутри сложного parent block структура ломается, сохранить весь parent block as raw и экспортировать с предупреждением.
-7. User viewport persistence: хранить персональный viewport/zoom на сервере после MVP как UX-полировку.
+1. Exact Loro container layout: confirm Tree + Map/List through Sprint 5 proof.
+2. Layout engine: start hybrid; switch to ELK if React Flow/Dagre limitations make nested frames unreliable.
+3. User-facing history UI: postpone unless Loro primitives make a tiny version almost free.
+4. Personal viewport persistence: store later as user preference.
+5. Rich diagnostics UX: postpone frame highlighting and large-project performance UI.
