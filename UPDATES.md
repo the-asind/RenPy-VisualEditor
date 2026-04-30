@@ -52,7 +52,19 @@ Result:
 3. Local ignored `.notes/`, `reactflow-DOCS/`, pytest caches, and debug databases are classified as `delete` when deletion is permitted by the environment.
 4. No tracked code should be deleted before its replacement exists and tests pass.
 
-Next sprint gate: Master Item 0.3 parser coverage matrix from official Ren'Py docs/parser before Sprint 1 parser implementation.
+
+
+### Sprint 0 / Master Item 0.3 Parser Coverage Matrix
+
+Created `docs/parser-coverage-matrix.md` after checking official Ren'Py 8.5.3 docs and the official `renpy/parser.py` source.
+
+Result:
+
+1. MVP first-class parser scope is file, label, local/nested label, `LabelStartNode`, dialogue, menu/prompt/choice/choice condition, if/elif/else, jump, call, return, and comments.
+2. Presentation and implementation statements like `scene`, `show`, `hide`, `with`, `image`, audio, one-line Python, and Python blocks are action/raw/raw_block unless they create graph-relevant structure.
+3. Dynamic jump/call and unresolved targets are non-blocking diagnostics.
+4. Blocking diagnostics are limited to cases where containment or safe export cannot be preserved.
+5. Sprint 1 should begin with the mouse RenPy fixture corpus and ProjectGraph black-box parser tests.
 
 ## 2026-04-30
 
