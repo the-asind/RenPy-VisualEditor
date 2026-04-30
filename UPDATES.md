@@ -306,6 +306,19 @@ Result:
 3. Re-importing exported files preserves label names, node type counts, and resolved jump/call edge destinations.
 4. Cross-file and scoped local destinations survive normalized export and re-import.
 5. Tests passed: `python -m pytest backend\tests\test_project_graph_exporter.py backend\tests\test_project_graph_sprint_1_2_blackbox.py backend\tests\test_project_graph_diagnostics.py backend\tests\test_project_graph_resolver.py backend\tests\test_project_graph_conditionals.py backend\tests\test_project_graph_actions.py backend\tests\test_project_graph_menus.py backend\tests\test_project_graph_labels.py backend\tests\test_project_graph_importer.py backend\tests\test_project_graph_ids.py backend\tests\test_mouse_renpy_fixtures.py`.
+### Sprint 3 / Master Item 3.3 Raw Preservation And Metadata Exclusion
+
+Added export coverage for raw/action/comment preservation and editor metadata exclusion.
+
+Files:
+
+1. `backend/tests/test_project_graph_exporter.py`
+
+Result:
+
+1. Export preserves comments, dialogue, scene/show/play/with action lines, Python raw blocks, ATL-like raw blocks, and unsupported while raw blocks.
+2. Exported `.rpy` text does not include ProjectGraph editor metadata such as IDs, visuals, source spans, resolver edge metadata, or diagnostics codes.
+3. Tests passed: `python -m pytest backend\tests\test_project_graph_exporter.py backend\tests\test_project_graph_sprint_1_2_blackbox.py backend\tests\test_project_graph_diagnostics.py backend\tests\test_project_graph_resolver.py backend\tests\test_project_graph_conditionals.py backend\tests\test_project_graph_actions.py backend\tests\test_project_graph_menus.py backend\tests\test_project_graph_labels.py backend\tests\test_project_graph_importer.py backend\tests\test_project_graph_ids.py backend\tests\test_mouse_renpy_fixtures.py`.
 ## 2026-04-30
 
 ### Branch And Initial Architecture

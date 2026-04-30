@@ -129,3 +129,42 @@ def test_multi_file_roundtrip_exports_each_file_by_file_frame_path(tmp_path):
     )
     assert Counter(node.type for node in roundtripped.nodes) == Counter(node.type for node in graph.nodes)
     assert edge_contract(roundtripped) == edge_contract(graph)
+
+def test_export_preserves_raw_action_comment_text_and_excludes_editor_metadata():
+    graph = import_mouse_project(
+        [
+            FIXTURE_DIR / "renpy_mouse_day_1.rpy",
+            FIXTURE_DIR / "renpy_mouse_day_2.rpy",
+            FIXTURE_DIR / "renpy_mouse_diagnostics.rpy",
+        ]
+    )
+    exported = ProjectGraphExporter().export(graph)
+    combined = "\n".join(exported.values())
+
+    assert "# RenPy wakes up under the keyboard." in combined
+    assert "scene kitchen morning" in combined
+    assert "show renpy curious at left with dissolve" in combined
+    assert "play music \"tiny_footsteps.ogg\" fadein 1.0" in combined
+    assert "with dissolve" in combined
+    assert "python:" in combined
+    assert "renpy_note = \"raw python block survives the graph\"" in combined
+    assert "while crumb_count < 3:" in combined
+    assert "Loop crumbs are preserved as a raw block for MVP." in combined
+
+    forbidden_fragments = [
+        "raw_block_type",
+        "choice_text",
+        "resolved_qualified_name",
+        "target_label_id",
+        "duplicate_global_label",
+        "unresolved_target",
+        "dynamic_target",
+        "unsupported_raw_block",
+        "source_span",
+        "parent_node_id",
+        "label_start_node_id",
+        "FramePosition",
+        "FrameVisual",
+    ]
+    for fragment in forbidden_fragments:
+        assert fragment not in combined
