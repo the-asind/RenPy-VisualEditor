@@ -319,6 +319,20 @@ Result:
 1. Export preserves comments, dialogue, scene/show/play/with action lines, Python raw blocks, ATL-like raw blocks, and unsupported while raw blocks.
 2. Exported `.rpy` text does not include ProjectGraph editor metadata such as IDs, visuals, source spans, resolver edge metadata, or diagnostics codes.
 3. Tests passed: `python -m pytest backend\tests\test_project_graph_exporter.py backend\tests\test_project_graph_sprint_1_2_blackbox.py backend\tests\test_project_graph_diagnostics.py backend\tests\test_project_graph_resolver.py backend\tests\test_project_graph_conditionals.py backend\tests\test_project_graph_actions.py backend\tests\test_project_graph_menus.py backend\tests\test_project_graph_labels.py backend\tests\test_project_graph_importer.py backend\tests\test_project_graph_ids.py backend\tests\test_mouse_renpy_fixtures.py`.
+### Sprint 3 / Master Item 3.4 Full Export Roundtrip Contract
+
+Added the full Sprint 3 black-box export contract over the complete mouse RenPy corpus.
+
+Files:
+
+1. `backend/tests/test_project_graph_export_roundtrip_contract.py`
+
+Result:
+
+1. The test imports, resolves, exports, re-imports, and re-resolves all three fixture files.
+2. It verifies stable file paths, label multiset, node type counts, node content, resolved edge destinations, diagnostics semantics, and metadata exclusion.
+3. Diagnostic comparison ignores runtime-generated UUIDs and checks user-visible semantics instead.
+4. Tests passed: `python -m pytest backend\tests\test_project_graph_export_roundtrip_contract.py backend\tests\test_project_graph_exporter.py backend\tests\test_project_graph_sprint_1_2_blackbox.py backend\tests\test_project_graph_diagnostics.py backend\tests\test_project_graph_resolver.py backend\tests\test_project_graph_conditionals.py backend\tests\test_project_graph_actions.py backend\tests\test_project_graph_menus.py backend\tests\test_project_graph_labels.py backend\tests\test_project_graph_importer.py backend\tests\test_project_graph_ids.py backend\tests\test_mouse_renpy_fixtures.py`.
 ## 2026-04-30
 
 ### Branch And Initial Architecture
