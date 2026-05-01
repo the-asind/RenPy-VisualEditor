@@ -148,6 +148,7 @@ class DatabaseService:
                         
                     logger.info(f"Found existing database with tables: {', '.join(tables)}")
                     if tables:  # If tables exist, we don't need to initialize again
+                        self._ensure_project_crdt_schema()
                         return
                 except Exception as e:
                     logger.warning(f"Error checking existing database: {e}")
@@ -223,6 +224,23 @@ class DatabaseService:
         except Exception as e:
             logger.error(f"Database initialization failed: {str(e)}")
             raise
+
+    def _ensure_project_crdt_schema(self):
+        """Ensure MVP 2.0 ProjectGraph CRDT persistence tables exist."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("PRAGMA foreign_keys = ON")
+            conn.execute(
+                '''
+                CREATE TABLE IF NOT EXISTS project_crdt_snapshots (
+                    project_id TEXT PRIMARY KEY,
+                    snapshot BLOB NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+                )
+                '''
+            )
+            conn.commit()
     
     def _get_connection(self):
         """Get a new database connection with proper settings."""
@@ -662,6 +680,40 @@ class DatabaseService:
         except sqlite3.Error as e:
             logger.error(f"Error fetching project details for project_id {project_id}: {e}", exc_info=True)
             return None
+
+    def save_project_crdt_snapshot(self, project_id: str, snapshot: bytes) -> None:
+        """Persist the latest opaque binary ProjectGraph CRDT snapshot for a project."""
+        try:
+            with self._get_connection() as conn:
+                conn.execute(
+                    '''
+                    INSERT INTO project_crdt_snapshots (project_id, snapshot)
+                    VALUES (?, ?)
+                    ON CONFLICT(project_id) DO UPDATE SET
+                        snapshot = excluded.snapshot,
+                        updated_at = CURRENT_TIMESTAMP
+                    ''',
+                    (project_id, sqlite3.Binary(snapshot))
+                )
+        except Exception as e:
+            logger.error(f"Failed to save ProjectGraph CRDT snapshot: {str(e)}")
+            raise
+
+    def get_project_crdt_snapshot(self, project_id: str) -> Optional[bytes]:
+        """Load the latest opaque binary ProjectGraph CRDT snapshot for a project."""
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.execute(
+                    'SELECT snapshot FROM project_crdt_snapshots WHERE project_id = ?',
+                    (project_id,)
+                )
+                row = cursor.fetchone()
+                if not row:
+                    return None
+                return bytes(row["snapshot"])
+        except Exception as e:
+            logger.error(f"Failed to load ProjectGraph CRDT snapshot: {str(e)}")
+            raise
 
     def delete_project(self, project_id: str) -> bool:
         """

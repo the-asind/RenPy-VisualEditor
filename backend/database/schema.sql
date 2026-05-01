@@ -98,6 +98,15 @@ CREATE TABLE IF NOT EXISTS node_locks (
     UNIQUE(node_id, session_id)
 );
 
+-- ProjectGraph CRDT snapshots
+CREATE TABLE IF NOT EXISTS project_crdt_snapshots (
+    project_id TEXT PRIMARY KEY,
+    snapshot BLOB NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+
 -- Indices for common queries
 CREATE INDEX IF NOT EXISTS idx_scripts_project ON scripts(project_id);
 CREATE INDEX IF NOT EXISTS idx_versions_script ON versions(script_id);

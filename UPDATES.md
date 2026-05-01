@@ -509,6 +509,25 @@ Result:
 4. Presence and log-style messages stay on the existing JSON text channel.
 5. The project WebSocket route now uses mixed-frame receive handling so binary frames are not parsed as JSON.
 6. Tests passed: `python -m pytest backend\tests\test_websocket.py -q`.
+
+### Sprint 6 / Master Item 6.2 Snapshot Persistence
+
+Added backend persistence for opaque ProjectGraph CRDT snapshots.
+
+Files:
+
+1. `backend/database/schema.sql`
+2. `backend/app/services/database.py`
+3. `backend/tests/test_project_graph_crdt_persistence.py`
+
+Result:
+
+1. Added `project_crdt_snapshots` table keyed by `project_id`.
+2. Added `save_project_crdt_snapshot()` and `get_project_crdt_snapshot()` to `DatabaseService`.
+3. Snapshot storage treats Loro/CRDT state as opaque binary data and does not interpret graph semantics on the server hot path.
+4. Saving a later snapshot overwrites the latest project snapshot.
+5. Database initialization now migrates existing SQLite databases that already had old MVP 1.0 tables but were missing the CRDT snapshot table.
+6. Tests passed: `python -m pytest backend\tests\test_project_graph_crdt_persistence.py backend\tests\test_websocket.py backend\tests\test_database_service.py -q`.
 ## 2026-04-30
 
 ### Branch And Initial Architecture
