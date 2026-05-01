@@ -382,6 +382,33 @@ class ConnectionManager:
             await websocket.send_text(json.dumps(message))
         except Exception as e:
             logger.error(f"Error sending personal message: {str(e)}")
+
+    async def handle_project_crdt_update(self, websocket: WebSocket, project_id: str, update: bytes):
+        """Relay an opaque binary CRDT update to peers in the same project room."""
+        await self.broadcast_project_bytes(
+            project_id=project_id,
+            payload=update,
+            exclude_websocket=websocket,
+        )
+
+    async def broadcast_project_bytes(
+        self,
+        project_id: str,
+        payload: bytes,
+        exclude_websocket: Optional[WebSocket] = None,
+    ):
+        """Broadcast binary payload to project peers without JSON wrapping."""
+        if project_id not in self.project_connections:
+            return
+
+        connections = list(self.project_connections[project_id])
+        for connection in connections:
+            if connection == exclude_websocket:
+                continue
+            try:
+                await connection.send_bytes(payload)
+            except Exception as e:
+                logger.error(f"Error broadcasting binary update to project: {str(e)}")
     
     async def broadcast_to_project(
         self, 

@@ -490,6 +490,25 @@ Result:
 7. Added a larger three-client convergence test covering content edit, file position edit, metadata edit, and containment reparent in one session.
 8. Tests passed: `npm test -- --run` with 13 frontend tests.
 9. Build passed: `npm run build`.
+
+### Sprint 6 / Master Item 6.1 Binary Relay
+
+Started Sprint 6 by adding the backend binary CRDT relay path for project rooms.
+
+Files:
+
+1. `backend/app/services/websocket.py`
+2. `backend/app/api/routes/websocket.py`
+3. `backend/tests/test_websocket.py`
+
+Result:
+
+1. Project WebSocket rooms can now relay opaque binary CRDT updates with `send_bytes`.
+2. The sender is excluded from its own binary relay, while other participants in the same project room receive the bytes unchanged.
+3. Participants in other project rooms do not receive the update.
+4. Presence and log-style messages stay on the existing JSON text channel.
+5. The project WebSocket route now uses mixed-frame receive handling so binary frames are not parsed as JSON.
+6. Tests passed: `python -m pytest backend\tests\test_websocket.py -q`.
 ## 2026-04-30
 
 ### Branch And Initial Architecture

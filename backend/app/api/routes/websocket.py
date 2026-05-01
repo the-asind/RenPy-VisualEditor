@@ -49,7 +49,23 @@ async def project_websocket(
         try:
             # Main message loop
             while True:
-                data = await websocket.receive_text()
+                event = await websocket.receive()
+                if event["type"] == "websocket.disconnect":
+                    raise WebSocketDisconnect
+
+                binary_update = event.get("bytes")
+                if binary_update is not None:
+                    await connection_manager.handle_project_crdt_update(
+                        websocket=websocket,
+                        project_id=project_id,
+                        update=binary_update
+                    )
+                    continue
+
+                data = event.get("text")
+                if data is None:
+                    continue
+
                 try:
                     message = json.loads(data)
                     message_type = message.get("type", "")

@@ -11,6 +11,7 @@ class MockWebSocket:
     
     def __init__(self):
         self.sent_messages = []
+        self.sent_bytes = []
         self.closed = False
         self.close_code = None
         self.close_reason = None
@@ -22,6 +23,10 @@ class MockWebSocket:
     async def send_text(self, text):
         """Record sent messages."""
         self.sent_messages.append(text)
+
+    async def send_bytes(self, data):
+        """Record sent binary messages."""
+        self.sent_bytes.append(data)
     
     async def close(self, code=1000, reason=None):
         """Record connection close."""
@@ -618,6 +623,34 @@ class TestConnectionManager:
         assert last["type"] == "active_users"
         assert len(last["users"]) == 1
         assert last["users"][0]["id"] == "u1"
+
+    async def test_project_binary_crdt_update_relay_is_byte_for_byte(self, connection_manager):
+        """Binary CRDT updates should relay to project peers without JSON wrapping."""
+        ws_sender = MockWebSocket()
+        ws_peer = MockWebSocket()
+        ws_other_project = MockWebSocket()
+
+        await connection_manager.connect_project(ws_sender, "project-a", "u1", "User1")
+        await connection_manager.connect_project(ws_peer, "project-a", "u2", "User2")
+        await connection_manager.connect_project(ws_other_project, "project-b", "u3", "User3")
+
+        ws_sender.sent_messages.clear()
+        ws_peer.sent_messages.clear()
+        ws_other_project.sent_messages.clear()
+
+        payload = b"\x00loro-update\xff\x10"
+        await connection_manager.handle_project_crdt_update(
+            websocket=ws_sender,
+            project_id="project-a",
+            update=payload,
+        )
+
+        assert ws_sender.sent_bytes == []
+        assert ws_peer.sent_bytes == [payload]
+        assert ws_other_project.sent_bytes == []
+        assert ws_sender.sent_messages == []
+        assert ws_peer.sent_messages == []
+        assert ws_other_project.sent_messages == []
 
     async def test_script_active_users_updates(self, connection_manager):
         """Users editing the same script should see updated active user lists."""
