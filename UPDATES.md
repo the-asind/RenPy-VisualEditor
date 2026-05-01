@@ -333,6 +333,21 @@ Result:
 2. It verifies stable file paths, label multiset, node type counts, node content, resolved edge destinations, diagnostics semantics, and metadata exclusion.
 3. Diagnostic comparison ignores runtime-generated UUIDs and checks user-visible semantics instead.
 4. Tests passed: `python -m pytest backend\tests\test_project_graph_export_roundtrip_contract.py backend\tests\test_project_graph_exporter.py backend\tests\test_project_graph_sprint_1_2_blackbox.py backend\tests\test_project_graph_diagnostics.py backend\tests\test_project_graph_resolver.py backend\tests\test_project_graph_conditionals.py backend\tests\test_project_graph_actions.py backend\tests\test_project_graph_menus.py backend\tests\test_project_graph_labels.py backend\tests\test_project_graph_importer.py backend\tests\test_project_graph_ids.py backend\tests\test_mouse_renpy_fixtures.py`.
+### Sprint 4 / Master Item 4.1 Static ProjectGraph Projection
+
+Started Sprint 4 by adding an isolated ProjectGraph-to-React-Flow projection module.
+
+Files:
+
+1. `frontend/src/utils/projectGraphProjection.ts`
+2. `frontend/src/utils/__tests__/projectGraphProjection.test.ts`
+
+Result:
+
+1. `projectGraphToReactFlow()` projects `FileFrame`, `LabelFrame`, `LabelStartNode`, and `ScenarioNode` records into React Flow-compatible nodes.
+2. Projection uses the new `@xyflow/react@12.10.2` API with `parentId`, `extent: "parent"`, and explicit node dimensions for frame containment.
+3. This is a new React Flow 2.0 layer from scratch; the old MVP 1.0 `flowTransformer` is not used.
+4. Tests passed: `npm test -- --run src/utils/__tests__/projectGraphProjection.test.ts`.
 ## 2026-04-30
 
 ### Branch And Initial Architecture
