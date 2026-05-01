@@ -469,6 +469,27 @@ Result:
 6. Positions, content, metadata, and nested containment survive convergence.
 7. Tests passed: `npm test -- --run`.
 8. Build passed: `npm run build`.
+
+### Sprint 5 / Master Item 5.3 Edge Cases And Complex CRDT Contract
+
+Extended Sprint 5 with stricter CRDT edge and complex collaboration tests.
+
+Files:
+
+1. `frontend/src/utils/projectGraphCrdt.ts`
+2. `frontend/src/utils/__tests__/projectGraphCrdt.test.ts`
+
+Result:
+
+1. Added `reparentScenarioNode()` for containment changes backed by Loro Tree `move`.
+2. Reparenting a scenario node preserves all ProjectGraph domain IDs.
+3. Reparenting updates scenario `file_id`, `label_id`, and `parent_node_id` after the Loro Tree move succeeds.
+4. Scenario descendants inherit the new file/label scope when their parent scenario is moved.
+5. Native Loro Tree cycle protection is covered: invalid ancestor-to-descendant reparent throws and leaves the graph unchanged.
+6. Duplicate binary update imports are idempotent and do not duplicate files, labels, label starts, or scenario nodes.
+7. Added a larger three-client convergence test covering content edit, file position edit, metadata edit, and containment reparent in one session.
+8. Tests passed: `npm test -- --run` with 13 frontend tests.
+9. Build passed: `npm run build`.
 ## 2026-04-30
 
 ### Branch And Initial Architecture

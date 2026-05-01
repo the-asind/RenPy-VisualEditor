@@ -263,6 +263,41 @@ export const moveProjectGraphEntity = (doc: LoroDoc, entityId: string, position:
   doc.commit({ origin: 'project-graph-position', message: `Move ${entityId}` });
 };
 
+const updateScenarioDescendantScope = (node: LoroTreeNode, fileId: string, labelId: string): void => {
+  for (const child of node.children() ?? []) {
+    if (child.data.get('kind') === 'scenario') {
+      child.data.set('file_id', fileId);
+      child.data.set('label_id', labelId);
+      updateScenarioDescendantScope(child, fileId, labelId);
+    }
+  }
+};
+
+export const reparentScenarioNode = (doc: LoroDoc, nodeId: string, parentEntityId: string): void => {
+  const node = getEntityNode(doc, nodeId);
+  const parent = getEntityNode(doc, parentEntityId);
+
+  if (node.data.get('kind') !== 'scenario') {
+    throw new Error(`Entity is not a scenario node: ${nodeId}`);
+  }
+
+  const parentKind = parent.data.get('kind');
+  if (parentKind !== 'label' && parentKind !== 'scenario') {
+    throw new Error(`Scenario node parent must be a label or scenario node: ${parentEntityId}`);
+  }
+
+  const fileId = String(parent.data.get('file_id'));
+  const labelId = parentKind === 'label' ? parentEntityId : String(parent.data.get('label_id'));
+  const parentNodeId = parentKind === 'scenario' ? parentEntityId : null;
+
+  node.move(parent);
+  node.data.set('file_id', fileId);
+  node.data.set('label_id', labelId);
+  node.data.set('parent_node_id', parentNodeId);
+  updateScenarioDescendantScope(node, fileId, labelId);
+  doc.commit({ origin: 'project-graph-containment', message: `Reparent scenario ${nodeId}` });
+};
+
 const collectTreeEntities = (nodes: ProjectGraphTreeJsonNode[]) => {
   const files: FileFrameSnapshot[] = [];
   const labels: LabelFrameSnapshot[] = [];

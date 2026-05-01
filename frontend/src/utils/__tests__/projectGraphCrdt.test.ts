@@ -8,6 +8,7 @@ import {
   importProjectGraphCrdtUpdate,
   moveProjectGraphEntity,
   projectGraphFromCrdtDoc,
+  reparentScenarioNode,
   updateScenarioNodeContent,
   updateScenarioNodeMetadata,
 } from '../projectGraphCrdt';
@@ -209,6 +210,117 @@ describe('ProjectGraph Loro CRDT adapter', () => {
     });
     expect(graphA.nodes.find((node) => node.id === 'node-choice')?.metadata).toEqual({
       condition: 'has_cheese_compass and crumbs_are_aligned',
+    });
+  });
+
+  it('keeps domain IDs stable when a scenario node is reparented through Loro Tree updates', () => {
+    const clientA = createProjectGraphCrdtDoc(graph, { peerId: '1' });
+    const clientB = importProjectGraphCrdtSnapshot(exportProjectGraphCrdtSnapshot(clientA), { peerId: '2' });
+    const versionB = getProjectGraphCrdtVersion(clientB);
+
+    reparentScenarioNode(clientB, 'node-call-nook', 'label-shared-nook');
+    const updateB = exportProjectGraphCrdtUpdate(clientB, versionB);
+    importProjectGraphCrdtUpdate(clientA, updateB);
+
+    const reparentedGraph = projectGraphFromCrdtDoc(clientA);
+    const allIds = [
+      ...reparentedGraph.files.map((file) => file.id),
+      ...reparentedGraph.labels.map((label) => label.id),
+      ...reparentedGraph.label_starts.map((start) => start.id),
+      ...reparentedGraph.nodes.map((node) => node.id),
+    ].sort();
+    const originalIds = [
+      ...graph.files.map((file) => file.id),
+      ...graph.labels.map((label) => label.id),
+      ...graph.label_starts.map((start) => start.id),
+      ...graph.nodes.map((node) => node.id),
+    ].sort();
+
+    expect(allIds).toEqual(originalIds);
+    expect(reparentedGraph.nodes.find((node) => node.id === 'node-call-nook')).toMatchObject({
+      label_id: 'label-shared-nook',
+      parent_node_id: null,
+      content: 'call .shared_nook',
+    });
+  });
+
+  it('rejects containment cycles and leaves the ProjectGraph unchanged', () => {
+    const doc = createProjectGraphCrdtDoc(graph, { peerId: '1' });
+    const before = projectGraphFromCrdtDoc(doc);
+
+    expect(() => reparentScenarioNode(doc, 'node-choice', 'node-call-nook')).toThrow();
+    expect(projectGraphFromCrdtDoc(doc)).toEqual(before);
+  });
+
+  it('imports duplicate binary updates idempotently without duplicating graph entities', () => {
+    const clientA = createProjectGraphCrdtDoc(graph, { peerId: '1' });
+    const clientB = importProjectGraphCrdtSnapshot(exportProjectGraphCrdtSnapshot(clientA), { peerId: '2' });
+    const versionA = getProjectGraphCrdtVersion(clientA);
+
+    updateScenarioNodeContent(clientA, 'node-day-two', 'r "Duplicate packets do not duplicate crumbs."');
+    const updateA = exportProjectGraphCrdtUpdate(clientA, versionA);
+
+    importProjectGraphCrdtUpdate(clientB, updateA);
+    importProjectGraphCrdtUpdate(clientB, updateA);
+
+    const graphB = projectGraphFromCrdtDoc(clientB);
+    expect(graphB.files).toHaveLength(graph.files.length);
+    expect(graphB.labels).toHaveLength(graph.labels.length);
+    expect(graphB.label_starts).toHaveLength(graph.label_starts.length);
+    expect(graphB.nodes).toHaveLength(graph.nodes.length);
+    expect(graphB.nodes.find((node) => node.id === 'node-day-two')?.content).toBe(
+      'r "Duplicate packets do not duplicate crumbs."',
+    );
+  });
+
+  it('converges a larger three-client session with content, position, metadata, and containment edits', () => {
+    const clientA = createProjectGraphCrdtDoc(graph, { peerId: '1' });
+    const snapshot = exportProjectGraphCrdtSnapshot(clientA);
+    const clientB = importProjectGraphCrdtSnapshot(snapshot, { peerId: '2' });
+    const clientC = importProjectGraphCrdtSnapshot(snapshot, { peerId: '3' });
+    const versionA = getProjectGraphCrdtVersion(clientA);
+    const versionB = getProjectGraphCrdtVersion(clientB);
+    const versionC = getProjectGraphCrdtVersion(clientC);
+
+    updateScenarioNodeContent(clientA, 'node-intro', 'r "Three clients count crumbs in sync."');
+    moveProjectGraphEntity(clientB, 'file-day-2', { x: 1040, y: 120 });
+    reparentScenarioNode(clientC, 'node-call-nook', 'label-shared-nook');
+    updateScenarioNodeMetadata(clientC, 'node-choice', {
+      condition: 'has_cheese_compass and three_clients_agree',
+      review: 'checked by client C',
+    });
+
+    const updateA = exportProjectGraphCrdtUpdate(clientA, versionA);
+    const updateB = exportProjectGraphCrdtUpdate(clientB, versionB);
+    const updateC = exportProjectGraphCrdtUpdate(clientC, versionC);
+
+    for (const update of [updateB, updateC]) {
+      importProjectGraphCrdtUpdate(clientA, update);
+    }
+    for (const update of [updateC, updateA]) {
+      importProjectGraphCrdtUpdate(clientB, update);
+    }
+    for (const update of [updateA, updateB]) {
+      importProjectGraphCrdtUpdate(clientC, update);
+    }
+
+    const graphA = projectGraphFromCrdtDoc(clientA);
+    const graphB = projectGraphFromCrdtDoc(clientB);
+    const graphC = projectGraphFromCrdtDoc(clientC);
+
+    expect(graphA).toEqual(graphB);
+    expect(graphB).toEqual(graphC);
+    expect(graphA.nodes.find((node) => node.id === 'node-intro')?.content).toBe(
+      'r "Three clients count crumbs in sync."',
+    );
+    expect(graphA.files.find((file) => file.id === 'file-day-2')?.visual.position).toEqual({ x: 1040, y: 120 });
+    expect(graphA.nodes.find((node) => node.id === 'node-call-nook')).toMatchObject({
+      label_id: 'label-shared-nook',
+      parent_node_id: null,
+    });
+    expect(graphA.nodes.find((node) => node.id === 'node-choice')?.metadata).toEqual({
+      condition: 'has_cheese_compass and three_clients_agree',
+      review: 'checked by client C',
     });
   });
 });
