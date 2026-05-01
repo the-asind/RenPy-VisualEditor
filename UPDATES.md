@@ -2,6 +2,40 @@
 
 This file is the short project memory for RenPy Visual Editor 2.0. Keep it current when closing master items, changing decisions, or classifying old code.
 
+## 2026-05-02
+
+### Sprint 7 / Master Item 7.2 Editable Collaborative Canvas
+
+Closed Sprint 7 by wiring the editor canvas to ProjectGraph CRDT domain operations, binary WebSocket updates, snapshot persistence, and ProjectGraph export.
+
+Files:
+
+1. `backend/app/api/routes/projects.py`
+2. `backend/tests/test_project_graph_snapshot_route.py`
+3. `frontend/src/services/api.ts`
+4. `frontend/src/services/__tests__/api.test.ts`
+5. `frontend/src/utils/projectGraphCollaboration.ts`
+6. `frontend/src/utils/__tests__/projectGraphCollaboration.test.ts`
+7. `frontend/src/utils/projectGraphCrdt.ts`
+8. `frontend/src/components/EditorPage.tsx`
+9. `frontend/src/components/projectGraph/ProjectGraphCanvas.tsx`
+10. `frontend/src/components/projectGraph/ProjectGraphCanvas.css`
+
+Result:
+
+1. Added authenticated `PUT /api/projects/{project_id}/graph-snapshot` for saving opaque binary CRDT snapshots.
+2. Added authenticated `POST /api/projects/{project_id}/graph-export` that exports normalized `.rpy` files from a ProjectGraph JSON payload, not from old line-range script state.
+3. Added frontend API helpers for loading a `LoroDoc`, saving binary snapshots, and exporting ProjectGraph files.
+4. Added `ProjectGraphCollaborationSession`: scenario content edits and entity drag operations mutate the Loro-backed ProjectGraph, emit binary updates, notify React state, and persist reloadable snapshots.
+5. Added browser WebSocket helpers that use `binaryType = "arraybuffer"` and send `Uint8Array` updates without JSON wrapping.
+6. `EditorPage` now owns a CRDT collaboration session, connects to `/api/ws/project/{project_id}`, applies incoming binary updates, persists snapshots after local and remote changes, and exports through ProjectGraph.
+7. `ProjectGraphCanvas` now has a minimal scenario node editor and writes drag-final positions back through domain callbacks.
+8. Added inter-sprint contract coverage proving CRDT edit/drag state projects into the React Flow canvas model.
+9. Tests passed: `python -m pytest backend\tests\test_project_graph_snapshot_route.py backend\tests\test_project_graph_crdt_persistence.py backend\tests\test_project_graph_sprint_1_2_blackbox.py backend\tests\test_project_graph_export_roundtrip_contract.py backend\tests\test_project_graph_exporter.py backend\tests\test_project_graph_diagnostics.py backend\tests\test_project_graph_resolver.py backend\tests\test_websocket.py backend\tests\test_database_service.py -q`.
+10. Tests passed: `npm test -- --run`.
+11. Build passed: `npm run build`.
+12. Known follow-up remains: production frontend chunk is large because Loro WASM is bundled through `loro-crdt/base64`; later optimization should move this to explicit WASM handling/code splitting.
+
 ## 2026-05-01
 
 ### Documentation Pillars

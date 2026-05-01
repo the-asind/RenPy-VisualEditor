@@ -18,6 +18,8 @@ const ENTITY_INDEX_CONTAINER = 'project_graph_entity_tree_ids';
 
 type ProjectGraphEntityKind = 'file' | 'label' | 'labelStart' | 'scenario';
 
+export type ProjectGraphCrdtDoc = LoroDoc;
+
 type ProjectGraphTreeJsonNode = {
   id: TreeID;
   parent: TreeID | null;

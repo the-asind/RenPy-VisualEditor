@@ -2,6 +2,7 @@
 import axios, { AxiosError } from 'axios';
 import {
   importProjectGraphCrdtSnapshot,
+  type ProjectGraphCrdtDoc,
   projectGraphFromCrdtDoc,
 } from '../utils/projectGraphCrdt';
 import type { ProjectGraphSnapshot } from '../utils/projectGraphProjection';
@@ -295,6 +296,78 @@ export const loadProjectGraphSnapshot = async (projectId: string): Promise<Proje
   const snapshot = await getProjectGraphCrdtSnapshot(projectId);
   const doc = importProjectGraphCrdtSnapshot(snapshot);
   return projectGraphFromCrdtDoc(doc);
+};
+
+export const loadProjectGraphCrdtDocument = async (projectId: string): Promise<ProjectGraphCrdtDoc> => {
+  const snapshot = await getProjectGraphCrdtSnapshot(projectId);
+  return importProjectGraphCrdtSnapshot(snapshot);
+};
+
+export const saveProjectGraphCrdtSnapshot = async (
+  projectId: string,
+  snapshot: Uint8Array,
+): Promise<{ status: string }> => {
+  const targetUrl = `${apiClient.defaults.baseURL}/projects/${projectId}/graph-snapshot`;
+  console.log(`[API Request] PUT ${targetUrl} for ProjectGraph CRDT snapshot`);
+
+  try {
+    const body = snapshot.buffer.slice(snapshot.byteOffset, snapshot.byteOffset + snapshot.byteLength);
+    const response = await apiClient.put<{ status: string }>(`/projects/${projectId}/graph-snapshot`, body, {
+      headers: {
+        'Content-Type': 'application/octet-stream',
+      },
+      transformRequest: [() => body],
+    });
+    return response.data;
+  } catch (error) {
+    console.error('[API Error] Failed during saveProjectGraphCrdtSnapshot call.');
+    console.error('Project ID:', projectId);
+
+    const axiosError = error as AxiosError;
+
+    if (axiosError.response) {
+      console.error('Error Response Data:', axiosError.response.data);
+      console.error('Error Response Status:', axiosError.response.status);
+    } else if (axiosError.request) {
+      console.error('Error Request:', axiosError.request);
+    } else {
+      console.error('Error Message:', axiosError.message);
+    }
+
+    throw axiosError.response?.data || new Error(`Failed to save ProjectGraph snapshot. Status: ${axiosError.response?.status || 'unknown'}. ${axiosError.message}`);
+  }
+};
+
+export const exportProjectGraphFiles = async (
+  projectId: string,
+  graph: ProjectGraphSnapshot,
+): Promise<Record<string, string>> => {
+  const targetUrl = `${apiClient.defaults.baseURL}/projects/${projectId}/graph-export`;
+  console.log(`[API Request] POST ${targetUrl} to export ProjectGraph`);
+
+  try {
+    const response = await apiClient.post<{ files: Record<string, string> }>(
+      `/projects/${projectId}/graph-export`,
+      graph,
+    );
+    return response.data.files;
+  } catch (error) {
+    console.error('[API Error] Failed during exportProjectGraphFiles call.');
+    console.error('Project ID:', projectId);
+
+    const axiosError = error as AxiosError;
+
+    if (axiosError.response) {
+      console.error('Error Response Data:', axiosError.response.data);
+      console.error('Error Response Status:', axiosError.response.status);
+    } else if (axiosError.request) {
+      console.error('Error Request:', axiosError.request);
+    } else {
+      console.error('Error Message:', axiosError.message);
+    }
+
+    throw axiosError.response?.data || new Error(`Failed to export ProjectGraph. Status: ${axiosError.response?.status || 'unknown'}. ${axiosError.message}`);
+  }
 };
 
 /**

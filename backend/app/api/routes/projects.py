@@ -1,6 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException, Body, Response
+from fastapi import APIRouter, Depends, HTTPException, Body, Request, Response
 from typing import List, Dict, Any, Optional
 from ...services.database import DatabaseService
+from ...services.project_graph.exporter import ProjectGraphExporter
+from ...services.project_graph.snapshot import ProjectGraphSnapshotCodec
 from ...api.routes.auth import get_current_user
 import uuid
 import logging # Add this import
@@ -14,6 +16,19 @@ projects_router = APIRouter(
     responses={404: {"description": "Not found"}}
 )
 db_service = DatabaseService()
+
+
+def _get_accessible_project(project_id: str, user: Dict) -> Dict:
+    projects = db_service.get_user_projects(user["id"])
+    project = next((p for p in projects if p["id"] == project_id), None)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found or access denied")
+    return project
+
+
+def _ensure_project_editor(project: Dict) -> None:
+    if project.get("role") not in ["Owner", "Editor"]:
+        raise HTTPException(status_code=403, detail="You don't have permission to edit this project")
 
 @projects_router.post("/")
 async def create_project(
@@ -79,11 +94,7 @@ async def get_project_graph_snapshot(
 ) -> Response:
     """Return the latest opaque ProjectGraph CRDT snapshot for a project."""
     try:
-        projects = db_service.get_user_projects(user["id"])
-        project = next((p for p in projects if p["id"] == project_id), None)
-
-        if not project:
-            raise HTTPException(status_code=404, detail="Project not found or access denied")
+        _get_accessible_project(project_id, user)
 
         snapshot = db_service.get_project_crdt_snapshot(project_id)
         if snapshot is None:
@@ -94,6 +105,51 @@ async def get_project_graph_snapshot(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get project graph snapshot: {str(e)}")
+
+
+@projects_router.put("/{project_id}/graph-snapshot")
+async def save_project_graph_snapshot(
+    project_id: str,
+    request: Request,
+    user: Dict = Depends(get_current_user),
+) -> Dict[str, str]:
+    """Persist the latest opaque ProjectGraph CRDT snapshot for a project."""
+    try:
+        project = _get_accessible_project(project_id, user)
+        _ensure_project_editor(project)
+
+        snapshot = await request.body()
+        if not snapshot:
+            raise HTTPException(status_code=400, detail="Project graph snapshot is empty")
+
+        db_service.save_project_crdt_snapshot(project_id, snapshot)
+        return {"status": "success"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save project graph snapshot: {str(e)}")
+
+
+@projects_router.post("/{project_id}/graph-export")
+async def export_project_graph(
+    project_id: str,
+    graph_snapshot: Dict[str, Any] = Body(...),
+    user: Dict = Depends(get_current_user),
+) -> Dict[str, Dict[str, str]]:
+    """Export a ProjectGraph payload into normalized Ren'Py files."""
+    try:
+        _get_accessible_project(project_id, user)
+        if graph_snapshot.get("project_id") != project_id:
+            raise HTTPException(status_code=400, detail="ProjectGraph project_id does not match route project_id")
+
+        graph = ProjectGraphSnapshotCodec.load(graph_snapshot)
+        exported_files = ProjectGraphExporter().export(graph)
+        return {"files": exported_files}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to export project graph: {str(e)}")
+
 
 @projects_router.post("/{project_id}/share")
 async def share_project(

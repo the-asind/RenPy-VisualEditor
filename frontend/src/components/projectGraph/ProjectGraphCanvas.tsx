@@ -8,12 +8,14 @@ import {
   ReactFlow,
   ReactFlowProvider,
   type ReactFlowInstance,
+  type Node,
   type NodeProps,
   type NodeTypes,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
 import {
+  type GraphPoint,
   getAbsoluteNodePosition,
   projectGraphDiagnosticsToProblems,
   projectGraphToReactFlow,
@@ -65,15 +67,30 @@ export const projectGraphNodeTypes: NodeTypes = {
 export interface ProjectGraphCanvasProps {
   graph: ProjectGraphSnapshot;
   className?: string;
+  exportStatus?: string | null;
+  onExportProjectGraph?: () => void;
+  onEntityPositionChange?: (entityId: string, position: GraphPoint) => void;
+  onScenarioContentChange?: (nodeId: string, content: string) => void;
 }
 
-const ProjectGraphCanvasInner = ({ graph, className }: ProjectGraphCanvasProps) => {
+const ProjectGraphCanvasInner = ({
+  graph,
+  className,
+  exportStatus,
+  onExportProjectGraph,
+  onEntityPositionChange,
+  onScenarioContentChange,
+}: ProjectGraphCanvasProps) => {
   const [reactFlowInstance, setReactFlowInstance] = useState<ReactFlowInstance | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const projection = useMemo(() => projectGraphToReactFlow(graph), [graph]);
   const searchResults = useMemo(() => searchProjectGraph(graph, searchQuery), [graph, searchQuery]);
   const problems = useMemo(() => projectGraphDiagnosticsToProblems(graph), [graph]);
+  const selectedScenario = useMemo(
+    () => graph.nodes.find((node) => node.id === selectedNodeId) ?? null,
+    [graph.nodes, selectedNodeId],
+  );
   const nodes = useMemo(
     () =>
       projection.nodes.map((node) => ({
@@ -102,6 +119,12 @@ const ProjectGraphCanvasInner = ({ graph, className }: ProjectGraphCanvasProps) 
   return (
     <div className={className ? `project-graph-canvas ${className}` : 'project-graph-canvas'}>
       <div className="project-graph-canvas__toolbar">
+        {onExportProjectGraph ? (
+          <button className="project-graph-canvas__command" onClick={onExportProjectGraph} type="button">
+            Export
+          </button>
+        ) : null}
+        {exportStatus ? <div className="project-graph-canvas__status">{exportStatus}</div> : null}
         <input
           aria-label="Search nodes"
           className="project-graph-canvas__search"
@@ -127,6 +150,18 @@ const ProjectGraphCanvasInner = ({ graph, className }: ProjectGraphCanvasProps) 
           </div>
         ) : null}
       </div>
+
+      {selectedScenario ? (
+        <div className="project-graph-canvas__node-editor">
+          <div className="project-graph-canvas__panel-title">{selectedScenario.type}</div>
+          <textarea
+            aria-label="Edit scenario node content"
+            className="project-graph-canvas__node-editor-input"
+            onChange={(event) => onScenarioContentChange?.(selectedScenario.id, event.target.value)}
+            value={selectedScenario.content}
+          />
+        </div>
+      ) : null}
 
       {problems.length > 0 ? (
         <div className="project-graph-canvas__problems">
@@ -156,6 +191,9 @@ const ProjectGraphCanvasInner = ({ graph, className }: ProjectGraphCanvasProps) 
         nodesDraggable
         nodeTypes={projectGraphNodeTypes}
         onInit={setReactFlowInstance}
+        onNodeClick={(_, node) => setSelectedNodeId(node.id)}
+        onNodeDragStop={(_, node: Node) => onEntityPositionChange?.(node.id, node.position)}
+        onPaneClick={() => setSelectedNodeId(null)}
       >
         <Background gap={32} size={1} />
         <MiniMap pannable zoomable />
