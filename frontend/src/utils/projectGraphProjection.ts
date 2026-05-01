@@ -98,6 +98,26 @@ export interface ProjectGraphProjection {
   edges: Edge[];
 }
 
+export interface ProjectGraphSearchResult {
+  nodeId: string;
+  fileId: string;
+  labelId: string;
+  kind: 'labelStart' | 'scenario';
+  title: string;
+  content: string;
+}
+
+export interface ProjectGraphProblem {
+  id: string;
+  code: string;
+  severity: GraphDiagnosticSnapshot['severity'];
+  message: string;
+  blocking: boolean;
+  nodeId: string | null;
+  fileId: string | null;
+  labelId: string | null;
+}
+
 type LayoutNode = Node & {
   position: GraphPoint;
   width: number;
@@ -198,6 +218,75 @@ const normalizeLayout = (nodes: LayoutNode[]): LayoutNode[] => {
 
   return nodes;
 };
+
+export const getAbsoluteNodePosition = (nodes: Node[], nodeId: string): GraphPoint | null => {
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const visited = new Set<string>();
+  let current = byId.get(nodeId);
+
+  if (!current) {
+    return null;
+  }
+
+  const position = { x: 0, y: 0 };
+
+  while (current) {
+    if (visited.has(current.id)) {
+      return null;
+    }
+    visited.add(current.id);
+    position.x += current.position.x;
+    position.y += current.position.y;
+    current = current.parentId ? byId.get(current.parentId) : undefined;
+  }
+
+  return position;
+};
+
+export const searchProjectGraph = (graph: ProjectGraphSnapshot, query: string): ProjectGraphSearchResult[] => {
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+
+  if (!normalizedQuery) {
+    return [];
+  }
+
+  const labelStartResults = graph.label_starts
+    .filter((node) => `${node.qualified_name}\n${node.content}`.toLocaleLowerCase().includes(normalizedQuery))
+    .map<ProjectGraphSearchResult>((node) => ({
+      nodeId: node.id,
+      fileId: node.file_id,
+      labelId: node.label_id,
+      kind: 'labelStart',
+      title: node.qualified_name,
+      content: node.content,
+    }));
+
+  const scenarioResults = graph.nodes
+    .filter((node) => `${node.type}\n${node.content}`.toLocaleLowerCase().includes(normalizedQuery))
+    .sort(compareSourceOrder)
+    .map<ProjectGraphSearchResult>((node) => ({
+      nodeId: node.id,
+      fileId: node.file_id,
+      labelId: node.label_id,
+      kind: 'scenario',
+      title: node.type,
+      content: node.content,
+    }));
+
+  return [...labelStartResults, ...scenarioResults];
+};
+
+export const projectGraphDiagnosticsToProblems = (graph: ProjectGraphSnapshot): ProjectGraphProblem[] =>
+  graph.diagnostics.map((diagnostic) => ({
+    id: diagnostic.id,
+    code: diagnostic.code,
+    severity: diagnostic.severity,
+    message: diagnostic.message,
+    blocking: diagnostic.blocking,
+    nodeId: diagnostic.node_id,
+    fileId: diagnostic.file_id,
+    labelId: diagnostic.label_id,
+  }));
 
 const sourceOrder = (item: { source_span: SourceSpan | null; order?: string }): [number, string] => [
   item.source_span?.start_line ?? Number.MAX_SAFE_INTEGER,

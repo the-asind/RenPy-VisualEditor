@@ -404,6 +404,30 @@ Result:
 4. Existing non-overlapping manual positions are preserved; normalization only corrects collisions and undersized parents.
 5. This is the MVP deterministic fallback before a richer flow-first layout engine.
 6. Tests passed: `npm test -- --run src/utils/__tests__/projectGraphProjection.test.ts`.
+
+### Sprint 4 / Master Item 4.5 Search, Problems, And Full Frontend Contract
+
+Closed Sprint 4 with a full MVP 2.0 React Flow projection contract and minimal canvas navigation tools.
+
+Files:
+
+1. `frontend/src/utils/projectGraphProjection.ts`
+2. `frontend/src/utils/__tests__/projectGraphProjection.test.ts`
+3. `frontend/src/components/projectGraph/ProjectGraphCanvas.tsx`
+4. `frontend/src/components/projectGraph/ProjectGraphCanvas.css`
+5. `frontend/package.json`
+6. `frontend/package-lock.json`
+
+Result:
+
+1. Added text search over visible `LabelStartNode` and `ScenarioNode` content.
+2. Added diagnostic projection for the canvas problems panel.
+3. Added node focusing helper that resolves absolute React Flow coordinates through parent containment.
+4. `ProjectGraphCanvas` now has search results and a problems panel; both can focus the related node.
+5. Added one large Sprint 4 black-box frontend contract over a multi-file graph with nested labels, nested scenario nodes, relation edges, diagnostics, search, and layout invariants.
+6. Removed legacy `reactflow@11` dependency; the new canvas uses only `@xyflow/react@12.10.2`.
+7. Tests passed: `npm test -- --run`.
+8. Build passed: `npm run build`.
 ## 2026-04-30
 
 ### Branch And Initial Architecture

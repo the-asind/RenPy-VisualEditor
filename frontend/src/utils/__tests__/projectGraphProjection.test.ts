@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { projectGraphNodeTypes } from '../../components/projectGraph/ProjectGraphCanvas';
-import { projectGraphToReactFlow, type ProjectGraphSnapshot } from '../projectGraphProjection';
+import {
+  getAbsoluteNodePosition,
+  projectGraphDiagnosticsToProblems,
+  projectGraphToReactFlow,
+  searchProjectGraph,
+  type ProjectGraphSnapshot,
+} from '../projectGraphProjection';
 
 const nodeRect = (node: { position: { x: number; y: number }; width?: number; height?: number }) => ({
   x: node.position.x,
@@ -388,5 +394,280 @@ describe('projectGraphToReactFlow static projection', () => {
     expect(childFitsParent(startNode!, labelStart!)).toBe(true);
     expect(childFitsParent(dialogueA!, labelStart!)).toBe(true);
     expect(childFitsParent(dialogueB!, labelStart!)).toBe(true);
+  });
+
+  it('projects a complete multi-file MVP 2.0 canvas contract', () => {
+    const fullGraph: ProjectGraphSnapshot = {
+      project_id: 'sprint-4-contract',
+      files: [
+        {
+          id: 'file-day-1',
+          path: 'mouse_day_1.rpy',
+          order: '0000',
+          visual: { position: { x: 0, y: 0 }, size: { width: 420, height: 320 } },
+        },
+        {
+          id: 'file-day-2',
+          path: 'mouse_day_2.rpy',
+          order: '0001',
+          visual: { position: { x: 0, y: 0 }, size: { width: 420, height: 320 } },
+        },
+      ],
+      labels: [
+        {
+          id: 'label-start',
+          file_id: 'file-day-1',
+          parent_label_id: null,
+          name: 'start',
+          qualified_name: 'start',
+          scope: 'global',
+          label_start_node_id: 'start-node-start',
+          source_span: { start_line: 0, end_line: 0 },
+          visual: { position: { x: 24, y: 48 }, size: { width: 360, height: 220 } },
+        },
+        {
+          id: 'label-shared-nook',
+          file_id: 'file-day-1',
+          parent_label_id: 'label-start',
+          name: '.shared_nook',
+          qualified_name: 'start.shared_nook',
+          scope: 'local',
+          label_start_node_id: 'start-node-shared-nook',
+          source_span: { start_line: 12, end_line: 12 },
+          visual: { position: { x: 24, y: 120 }, size: { width: 320, height: 180 } },
+        },
+        {
+          id: 'label-day-two',
+          file_id: 'file-day-2',
+          parent_label_id: null,
+          name: 'day_two',
+          qualified_name: 'day_two',
+          scope: 'global',
+          label_start_node_id: 'start-node-day-two',
+          source_span: { start_line: 0, end_line: 0 },
+          visual: { position: { x: 24, y: 48 }, size: { width: 360, height: 220 } },
+        },
+      ],
+      label_starts: [
+        {
+          id: 'start-node-start',
+          file_id: 'file-day-1',
+          label_id: 'label-start',
+          qualified_name: 'start',
+          content: 'label start:',
+          visual: { position: { x: 24, y: 24 }, size: { width: 240, height: 64 } },
+        },
+        {
+          id: 'start-node-shared-nook',
+          file_id: 'file-day-1',
+          label_id: 'label-shared-nook',
+          qualified_name: 'start.shared_nook',
+          content: 'label .shared_nook:',
+          visual: { position: { x: 24, y: 24 }, size: { width: 240, height: 64 } },
+        },
+        {
+          id: 'start-node-day-two',
+          file_id: 'file-day-2',
+          label_id: 'label-day-two',
+          qualified_name: 'day_two',
+          content: 'label day_two:',
+          visual: { position: { x: 24, y: 24 }, size: { width: 240, height: 64 } },
+        },
+      ],
+      nodes: [
+        {
+          id: 'node-intro',
+          file_id: 'file-day-1',
+          label_id: 'label-start',
+          parent_node_id: null,
+          type: 'dialogue',
+          content: 'r "RenPy Mouse enters the contract kitchen."',
+          order: '0000',
+          source_span: { start_line: 1, end_line: 1 },
+          metadata: {},
+          visual: { position: { x: 24, y: 112 }, size: { width: 300, height: 72 } },
+        },
+        {
+          id: 'node-menu',
+          file_id: 'file-day-1',
+          label_id: 'label-start',
+          parent_node_id: null,
+          type: 'menu',
+          content: 'menu:',
+          order: '0001',
+          source_span: { start_line: 2, end_line: 2 },
+          metadata: {},
+          visual: { position: { x: 24, y: 112 }, size: { width: 300, height: 120 } },
+        },
+        {
+          id: 'node-choice',
+          file_id: 'file-day-1',
+          label_id: 'label-start',
+          parent_node_id: 'node-menu',
+          type: 'menu_choice',
+          content: '"Follow the dotted cheese arrow"',
+          order: '0001.0000',
+          source_span: { start_line: 3, end_line: 3 },
+          metadata: { condition: 'has_cheese_compass' },
+          visual: { position: { x: 24, y: 64 }, size: { width: 240, height: 72 } },
+        },
+        {
+          id: 'node-call-nook',
+          file_id: 'file-day-1',
+          label_id: 'label-start',
+          parent_node_id: 'node-choice',
+          type: 'call',
+          content: 'call .shared_nook',
+          order: '0001.0000.0000',
+          source_span: { start_line: 4, end_line: 4 },
+          metadata: { target: '.shared_nook' },
+          visual: { position: { x: 24, y: 64 }, size: { width: 220, height: 64 } },
+        },
+        {
+          id: 'node-jump-day-two',
+          file_id: 'file-day-1',
+          label_id: 'label-start',
+          parent_node_id: null,
+          type: 'jump',
+          content: 'jump day_two',
+          order: '0002',
+          source_span: { start_line: 6, end_line: 6 },
+          metadata: { target: 'day_two' },
+          visual: { position: { x: 24, y: 112 }, size: { width: 220, height: 64 } },
+        },
+        {
+          id: 'node-nook-comment',
+          file_id: 'file-day-1',
+          label_id: 'label-shared-nook',
+          parent_node_id: null,
+          type: 'comment',
+          content: '# The tiny chair is canonically too small.',
+          order: '0000',
+          source_span: { start_line: 13, end_line: 13 },
+          metadata: {},
+          visual: { position: { x: 24, y: 112 }, size: { width: 260, height: 64 } },
+        },
+        {
+          id: 'node-day-two-dialogue',
+          file_id: 'file-day-2',
+          label_id: 'label-day-two',
+          parent_node_id: null,
+          type: 'dialogue',
+          content: 'r "Day two begins with disciplined spacing."',
+          order: '0000',
+          source_span: { start_line: 1, end_line: 1 },
+          metadata: {},
+          visual: { position: { x: 24, y: 112 }, size: { width: 300, height: 72 } },
+        },
+      ],
+      edges: [
+        {
+          id: 'edge-call-nook',
+          source_node_id: 'node-call-nook',
+          target_node_id: 'start-node-shared-nook',
+          kind: 'call',
+          metadata: { target: '.shared_nook' },
+        },
+        {
+          id: 'edge-jump-day-two',
+          source_node_id: 'node-jump-day-two',
+          target_node_id: 'start-node-day-two',
+          kind: 'jump',
+          metadata: { target: 'day_two' },
+        },
+      ],
+      diagnostics: [
+        {
+          id: 'diagnostic-dynamic',
+          code: 'dynamic_target',
+          severity: 'info',
+          message: 'Dynamic target kept for problems panel projection later.',
+          blocking: false,
+          file_id: 'file-day-1',
+          label_id: 'label-start',
+          node_id: 'node-menu',
+          source_span: { start_line: 2, end_line: 2 },
+          metadata: {},
+        },
+      ],
+      source_index: { files: {} },
+    };
+
+    const projection = projectGraphToReactFlow(fullGraph);
+    const byId = new Map(projection.nodes.map((node) => [node.id, node]));
+    const frameIds = new Set(
+      projection.nodes
+        .filter((node) => node.type === 'projectFrame' || node.type === 'labelFrame')
+        .map((node) => node.id),
+    );
+
+    expect(projection.nodes).toHaveLength(15);
+    expect(projection.edges).toHaveLength(2);
+    expect(projection.nodes.every((node) => node.hidden !== true)).toBe(true);
+
+    for (const node of projection.nodes) {
+      if (node.parentId) {
+        const parent = byId.get(node.parentId);
+        expect(parent, `${node.id} has missing parent ${node.parentId}`).toBeDefined();
+        expect(childFitsParent(node, parent!)).toBe(true);
+      }
+    }
+
+    const siblingsByParent = new Map<string, typeof projection.nodes>();
+    for (const node of projection.nodes) {
+      const key = node.parentId ?? '__root__';
+      siblingsByParent.set(key, [...(siblingsByParent.get(key) ?? []), node]);
+    }
+
+    for (const siblings of siblingsByParent.values()) {
+      for (let leftIndex = 0; leftIndex < siblings.length; leftIndex += 1) {
+        for (let rightIndex = leftIndex + 1; rightIndex < siblings.length; rightIndex += 1) {
+          expect(rectsOverlap(nodeRect(siblings[leftIndex]), nodeRect(siblings[rightIndex]))).toBe(false);
+        }
+      }
+    }
+
+    for (const edge of projection.edges) {
+      expect(byId.has(edge.source)).toBe(true);
+      expect(byId.has(edge.target)).toBe(true);
+      expect(frameIds.has(edge.source)).toBe(false);
+      expect(frameIds.has(edge.target)).toBe(false);
+    }
+
+    expect(byId.get('label-shared-nook')).toMatchObject({
+      type: 'labelFrame',
+      parentId: 'label-start',
+    });
+    expect(byId.get('node-choice')).toMatchObject({
+      type: 'scenarioNode',
+      parentId: 'node-menu',
+    });
+    expect(projection.edges.map((edge) => [edge.id, edge.source, edge.target, edge.className])).toEqual([
+      ['edge-call-nook', 'node-call-nook', 'start-node-shared-nook', 'project-edge project-edge--call'],
+      ['edge-jump-day-two', 'node-jump-day-two', 'start-node-day-two', 'project-edge project-edge--jump'],
+    ]);
+
+    expect(searchProjectGraph(fullGraph, 'cheese arrow')).toEqual([
+      expect.objectContaining({
+        nodeId: 'node-choice',
+        kind: 'scenario',
+        content: '"Follow the dotted cheese arrow"',
+      }),
+    ]);
+    expect(projectGraphDiagnosticsToProblems(fullGraph)).toEqual([
+      expect.objectContaining({
+        id: 'diagnostic-dynamic',
+        code: 'dynamic_target',
+        severity: 'info',
+        nodeId: 'node-menu',
+      }),
+    ]);
+
+    const absoluteChoicePosition = getAbsoluteNodePosition(projection.nodes, 'node-choice');
+    const menuPosition = getAbsoluteNodePosition(projection.nodes, 'node-menu');
+    expect(absoluteChoicePosition).not.toBeNull();
+    expect(menuPosition).not.toBeNull();
+    expect(absoluteChoicePosition!.x).toBeGreaterThan(menuPosition!.x);
+    expect(absoluteChoicePosition!.y).toBeGreaterThan(menuPosition!.y);
   });
 });
