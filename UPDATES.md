@@ -428,6 +428,47 @@ Result:
 6. Removed legacy `reactflow@11` dependency; the new canvas uses only `@xyflow/react@12.10.2`.
 7. Tests passed: `npm test -- --run`.
 8. Build passed: `npm run build`.
+
+### Sprint 5 / Master Item 5.1 Loro Storage Proof
+
+Started Sprint 5 with a real Loro CRDT adapter on the frontend/client side.
+
+Files:
+
+1. `frontend/src/utils/projectGraphCrdt.ts`
+2. `frontend/src/utils/__tests__/projectGraphCrdt.test.ts`
+3. `frontend/package.json`
+4. `frontend/package-lock.json`
+
+Result:
+
+1. Added `loro-crdt@1.12.1`.
+2. `ProjectGraph` now serializes into one `LoroDoc`.
+3. Loro Tree stores containment for files, labels, label starts, and scenario nodes.
+4. Loro Maps store entity attributes such as IDs, content, source spans, metadata, and visual positions/sizes.
+5. Edges, diagnostics, source index, and project metadata are stored in a root metadata map.
+6. Binary Loro snapshot export/import restores the same semantic `ProjectGraph` with stable domain IDs.
+7. Tests passed: `npm test -- --run src/utils/__tests__/projectGraphCrdt.test.ts`.
+
+### Sprint 5 / Master Item 5.2 CRDT Convergence
+
+Added the first two-client convergence proof for the ProjectGraph Loro adapter.
+
+Files:
+
+1. `frontend/src/utils/projectGraphCrdt.ts`
+2. `frontend/src/utils/__tests__/projectGraphCrdt.test.ts`
+
+Result:
+
+1. Two clients can start from the same binary Loro snapshot.
+2. Client A can edit a scenario node's content.
+3. Client B can move a label frame and update scenario node metadata.
+4. Both clients export binary Loro updates from their prior version vectors.
+5. After update exchange/import, both clients converge to the same `ProjectGraph`.
+6. Positions, content, metadata, and nested containment survive convergence.
+7. Tests passed: `npm test -- --run`.
+8. Build passed: `npm run build`.
 ## 2026-04-30
 
 ### Branch And Initial Architecture
