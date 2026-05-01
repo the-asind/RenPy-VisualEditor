@@ -348,6 +348,26 @@ Result:
 2. Projection uses the new `@xyflow/react@12.10.2` API with `parentId`, `extent: "parent"`, and explicit node dimensions for frame containment.
 3. This is a new React Flow 2.0 layer from scratch; the old MVP 1.0 `flowTransformer` is not used.
 4. Tests passed: `npm test -- --run src/utils/__tests__/projectGraphProjection.test.ts`.
+### Sprint 4 / Master Item 4.2 New React Flow 2 Canvas Shell
+
+Added a new React Flow 2.0 canvas layer from scratch on `@xyflow/react`, replacing the old MVP 1.0 editor surface.
+
+Files:
+
+1. `frontend/src/components/projectGraph/ProjectGraphCanvas.tsx`
+2. `frontend/src/components/projectGraph/ProjectGraphCanvas.css`
+3. `frontend/src/components/EditorPage.tsx`
+4. `frontend/src/main.tsx`
+5. `frontend/src/utils/__tests__/projectGraphProjection.test.ts`
+
+Result:
+
+1. Added dedicated React Flow 2 node components for file frames, label frames, label start nodes, and scenario nodes.
+2. Added `ProjectGraphCanvas`, using `@xyflow/react` `ReactFlow`, `Background`, `MiniMap`, and `Controls`.
+3. Replaced the old MVP 1.0 `EditorPage` dependency chain with a minimal ProjectGraph canvas shell.
+4. Removed the old collaboration provider wrapper from app bootstrap because the old MVP 1.0 collaboration layer was removed from this frontend path.
+5. Tests passed: `npm test -- --run src/utils/__tests__/projectGraphProjection.test.ts`.
+6. Build passed: `npm run build`.
 ## 2026-04-30
 
 ### Branch And Initial Architecture

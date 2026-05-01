@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { projectGraphNodeTypes } from '../../components/projectGraph/ProjectGraphCanvas';
 import { projectGraphToReactFlow, type ProjectGraphSnapshot } from '../projectGraphProjection';
 
 const graph: ProjectGraphSnapshot = {
@@ -70,8 +71,9 @@ describe('projectGraphToReactFlow static projection', () => {
       type: 'projectFrame',
       position: { x: 0, y: 0 },
       data: { kind: 'file', path: 'day_1.rpy', title: 'day_1.rpy' },
+      width: 1200,
+      height: 800,
     });
-    expect(fileNode).toMatchObject({ width: 1200, height: 800 });
 
     const labelNode = projection.nodes.find((node) => node.id === 'label-start');
     expect(labelNode).toMatchObject({
@@ -96,5 +98,14 @@ describe('projectGraphToReactFlow static projection', () => {
       extent: 'parent',
       data: { kind: 'scenario', scenarioType: 'dialogue', content: 'r "Hello projection."' },
     });
+  });
+
+  it('exposes dedicated React Flow 2 node types for the new canvas layer', () => {
+    expect(Object.keys(projectGraphNodeTypes).sort()).toEqual([
+      'labelFrame',
+      'labelStart',
+      'projectFrame',
+      'scenarioNode',
+    ]);
   });
 });

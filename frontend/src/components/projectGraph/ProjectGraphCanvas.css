@@ -1,0 +1,88 @@
+.project-graph-canvas {
+  width: 100%;
+  height: 100%;
+  min-height: 520px;
+  background: #f7f8fb;
+}
+
+.project-graph-canvas .react-flow__node {
+  border-radius: 8px;
+}
+
+.pg-node {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border-radius: 8px;
+  border: 1px solid rgba(31, 41, 55, 0.16);
+  background: #ffffff;
+  color: #172033;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.pg-node--file {
+  border: 2px solid rgba(37, 99, 235, 0.32);
+  background: rgba(219, 234, 254, 0.28);
+  padding: 14px 16px;
+}
+
+.pg-node--label-frame {
+  border: 2px solid rgba(20, 184, 166, 0.42);
+  background: rgba(240, 253, 250, 0.48);
+  padding: 12px 14px;
+}
+
+.pg-node--label-start {
+  border-color: rgba(15, 118, 110, 0.58);
+  background: #ecfeff;
+  padding: 10px 12px;
+}
+
+.pg-node--scenario {
+  border-color: rgba(100, 116, 139, 0.36);
+  background: #ffffff;
+  padding: 10px 12px;
+}
+
+.pg-node--scenario[data-scenario-type="menu"],
+.pg-node--scenario[data-scenario-type="menu_choice"] {
+  border-color: rgba(124, 58, 237, 0.42);
+  background: #f5f3ff;
+}
+
+.pg-node--scenario[data-scenario-type="if"],
+.pg-node--scenario[data-scenario-type="elif"],
+.pg-node--scenario[data-scenario-type="else"] {
+  border-color: rgba(217, 119, 6, 0.42);
+  background: #fffbeb;
+}
+
+.pg-node__eyebrow {
+  margin-bottom: 4px;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.pg-node__title {
+  overflow: hidden;
+  color: #0f172a;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pg-node__content {
+  display: -webkit-box;
+  overflow: hidden;
+  color: #334155;
+  font-size: 13px;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
