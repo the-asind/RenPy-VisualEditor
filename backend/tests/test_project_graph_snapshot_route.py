@@ -39,6 +39,7 @@ def project_owner(temp_database):
 @pytest.fixture
 def client(temp_database, project_owner):
     original_projects_db = projects.db_service
+    original_current_user_override = app.dependency_overrides.get(get_current_user)
     projects.db_service = temp_database
 
     async def override_current_user():
@@ -48,7 +49,10 @@ def client(temp_database, project_owner):
     try:
         yield TestClient(app)
     finally:
-        app.dependency_overrides.pop(get_current_user, None)
+        if original_current_user_override is None:
+            app.dependency_overrides.pop(get_current_user, None)
+        else:
+            app.dependency_overrides[get_current_user] = original_current_user_override
         projects.db_service = original_projects_db
 
 
