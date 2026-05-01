@@ -108,4 +108,146 @@ describe('projectGraphToReactFlow static projection', () => {
       'scenarioNode',
     ]);
   });
+
+  it('keeps nested containment separate from node-to-node jump and call edges', () => {
+    const nestedGraph: ProjectGraphSnapshot = {
+      ...graph,
+      labels: [
+        graph.labels[0],
+        {
+          id: 'label-start-shared-nook',
+          file_id: 'file-day-1',
+          parent_label_id: 'label-start',
+          name: '.shared_nook',
+          qualified_name: 'start.shared_nook',
+          scope: 'local',
+          label_start_node_id: 'start-node-shared-nook',
+          source_span: { start_line: 10, end_line: 10 },
+          visual: { position: { x: 520, y: 48 }, size: { width: 360, height: 240 } },
+        },
+      ],
+      label_starts: [
+        graph.label_starts[0],
+        {
+          id: 'start-node-shared-nook',
+          file_id: 'file-day-1',
+          label_id: 'label-start-shared-nook',
+          qualified_name: 'start.shared_nook',
+          content: 'label .shared_nook:',
+          visual: { position: { x: 32, y: 32 }, size: { width: 260, height: 72 } },
+        },
+      ],
+      nodes: [
+        graph.nodes[0],
+        {
+          id: 'node-menu',
+          file_id: 'file-day-1',
+          label_id: 'label-start',
+          parent_node_id: null,
+          type: 'menu',
+          content: 'menu:',
+          order: '0001',
+          source_span: { start_line: 2, end_line: 2 },
+          metadata: {},
+          visual: { position: { x: 96, y: 248 }, size: { width: 360, height: 160 } },
+        },
+        {
+          id: 'node-menu-choice',
+          file_id: 'file-day-1',
+          label_id: 'label-start',
+          parent_node_id: 'node-menu',
+          type: 'menu_choice',
+          content: '"Inspect the tiny cheese map"',
+          order: '0001.0000',
+          source_span: { start_line: 3, end_line: 3 },
+          metadata: { condition: 'renpy_has_cracker' },
+          visual: { position: { x: 32, y: 72 }, size: { width: 280, height: 72 } },
+        },
+        {
+          id: 'node-call-local',
+          file_id: 'file-day-1',
+          label_id: 'label-start',
+          parent_node_id: 'node-menu-choice',
+          type: 'call',
+          content: 'call .shared_nook',
+          order: '0001.0000.0000',
+          source_span: { start_line: 4, end_line: 4 },
+          metadata: { target: '.shared_nook' },
+          visual: { position: { x: 32, y: 64 }, size: { width: 220, height: 64 } },
+        },
+      ],
+      edges: [
+        {
+          id: 'edge-dialogue-jump-start',
+          source_node_id: 'node-dialogue-1',
+          target_node_id: 'start-node-start',
+          kind: 'jump',
+          metadata: { target: 'start' },
+        },
+        {
+          id: 'edge-call-local-start',
+          source_node_id: 'node-call-local',
+          target_node_id: 'start-node-shared-nook',
+          kind: 'call',
+          metadata: { target: '.shared_nook' },
+        },
+      ],
+    };
+
+    const projection = projectGraphToReactFlow(nestedGraph);
+    const byId = new Map(projection.nodes.map((node) => [node.id, node]));
+
+    expect(byId.get('label-start-shared-nook')).toMatchObject({
+      type: 'labelFrame',
+      parentId: 'label-start',
+      extent: 'parent',
+    });
+    expect(byId.get('start-node-shared-nook')).toMatchObject({
+      type: 'labelStart',
+      parentId: 'label-start-shared-nook',
+      extent: 'parent',
+    });
+    expect(byId.get('node-menu-choice')).toMatchObject({
+      type: 'scenarioNode',
+      parentId: 'node-menu',
+      extent: 'parent',
+    });
+    expect(byId.get('node-call-local')).toMatchObject({
+      type: 'scenarioNode',
+      parentId: 'node-menu-choice',
+      extent: 'parent',
+    });
+
+    const frameIds = new Set(
+      projection.nodes
+        .filter((node) => node.type === 'projectFrame' || node.type === 'labelFrame')
+        .map((node) => node.id),
+    );
+    expect(projection.edges.every((edge) => !frameIds.has(edge.source) && !frameIds.has(edge.target))).toBe(true);
+
+    expect(projection.edges).toEqual([
+      expect.objectContaining({
+        id: 'edge-dialogue-jump-start',
+        source: 'node-dialogue-1',
+        target: 'start-node-start',
+        type: 'smoothstep',
+        animated: false,
+        className: 'project-edge project-edge--jump',
+        label: 'jump',
+        data: expect.objectContaining({ kind: 'jump' }),
+        style: expect.objectContaining({ opacity: 0.52, strokeDasharray: '8 6' }),
+      }),
+      expect.objectContaining({
+        id: 'edge-call-local-start',
+        source: 'node-call-local',
+        target: 'start-node-shared-nook',
+        type: 'smoothstep',
+        animated: true,
+        className: 'project-edge project-edge--call',
+        label: 'call',
+        data: expect.objectContaining({ kind: 'call' }),
+        style: expect.objectContaining({ opacity: 0.72, strokeWidth: 2 }),
+      }),
+    ]);
+  });
 });

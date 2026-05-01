@@ -1,4 +1,4 @@
-import type { Edge, Node } from '@xyflow/react';
+import { MarkerType, type Edge, type Node } from '@xyflow/react';
 
 export interface GraphPoint {
   x: number;
@@ -206,6 +206,13 @@ export const projectGraphToReactFlow = (graph: ProjectGraphSnapshot): ProjectGra
     type: 'smoothstep',
     animated: edge.kind === 'call',
     label: edge.kind,
+    className: `project-edge project-edge--${edge.kind}`,
+    markerEnd: { type: MarkerType.ArrowClosed },
+    style: {
+      opacity: edge.kind === 'call' ? 0.72 : 0.52,
+      strokeWidth: 2,
+      strokeDasharray: edge.kind === 'jump' ? '8 6' : undefined,
+    },
     data: {
       kind: edge.kind,
       metadata: edge.metadata,

@@ -368,6 +368,24 @@ Result:
 4. Removed the old collaboration provider wrapper from app bootstrap because the old MVP 1.0 collaboration layer was removed from this frontend path.
 5. Tests passed: `npm test -- --run src/utils/__tests__/projectGraphProjection.test.ts`.
 6. Build passed: `npm run build`.
+
+### Sprint 4 / Master Item 4.3 Containment And Node-to-node Edges
+
+Locked the React Flow containment contract for nested labels, nested scenario nodes, and relation edges.
+
+Files:
+
+1. `frontend/src/utils/projectGraphProjection.ts`
+2. `frontend/src/utils/__tests__/projectGraphProjection.test.ts`
+3. `frontend/src/components/projectGraph/ProjectGraphCanvas.css`
+
+Result:
+
+1. Nested `LabelFrame`s project as child nodes through React Flow `parentId`.
+2. Nested `ScenarioNode`s project as child nodes of their parent scenario node.
+3. `jump` and `call` relation edges target `LabelStartNode` IDs and never target `FileFrame` or `LabelFrame` IDs.
+4. `jump` edges render as faded dashed relation edges; `call` edges render as faded animated relation edges.
+5. Tests passed: `npm test -- --run src/utils/__tests__/projectGraphProjection.test.ts`.
 ## 2026-04-30
 
 ### Branch And Initial Architecture

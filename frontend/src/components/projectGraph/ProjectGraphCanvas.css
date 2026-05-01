@@ -86,3 +86,11 @@
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
 }
+
+.project-edge--jump .react-flow__edge-path {
+  stroke: rgba(37, 99, 235, 0.58);
+}
+
+.project-edge--call .react-flow__edge-path {
+  stroke: rgba(124, 58, 237, 0.72);
+}
