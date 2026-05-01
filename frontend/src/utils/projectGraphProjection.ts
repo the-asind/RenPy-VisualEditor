@@ -98,6 +98,106 @@ export interface ProjectGraphProjection {
   edges: Edge[];
 }
 
+type LayoutNode = Node & {
+  position: GraphPoint;
+  width: number;
+  height: number;
+  parentId?: string;
+};
+
+const FRAME_PADDING = 32;
+const SIBLING_GAP = 40;
+
+const clonePoint = (point: GraphPoint): GraphPoint => ({ x: point.x, y: point.y });
+
+const normalizeSize = (size: GraphSize): GraphSize => ({
+  width: Math.max(size.width, 160),
+  height: Math.max(size.height, 80),
+});
+
+const overlaps = (a: LayoutNode, b: LayoutNode): boolean =>
+  a.position.x < b.position.x + b.width &&
+  a.position.x + a.width > b.position.x &&
+  a.position.y < b.position.y + b.height &&
+  a.position.y + a.height > b.position.y;
+
+const buildChildrenByParent = (nodes: LayoutNode[]): Map<string, LayoutNode[]> => {
+  const childrenByParent = new Map<string, LayoutNode[]>();
+  for (const node of nodes) {
+    const parentKey = node.parentId ?? '__root__';
+    const children = childrenByParent.get(parentKey) ?? [];
+    children.push(node);
+    childrenByParent.set(parentKey, children);
+  }
+  return childrenByParent;
+};
+
+const shiftOverlappingSiblings = (siblings: LayoutNode[], direction: 'horizontal' | 'vertical'): void => {
+  const placed: LayoutNode[] = [];
+
+  for (const sibling of siblings) {
+    while (placed.some((placedSibling) => overlaps(sibling, placedSibling))) {
+      if (direction === 'horizontal') {
+        sibling.position.x = Math.max(
+          sibling.position.x,
+          ...placed.map((placedSibling) => placedSibling.position.x + placedSibling.width + SIBLING_GAP),
+        );
+      } else {
+        sibling.position.y = Math.max(
+          sibling.position.y,
+          ...placed.map((placedSibling) => placedSibling.position.y + placedSibling.height + SIBLING_GAP),
+        );
+      }
+    }
+    placed.push(sibling);
+  }
+};
+
+const expandParentsToFitChildren = (nodes: LayoutNode[]): void => {
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const childrenByParent = buildChildrenByParent(nodes);
+
+  const expand = (parent: LayoutNode): void => {
+    const children = childrenByParent.get(parent.id) ?? [];
+    for (const child of children) {
+      expand(child);
+    }
+
+    const requiredWidth = Math.max(
+      parent.width,
+      ...children.map((child) => child.position.x + child.width + FRAME_PADDING),
+    );
+    const requiredHeight = Math.max(
+      parent.height,
+      ...children.map((child) => child.position.y + child.height + FRAME_PADDING),
+    );
+
+    parent.width = requiredWidth;
+    parent.height = requiredHeight;
+  };
+
+  for (const node of nodes) {
+    if (!node.parentId || !byId.has(node.parentId)) {
+      expand(node);
+    }
+  }
+};
+
+const normalizeLayout = (nodes: LayoutNode[]): LayoutNode[] => {
+  const arrangeSiblings = (): void => {
+    const childrenByParent = buildChildrenByParent(nodes);
+    for (const [parentId, siblings] of childrenByParent.entries()) {
+      shiftOverlappingSiblings(siblings, parentId === '__root__' ? 'horizontal' : 'vertical');
+    }
+  };
+
+  arrangeSiblings();
+  expandParentsToFitChildren(nodes);
+  arrangeSiblings();
+  expandParentsToFitChildren(nodes);
+
+  return nodes;
+};
 
 const sourceOrder = (item: { source_span: SourceSpan | null; order?: string }): [number, string] => [
   item.source_span?.start_line ?? Number.MAX_SAFE_INTEGER,
@@ -114,13 +214,14 @@ const compareSourceOrder = <T extends { source_span: SourceSpan | null; order?: 
 };
 
 export const projectGraphToReactFlow = (graph: ProjectGraphSnapshot): ProjectGraphProjection => {
-  const nodes: Node[] = [];
+  const nodes: LayoutNode[] = [];
 
   for (const file of [...graph.files].sort((a, b) => a.order.localeCompare(b.order))) {
+    const size = normalizeSize(file.visual.size);
     nodes.push({
       id: file.id,
       type: 'projectFrame',
-      position: file.visual.position,
+      position: clonePoint(file.visual.position),
       data: {
         kind: 'file',
         path: file.path,
@@ -129,18 +230,19 @@ export const projectGraphToReactFlow = (graph: ProjectGraphSnapshot): ProjectGra
       },
       draggable: true,
       selectable: true,
-      width: file.visual.size.width,
-      height: file.visual.size.height,
+      width: size.width,
+      height: size.height,
     });
   }
 
   for (const label of [...graph.labels].sort(compareSourceOrder)) {
+    const size = normalizeSize(label.visual.size);
     nodes.push({
       id: label.id,
       type: 'labelFrame',
       parentId: label.parent_label_id ?? label.file_id,
       extent: 'parent',
-      position: label.visual.position,
+      position: clonePoint(label.visual.position),
       data: {
         kind: 'label',
         name: label.name,
@@ -151,18 +253,19 @@ export const projectGraphToReactFlow = (graph: ProjectGraphSnapshot): ProjectGra
       },
       draggable: true,
       selectable: true,
-      width: label.visual.size.width,
-      height: label.visual.size.height,
+      width: size.width,
+      height: size.height,
     });
   }
 
   for (const start of graph.label_starts) {
+    const size = normalizeSize(start.visual.size);
     nodes.push({
       id: start.id,
       type: 'labelStart',
       parentId: start.label_id,
       extent: 'parent',
-      position: start.visual.position,
+      position: clonePoint(start.visual.position),
       data: {
         kind: 'labelStart',
         qualifiedName: start.qualified_name,
@@ -172,18 +275,19 @@ export const projectGraphToReactFlow = (graph: ProjectGraphSnapshot): ProjectGra
       },
       draggable: true,
       selectable: true,
-      width: start.visual.size.width,
-      height: start.visual.size.height,
+      width: size.width,
+      height: size.height,
     });
   }
 
   for (const scenario of [...graph.nodes].sort(compareSourceOrder)) {
+    const size = normalizeSize(scenario.visual.size);
     nodes.push({
       id: scenario.id,
       type: 'scenarioNode',
       parentId: scenario.parent_node_id ?? scenario.label_id,
       extent: 'parent',
-      position: scenario.visual.position,
+      position: clonePoint(scenario.visual.position),
       data: {
         kind: 'scenario',
         scenarioType: scenario.type,
@@ -194,8 +298,8 @@ export const projectGraphToReactFlow = (graph: ProjectGraphSnapshot): ProjectGra
       },
       draggable: true,
       selectable: true,
-      width: scenario.visual.size.width,
-      height: scenario.visual.size.height,
+      width: size.width,
+      height: size.height,
     });
   }
 
@@ -220,5 +324,5 @@ export const projectGraphToReactFlow = (graph: ProjectGraphSnapshot): ProjectGra
     },
   }));
 
-  return { nodes, edges };
+  return { nodes: normalizeLayout(nodes), edges };
 };

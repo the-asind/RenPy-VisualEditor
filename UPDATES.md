@@ -386,6 +386,24 @@ Result:
 3. `jump` and `call` relation edges target `LabelStartNode` IDs and never target `FileFrame` or `LabelFrame` IDs.
 4. `jump` edges render as faded dashed relation edges; `call` edges render as faded animated relation edges.
 5. Tests passed: `npm test -- --run src/utils/__tests__/projectGraphProjection.test.ts`.
+
+### Sprint 4 / Master Item 4.4 Layout Sizing And Non-overlap
+
+Added the first deterministic React Flow 2.0 layout normalizer for ProjectGraph projection.
+
+Files:
+
+1. `frontend/src/utils/projectGraphProjection.ts`
+2. `frontend/src/utils/__tests__/projectGraphProjection.test.ts`
+
+Result:
+
+1. Overlapping root `FileFrame` siblings are shifted apart horizontally.
+2. Overlapping children inside the same parent frame/node are shifted apart vertically.
+3. Parent `FileFrame`, `LabelFrame`, and scenario container bounds expand to fit their projected children with padding.
+4. Existing non-overlapping manual positions are preserved; normalization only corrects collisions and undersized parents.
+5. This is the MVP deterministic fallback before a richer flow-first layout engine.
+6. Tests passed: `npm test -- --run src/utils/__tests__/projectGraphProjection.test.ts`.
 ## 2026-04-30
 
 ### Branch And Initial Architecture

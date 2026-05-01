@@ -2,6 +2,31 @@ import { describe, expect, it } from 'vitest';
 import { projectGraphNodeTypes } from '../../components/projectGraph/ProjectGraphCanvas';
 import { projectGraphToReactFlow, type ProjectGraphSnapshot } from '../projectGraphProjection';
 
+const nodeRect = (node: { position: { x: number; y: number }; width?: number; height?: number }) => ({
+  x: node.position.x,
+  y: node.position.y,
+  width: Number(node.width ?? 0),
+  height: Number(node.height ?? 0),
+});
+
+const rectsOverlap = (
+  a: { x: number; y: number; width: number; height: number },
+  b: { x: number; y: number; width: number; height: number },
+) => a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+
+const childFitsParent = (
+  child: { position: { x: number; y: number }; width?: number; height?: number },
+  parent: { width?: number; height?: number },
+) => {
+  const childBounds = nodeRect(child);
+  return (
+    childBounds.x >= 0 &&
+    childBounds.y >= 0 &&
+    childBounds.x + childBounds.width <= Number(parent.width ?? 0) &&
+    childBounds.y + childBounds.height <= Number(parent.height ?? 0)
+  );
+};
+
 const graph: ProjectGraphSnapshot = {
   project_id: 'projection-project',
   files: [
@@ -249,5 +274,119 @@ describe('projectGraphToReactFlow static projection', () => {
         style: expect.objectContaining({ opacity: 0.72, strokeWidth: 2 }),
       }),
     ]);
+  });
+
+  it('normalizes overlapping layout and expands parent frames around children', () => {
+    const overlappingGraph: ProjectGraphSnapshot = {
+      project_id: 'overlap-project',
+      files: [
+        {
+          id: 'file-day-1',
+          path: 'day_1.rpy',
+          order: '0000',
+          visual: { position: { x: 0, y: 0 }, size: { width: 360, height: 240 } },
+        },
+        {
+          id: 'file-day-2',
+          path: 'day_2.rpy',
+          order: '0001',
+          visual: { position: { x: 0, y: 0 }, size: { width: 360, height: 240 } },
+        },
+      ],
+      labels: [
+        {
+          id: 'label-start',
+          file_id: 'file-day-1',
+          parent_label_id: null,
+          name: 'start',
+          qualified_name: 'start',
+          scope: 'global',
+          label_start_node_id: 'start-node-start',
+          source_span: { start_line: 0, end_line: 0 },
+          visual: { position: { x: 24, y: 48 }, size: { width: 260, height: 160 } },
+        },
+        {
+          id: 'label-day-one-late',
+          file_id: 'file-day-1',
+          parent_label_id: null,
+          name: 'day_one_late',
+          qualified_name: 'day_one_late',
+          scope: 'global',
+          label_start_node_id: 'start-node-day-one-late',
+          source_span: { start_line: 20, end_line: 20 },
+          visual: { position: { x: 24, y: 48 }, size: { width: 260, height: 160 } },
+        },
+      ],
+      label_starts: [
+        {
+          id: 'start-node-start',
+          file_id: 'file-day-1',
+          label_id: 'label-start',
+          qualified_name: 'start',
+          content: 'label start:',
+          visual: { position: { x: 16, y: 16 }, size: { width: 220, height: 64 } },
+        },
+        {
+          id: 'start-node-day-one-late',
+          file_id: 'file-day-1',
+          label_id: 'label-day-one-late',
+          qualified_name: 'day_one_late',
+          content: 'label day_one_late:',
+          visual: { position: { x: 16, y: 16 }, size: { width: 220, height: 64 } },
+        },
+      ],
+      nodes: [
+        {
+          id: 'node-dialogue-a',
+          file_id: 'file-day-1',
+          label_id: 'label-start',
+          parent_node_id: null,
+          type: 'dialogue',
+          content: 'r "RenPy Mouse checks the layout grid."',
+          order: '0000',
+          source_span: { start_line: 1, end_line: 1 },
+          metadata: {},
+          visual: { position: { x: 16, y: 96 }, size: { width: 260, height: 72 } },
+        },
+        {
+          id: 'node-dialogue-b',
+          file_id: 'file-day-1',
+          label_id: 'label-start',
+          parent_node_id: null,
+          type: 'dialogue',
+          content: 'r "No two crumbs may occupy one square."',
+          order: '0001',
+          source_span: { start_line: 2, end_line: 2 },
+          metadata: {},
+          visual: { position: { x: 16, y: 96 }, size: { width: 260, height: 72 } },
+        },
+      ],
+      edges: [],
+      diagnostics: [],
+      source_index: { files: {} },
+    };
+
+    const projection = projectGraphToReactFlow(overlappingGraph);
+    const byId = new Map(projection.nodes.map((node) => [node.id, node]));
+
+    const fileOne = byId.get('file-day-1');
+    const fileTwo = byId.get('file-day-2');
+    const labelStart = byId.get('label-start');
+    const labelLate = byId.get('label-day-one-late');
+    const startNode = byId.get('start-node-start');
+    const dialogueA = byId.get('node-dialogue-a');
+    const dialogueB = byId.get('node-dialogue-b');
+
+    expect(fileOne && fileTwo && labelStart && labelLate && startNode && dialogueA && dialogueB).toBeTruthy();
+
+    expect(rectsOverlap(nodeRect(fileOne!), nodeRect(fileTwo!))).toBe(false);
+    expect(rectsOverlap(nodeRect(labelStart!), nodeRect(labelLate!))).toBe(false);
+    expect(rectsOverlap(nodeRect(dialogueA!), nodeRect(dialogueB!))).toBe(false);
+
+    expect(childFitsParent(labelStart!, fileOne!)).toBe(true);
+    expect(childFitsParent(labelLate!, fileOne!)).toBe(true);
+    expect(childFitsParent(startNode!, labelStart!)).toBe(true);
+    expect(childFitsParent(dialogueA!, labelStart!)).toBe(true);
+    expect(childFitsParent(dialogueB!, labelStart!)).toBe(true);
   });
 });
