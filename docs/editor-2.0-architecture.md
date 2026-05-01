@@ -420,6 +420,19 @@ Master item - завершенный TDD-круг внутри sprint:
 
 Atomic actions - мелкие шаги внутри master item. Они помогают выполнить item, но не заменяют тест.
 
+Начиная со Sprint 8, чтобы быстрее довести проект до рабочего MVP 2.0, планирование использует более мелкую единицу: `MVP Action`.
+
+`MVP Action` - это атомарный пользовательский или системный результат внутри спринта. Каждый `MVP Action` обязан иметь:
+
+1. Black-box expectation: что должно быть видно снаружи.
+2. Action tests: тесты, которые падают до реализации именно этого результата.
+3. Integration tests: связь этого результата с предыдущими actions и прошлыми спринтами.
+4. Implementation: минимальный код, который закрывает expectation.
+5. Verification: локальный тест action, затем затронутые integration tests.
+6. Artifact update: запись в `UPDATES.md`; архитектурный документ обновляется, если меняется план.
+
+Внутри `MVP Action` могут быть мелкие engineering steps, но они не считаются закрытыми без black-box и integration tests.
+
 Шаблон:
 
 ```md
@@ -837,6 +850,323 @@ Atomic actions:
 4. Convert operations to Loro updates.
 5. Verify second client.
 6. Verify persistence.
+
+### Sprint 8. Product Import And Open Pipeline
+
+Цель: пользователь может загрузить `.rpy` файлы проекта и открыть рабочий ProjectGraph 2.0 canvas без ручной подготовки snapshot.
+
+Definition of Done:
+
+- Multi-file `.rpy` upload creates one ProjectGraph.
+- Import runs parser, resolver, diagnostics, initial layout, and CRDT snapshot save.
+- Opening a project loads the saved ProjectGraph snapshot into the canvas.
+- Export after import uses ProjectGraph and returns normalized multi-file `.rpy`.
+- Old line-range script tree is not required for this path.
+
+#### MVP Action 8.1: ProjectGraph Import API
+
+Black-box expectation: authenticated user uploads multiple `.rpy` files to a project and receives a ProjectGraph import result with saved CRDT snapshot.
+
+Action tests:
+
+1. Upload mouse RenPy fixture files to `POST /api/projects/{project_id}/graph-import`.
+2. Assert response includes project ID, file count, label count, node count, diagnostics summary, and snapshot availability.
+3. Assert the saved snapshot reloads through `GET /graph-snapshot` and preserves entity IDs.
+
+Integration tests:
+
+1. Import API uses Sprint 1 parser/importer, Sprint 2 resolver, Sprint 5 CRDT snapshot, and Sprint 6 persistence.
+2. Imported graph exports through Sprint 3 exporter without editor metadata.
+
+#### MVP Action 8.2: Frontend Import Flow
+
+Black-box expectation: user selects project files in the UI, starts import, and then lands on the ProjectGraph canvas for that project.
+
+Action tests:
+
+1. Frontend API posts a `multipart/form-data` import request with several `.rpy` files.
+2. Import result routes the editor to `?project={project_id}`.
+3. Error state is shown when import returns blocking diagnostics or server failure.
+
+Integration tests:
+
+1. Import flow calls Sprint 7 snapshot loading after the backend saves the CRDT snapshot.
+2. Canvas projection from Sprint 4 renders file frames, label frames, label starts, nodes, and relation edges from the imported snapshot.
+
+#### MVP Action 8.3: Import Diagnostics UX
+
+Black-box expectation: after import, non-blocking diagnostics are visible in Problems, while safe raw/action statements do not block opening the canvas.
+
+Action tests:
+
+1. Import diagnostic fixture with duplicate label, unresolved target, dynamic target, and unsupported raw block.
+2. Assert non-blocking diagnostics appear in Problems panel with searchable/focusable node references where available.
+3. Assert safe `scene/show/with/audio/python/raw` preservation does not create blocking errors.
+
+Integration tests:
+
+1. Diagnostics semantics match Sprint 2 resolver/import diagnostics.
+2. Problems projection and search behavior match Sprint 4 canvas contracts.
+
+#### MVP Action 8.4: Import To Export Contract
+
+Black-box expectation: imported multi-file project can be immediately exported back into normalized `.rpy` files with the same MVP semantics.
+
+Action tests:
+
+1. Import full mouse RenPy corpus through the API.
+2. Export through `POST /graph-export`.
+3. Re-import exported files and compare semantic labels, node type counts, edges, diagnostics semantics, comments, and raw/action content.
+
+Integration tests:
+
+1. Covers Sprint 1 parser, Sprint 2 resolver, Sprint 3 exporter, Sprint 6 persistence, and Sprint 7 editor export route in one contract.
+
+### Sprint 9. Real Collaboration And Persistence Hardening
+
+Цель: доказать, что MVP 2.0 работает в реальном браузерном сценарии с двумя клиентами, reload и сохранением.
+
+Definition of Done:
+
+- Two browser clients open one project canvas.
+- Edit and drag in one client appear in the other.
+- Latest state survives reload.
+- Snapshot saving is debounced and observable.
+- JSON presence/log messages never corrupt binary CRDT state.
+
+#### MVP Action 9.1: Browser Two-client Collaboration Smoke
+
+Black-box expectation: two real browser contexts see the same project; edit/drag in client A appears in client B without manual refresh.
+
+Action tests:
+
+1. Start backend and frontend test server.
+2. Open the same imported project in two browser contexts.
+3. Edit one scenario node in client A.
+4. Drag one frame or node in client A.
+5. Assert client B displays the new content and position.
+
+Integration tests:
+
+1. Verifies Sprint 4 React Flow projection, Sprint 5 CRDT updates, Sprint 6 WebSocket relay, and Sprint 7 editor session together.
+
+#### MVP Action 9.2: Debounced Snapshot Persistence
+
+Black-box expectation: rapid edits do not spam snapshot saves, but the final state is persisted and reloadable.
+
+Action tests:
+
+1. Perform multiple fast content edits and drag events in one session.
+2. Assert save indicator enters saving/saved/error states correctly.
+3. Assert save calls are debounced or coalesced.
+4. Reload project and assert final content/position survived.
+
+Integration tests:
+
+1. Snapshot bytes remain valid Loro snapshots after debounced saves.
+2. Reload uses Sprint 7 `GET /graph-snapshot` and opens through Sprint 4 canvas.
+
+#### MVP Action 9.3: Reconnect And Remote Update Recovery
+
+Black-box expectation: a client that disconnects and reconnects catches up from the latest snapshot or incoming updates without losing local graph shape.
+
+Action tests:
+
+1. Open two clients.
+2. Disconnect client B.
+3. Edit/drag in client A and persist.
+4. Reconnect or reload client B.
+5. Assert client B sees the latest graph and no duplicate entities.
+
+Integration tests:
+
+1. Uses Sprint 5 duplicate update idempotency.
+2. Uses Sprint 6 room routing and Sprint 7 snapshot load.
+
+#### MVP Action 9.4: Presence And Binary Channel Separation
+
+Black-box expectation: active user JSON events and binary CRDT updates share one project socket without corrupting each other.
+
+Action tests:
+
+1. Connect two clients to one project room.
+2. Assert presence JSON is displayed or safely ignored by CRDT logic.
+3. Send binary update and assert only CRDT state changes.
+4. Send ping/presence JSON and assert graph does not change.
+
+Integration tests:
+
+1. Extends Sprint 6 mixed-frame backend tests.
+2. Extends Sprint 7 frontend WebSocket helper tests.
+
+### Sprint 10. Editor UX And Export Readiness
+
+Цель: сделать canvas 2.0 достаточно удобным для реального MVP-использования без расширенной полировки.
+
+Definition of Done:
+
+- Node editor handles MVP node types without metadata leakage.
+- Drag/manual layout survives reload.
+- Export has predictable user-facing behavior.
+- Blocking diagnostics gate unsafe export; warnings do not block.
+- Search and Problems work after live CRDT updates.
+
+#### MVP Action 10.1: Typed Scenario Node Editor
+
+Black-box expectation: user can edit dialogue, comment, jump, call, return, raw_action, raw_block, menu prompt, and menu choice content through one clear editor surface.
+
+Action tests:
+
+1. Select each MVP node type and edit its user-visible text.
+2. Assert ProjectGraph CRDT state changes only the intended content/metadata fields.
+3. Assert editor metadata is not added to export output.
+
+Integration tests:
+
+1. Edited nodes export correctly through Sprint 3 exporter.
+2. Edited nodes sync through Sprint 9 collaboration path.
+
+#### MVP Action 10.2: Manual Layout Persistence
+
+Black-box expectation: manual positions after drag remain stable after save, reload, and collaboration update.
+
+Action tests:
+
+1. Drag `FileFrame`, `LabelFrame`, `LabelStartNode`, and `ScenarioNode`.
+2. Save snapshot and reload.
+3. Assert local/global position rules are preserved.
+
+Integration tests:
+
+1. Uses Sprint 4 containment projection.
+2. Uses Sprint 5 CRDT position storage.
+3. Uses Sprint 9 real browser collaboration if available.
+
+#### MVP Action 10.3: Export Safety Gate
+
+Black-box expectation: export is allowed with warnings but blocked by diagnostics that explicitly make safe export impossible.
+
+Action tests:
+
+1. Export graph with warning diagnostics and assert files are returned.
+2. Export graph with blocking diagnostic and assert clear user-facing failure.
+3. Assert dynamic/unresolved warnings remain visible but do not block MVP export unless marked blocking.
+
+Integration tests:
+
+1. Matches Sprint 2 diagnostics semantics.
+2. Matches Sprint 3 metadata exclusion and raw preservation.
+3. Matches Sprint 7 `POST /graph-export` route.
+
+#### MVP Action 10.4: Live Search And Problems After Edits
+
+Black-box expectation: after collaborative edits or local edits, Search and Problems operate on the current CRDT graph, not stale initial projection.
+
+Action tests:
+
+1. Edit node content so it starts matching a new search query.
+2. Assert search result appears and focuses the edited node.
+3. Apply remote diagnostic-bearing update and assert Problems panel updates.
+
+Integration tests:
+
+1. Connects Sprint 4 search/problems projection, Sprint 5 CRDT graph conversion, and Sprint 9 collaboration updates.
+
+#### MVP Action 10.5: Export UX Contract
+
+Black-box expectation: user can request export from the canvas and receive the generated file set in a predictable format.
+
+Action tests:
+
+1. Click export in canvas.
+2. Assert export status transitions through exporting/success/failure.
+3. Assert returned file names match `FileFrame.path`.
+4. Assert file contents are normalized `.rpy` text.
+
+Integration tests:
+
+1. Uses Sprint 8 imported graph.
+2. Uses Sprint 10 edited graph.
+3. Uses Sprint 3 exporter through Sprint 7 route.
+
+### Sprint 11. MVP 2.0 Release Gate And Cleanup
+
+Цель: превратить технически собранный vertical slice в рабочий MVP 2.0, который можно дать пользователю без ручных шагов.
+
+Definition of Done:
+
+- One end-to-end release test covers import, open, edit, drag, collaborate, reload, search, problems, export, and re-import.
+- Old MVP 1.0 paths that conflict with MVP 2.0 are removed or clearly isolated.
+- Build/test commands are green from clean checkout.
+- Known non-blocking follow-ups are documented.
+- Architecture and `UPDATES.md` say MVP 2.0 is ready only if the release gate passes.
+
+#### MVP Action 11.1: Full MVP 2.0 End-to-end Contract
+
+Black-box expectation: one test proves the complete user path from `.rpy` files to collaborative canvas and exported `.rpy` files.
+
+Action tests:
+
+1. Create project.
+2. Import mouse RenPy fixture files.
+3. Open canvas.
+4. Edit one node.
+5. Drag one frame.
+6. Open second client and verify sync.
+7. Reload first client and verify persisted state.
+8. Search for edited text.
+9. Open Problems for known warning.
+10. Export files.
+11. Re-import exported files and compare semantics.
+
+Integration tests:
+
+1. This is the cross-sprint release test for Sprints 1-10.
+
+#### MVP Action 11.2: MVP 1.0 Conflict Cleanup
+
+Black-box expectation: MVP 2.0 editor path no longer depends on or accidentally routes through old line-range editor/collaboration code.
+
+Action tests:
+
+1. Open MVP 2.0 editor route and assert it uses ProjectGraph snapshot API.
+2. Assert old line-range insert/update endpoints are not called by the MVP 2.0 editor path.
+3. Assert old JSON lock collaboration does not run for ProjectGraph canvas.
+
+Integration tests:
+
+1. Cleanup follows `docs/mvp-1-inventory.md`.
+2. Full backend and frontend suites remain green after each focused deletion/isolation step.
+
+#### MVP Action 11.3: Build And Bundle Release Gate
+
+Black-box expectation: production build succeeds and either meets an explicit bundle budget or documents a conscious MVP exception.
+
+Action tests:
+
+1. Run production build from clean frontend state.
+2. Assert no TypeScript/Vite build failure.
+3. Assert bundle size is checked against the current MVP budget.
+
+Integration tests:
+
+1. If `loro-crdt/base64` remains, document it as accepted MVP exception with post-MVP optimization task.
+2. If replaced with explicit WASM/code splitting, rerun Sprint 5/7/9 collaboration tests.
+
+#### MVP Action 11.4: Release Documentation And Operator Notes
+
+Black-box expectation: a new agent or developer can run, test, and demo MVP 2.0 without relying on chat history.
+
+Action tests:
+
+1. Follow README/AGENTS instructions from a clean checkout.
+2. Run documented backend tests, frontend tests, and frontend build.
+3. Confirm MVP 2.0 demo path is documented: create project, import files, open canvas, collaborate, export.
+
+Integration tests:
+
+1. Documentation links to current artifacts only.
+2. `UPDATES.md` records final release gate status and known follow-ups.
 
 ## 17. Decision Log
 

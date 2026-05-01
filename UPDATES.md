@@ -4,6 +4,19 @@ This file is the short project memory for RenPy Visual Editor 2.0. Keep it curre
 
 ## 2026-05-02
 
+### MVP 2.0 Release Sprint Plan
+
+Extended `docs/editor-2.0-architecture.md` with the remaining release path to a working MVP 2.0.
+
+Decision:
+
+1. Starting with Sprint 8, each sprint item is treated as an `MVP Action`: a small black-box TDD result with its own action tests and integration tests.
+2. Sprint 8 focuses on product import/open: multi-file `.rpy` upload -> ProjectGraph import -> resolver/diagnostics/layout -> CRDT snapshot -> canvas open -> export contract.
+3. Sprint 9 focuses on real collaboration and persistence hardening: two browser clients, live edit/drag sync, reload recovery, debounced saves, and JSON/binary socket separation.
+4. Sprint 10 focuses on editor/export readiness: typed node editing, manual layout persistence, export safety gate, live search/problems after edits, and export UX.
+5. Sprint 11 is the MVP 2.0 release gate: one end-to-end contract, MVP 1.0 conflict cleanup, build/bundle gate, and operator documentation.
+6. The fastest safe route is not to add more feature breadth before Sprint 8; it is to close the missing product path from imported `.rpy` files to usable collaborative canvas and export.
+
 ### Sprint 7 / Master Item 7.2 Editable Collaborative Canvas
 
 Closed Sprint 7 by wiring the editor canvas to ProjectGraph CRDT domain operations, binary WebSocket updates, snapshot persistence, and ProjectGraph export.

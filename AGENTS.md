@@ -66,6 +66,15 @@ Each master item must be a complete TDD loop:
 
 Atomic actions live inside a master item. They are small implementation steps, not replacements for the master item's black-box tests.
 
+Starting with Sprint 8, release planning uses smaller `MVP Action` items. Treat every `MVP Action` as its own TDD loop with:
+
+1. A black-box expectation.
+2. Failing action tests before implementation.
+3. Integration tests that connect the action to prior actions and prior sprints.
+4. Artifact updates after tests pass.
+
+Do not close an `MVP Action` with only implementation notes or manual reasoning.
+
 ## Test Fixtures
 
 Parser and roundtrip fixtures must tell one continuous, funny story about a mouse named RenPy. Reuse these fixtures across parser, resolver, export, layout, and collaboration tests so that coverage grows around the same project corpus.
