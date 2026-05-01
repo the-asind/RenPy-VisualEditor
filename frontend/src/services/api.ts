@@ -1,5 +1,10 @@
 /// <reference types="vite/client" />
 import axios, { AxiosError } from 'axios';
+import {
+  importProjectGraphCrdtSnapshot,
+  projectGraphFromCrdtDoc,
+} from '../utils/projectGraphCrdt';
+import type { ProjectGraphSnapshot } from '../utils/projectGraphProjection';
 
 export interface ParsedScriptResponse {
   script_id: string;
@@ -256,6 +261,40 @@ export const insertNode = async (
 
     throw axiosError.response?.data || new Error(`Failed to insert node. Status: ${axiosError.response?.status || 'unknown'}. ${axiosError.message}`);
   }
+};
+
+export const getProjectGraphCrdtSnapshot = async (projectId: string): Promise<Uint8Array> => {
+  const targetUrl = `${apiClient.defaults.baseURL}/projects/${projectId}/graph-snapshot`;
+  console.log(`[API Request] GET ${targetUrl} for ProjectGraph CRDT snapshot`);
+
+  try {
+    const response = await apiClient.get<ArrayBuffer>(`/projects/${projectId}/graph-snapshot`, {
+      responseType: 'arraybuffer',
+    });
+    return new Uint8Array(response.data);
+  } catch (error) {
+    console.error('[API Error] Failed during getProjectGraphCrdtSnapshot call.');
+    console.error('Project ID:', projectId);
+
+    const axiosError = error as AxiosError;
+
+    if (axiosError.response) {
+      console.error('Error Response Data:', axiosError.response.data);
+      console.error('Error Response Status:', axiosError.response.status);
+    } else if (axiosError.request) {
+      console.error('Error Request:', axiosError.request);
+    } else {
+      console.error('Error Message:', axiosError.message);
+    }
+
+    throw axiosError.response?.data || new Error(`Failed to load ProjectGraph snapshot. Status: ${axiosError.response?.status || 'unknown'}. ${axiosError.message}`);
+  }
+};
+
+export const loadProjectGraphSnapshot = async (projectId: string): Promise<ProjectGraphSnapshot> => {
+  const snapshot = await getProjectGraphCrdtSnapshot(projectId);
+  const doc = importProjectGraphCrdtSnapshot(snapshot);
+  return projectGraphFromCrdtDoc(doc);
 };
 
 /**

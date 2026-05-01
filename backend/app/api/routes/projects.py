@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Body
+from fastapi import APIRouter, Depends, HTTPException, Body, Response
 from typing import List, Dict, Any, Optional
 from ...services.database import DatabaseService
 from ...api.routes.auth import get_current_user
@@ -71,6 +71,29 @@ async def get_project(project_id: str, user: Dict = Depends(get_current_user)) -
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get project: {str(e)}")
+
+@projects_router.get("/{project_id}/graph-snapshot")
+async def get_project_graph_snapshot(
+    project_id: str,
+    user: Dict = Depends(get_current_user),
+) -> Response:
+    """Return the latest opaque ProjectGraph CRDT snapshot for a project."""
+    try:
+        projects = db_service.get_user_projects(user["id"])
+        project = next((p for p in projects if p["id"] == project_id), None)
+
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found or access denied")
+
+        snapshot = db_service.get_project_crdt_snapshot(project_id)
+        if snapshot is None:
+            raise HTTPException(status_code=404, detail="Project graph snapshot not found")
+
+        return Response(content=snapshot, media_type="application/octet-stream")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get project graph snapshot: {str(e)}")
 
 @projects_router.post("/{project_id}/share")
 async def share_project(

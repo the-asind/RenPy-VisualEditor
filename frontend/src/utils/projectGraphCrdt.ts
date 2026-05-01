@@ -1,4 +1,4 @@
-import { LoroDoc, type LoroTreeNode, type TreeID, type VersionVector } from 'loro-crdt';
+import { LoroDoc, type LoroTreeNode, type TreeID, type VersionVector } from 'loro-crdt/base64';
 import type {
   FileFrameSnapshot,
   FlowEdgeSnapshot,

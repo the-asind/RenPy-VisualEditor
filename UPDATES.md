@@ -528,6 +528,33 @@ Result:
 4. Saving a later snapshot overwrites the latest project snapshot.
 5. Database initialization now migrates existing SQLite databases that already had old MVP 1.0 tables but were missing the CRDT snapshot table.
 6. Tests passed: `python -m pytest backend\tests\test_project_graph_crdt_persistence.py backend\tests\test_websocket.py backend\tests\test_database_service.py -q`.
+
+### Sprint 7 / Master Item 7.1 Read-only Canvas 2.0
+
+Started Sprint 7 by connecting the editor entrypoint to persisted ProjectGraph CRDT snapshots instead of the old demo graph.
+
+Files:
+
+1. `backend/app/api/routes/projects.py`
+2. `backend/tests/test_project_graph_snapshot_route.py`
+3. `frontend/src/services/api.ts`
+4. `frontend/src/services/__tests__/api.test.ts`
+5. `frontend/src/components/EditorPage.tsx`
+6. `frontend/src/utils/projectGraphCrdt.ts`
+7. `frontend/vite.config.ts`
+
+Result:
+
+1. Added authenticated `GET /api/projects/{project_id}/graph-snapshot` returning the latest opaque CRDT snapshot as `application/octet-stream`.
+2. The route checks project access and returns `404` when the project is inaccessible or no ProjectGraph snapshot exists.
+3. The frontend API loads the binary snapshot as `arraybuffer`, imports it into `LoroDoc`, and converts it back into `ProjectGraphSnapshot`.
+4. `EditorPage` now reads the project ID from `?project=...`, loads the snapshot, and renders `ProjectGraphCanvas` from real ProjectGraph data.
+5. Removed the read-only canvas dependency on the hardcoded demo graph.
+6. Switched the frontend Loro adapter import to `loro-crdt/base64` and set Vite build target to `esnext` so the production build can bundle Loro's WASM/top-level-await path for MVP 7.1.
+7. Known follow-up: the base64 Loro bundle increases the production JS chunk size. Later optimization should use explicit WASM handling and/or code splitting.
+8. Tests passed: `python -m pytest backend\tests\test_project_graph_snapshot_route.py backend\tests\test_project_graph_crdt_persistence.py backend\tests\test_project_graph_sprint_1_2_blackbox.py backend\tests\test_project_graph_export_roundtrip_contract.py backend\tests\test_websocket.py -q`.
+9. Tests passed: `npm test -- --run`.
+10. Build passed: `npm run build`.
 ## 2026-04-30
 
 ### Branch And Initial Architecture
