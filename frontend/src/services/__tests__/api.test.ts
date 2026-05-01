@@ -5,9 +5,11 @@ import {
   apiClient,
   exportProjectGraphFiles,
   insertNode,
+  importProjectGraphFiles,
   loadProjectGraphSnapshot,
   saveProjectGraphCrdtSnapshot,
   type InsertNodeResponse,
+  type ProjectGraphImportResult,
 } from '../api';
 import {
   createProjectGraphCrdtDoc,
@@ -63,6 +65,41 @@ describe('ProjectGraph snapshot loading', () => {
 
   beforeEach(() => {
     mock = new MockAdapter(apiClient);
+  });
+
+  it('imports several RenPy files as multipart ProjectGraph input', async () => {
+    const files = [
+      new File(['label start:\n    jump day_two\n'], 'renpy_mouse_day_1.rpy', { type: 'text/plain' }),
+      new File(['label day_two:\n    return\n'], 'renpy_mouse_day_2.rpy', { type: 'text/plain' }),
+    ];
+    const importResult: ProjectGraphImportResult = {
+      project_id: 'project-load-snapshot',
+      file_count: 2,
+      label_count: 2,
+      label_start_count: 2,
+      node_count: 2,
+      edge_count: 1,
+      diagnostics: {
+        total: 0,
+        blocking: 0,
+        info: 0,
+        warning: 0,
+        error: 0,
+      },
+      snapshot_available: true,
+    };
+
+    mock.onPost('/projects/project-load-snapshot/graph-import').reply((config) => {
+      expect(config.headers?.['Content-Type']).toBe('multipart/form-data');
+      expect(config.data).toBeInstanceOf(FormData);
+      expect([...(config.data as FormData).getAll('files')].map((file) => (file as File).name)).toEqual([
+        'renpy_mouse_day_1.rpy',
+        'renpy_mouse_day_2.rpy',
+      ]);
+      return [200, importResult];
+    });
+
+    await expect(importProjectGraphFiles('project-load-snapshot', files)).resolves.toEqual(importResult);
   });
 
   afterEach(() => {

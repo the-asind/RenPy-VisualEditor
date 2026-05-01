@@ -863,6 +863,11 @@ Definition of Done:
 - Export after import uses ProjectGraph and returns normalized multi-file `.rpy`.
 - Old line-range script tree is not required for this path.
 
+MVP implementation note:
+
+- Backend Python does not currently own a native Loro writer. Until `loro-py` or a shared package is adopted, the import API may create the initial CRDT snapshot through the checked-in frontend Node/Loro bridge, but the persisted bytes must still be a real Loro snapshot compatible with `frontend/src/utils/projectGraphCrdt.ts`.
+- JSON ProjectGraph payloads may be used as import/export API bodies and tests, but they must not replace the saved CRDT snapshot contract for opening the canvas.
+
 #### MVP Action 8.1: ProjectGraph Import API
 
 Black-box expectation: authenticated user uploads multiple `.rpy` files to a project and receives a ProjectGraph import result with saved CRDT snapshot.

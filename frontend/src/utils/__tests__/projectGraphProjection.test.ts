@@ -670,4 +670,112 @@ describe('projectGraphToReactFlow static projection', () => {
     expect(absoluteChoicePosition!.x).toBeGreaterThan(menuPosition!.x);
     expect(absoluteChoicePosition!.y).toBeGreaterThan(menuPosition!.y);
   });
+
+  it('projects imported non-blocking diagnostics into focusable problems', () => {
+    const diagnosticGraph: ProjectGraphSnapshot = {
+      project_id: 'diagnostic-import',
+      files: [
+        {
+          id: 'file-diagnostics',
+          path: 'renpy_mouse_diagnostics.rpy',
+          order: '0000',
+          visual: { position: { x: 0, y: 0 }, size: { width: 900, height: 640 } },
+        },
+      ],
+      labels: [
+        {
+          id: 'label-duplicate-cheese',
+          file_id: 'file-diagnostics',
+          parent_label_id: null,
+          name: 'duplicate_cheese',
+          qualified_name: 'duplicate_cheese',
+          scope: 'global',
+          label_start_node_id: 'start-duplicate-cheese',
+          source_span: { start_line: 1, end_line: 1 },
+          visual: { position: { x: 48, y: 48 }, size: { width: 640, height: 360 } },
+        },
+      ],
+      label_starts: [
+        {
+          id: 'start-duplicate-cheese',
+          file_id: 'file-diagnostics',
+          label_id: 'label-duplicate-cheese',
+          qualified_name: 'duplicate_cheese',
+          content: 'label duplicate_cheese:',
+          visual: { position: { x: 32, y: 32 }, size: { width: 260, height: 72 } },
+        },
+      ],
+      nodes: [
+        {
+          id: 'node-dynamic',
+          file_id: 'file-diagnostics',
+          label_id: 'label-duplicate-cheese',
+          parent_node_id: null,
+          type: 'jump',
+          content: 'jump expression suspicious_target',
+          order: '0000',
+          source_span: { start_line: 5, end_line: 5 },
+          metadata: { target_expression: 'suspicious_target' },
+          visual: { position: { x: 64, y: 136 }, size: { width: 320, height: 88 } },
+        },
+        {
+          id: 'node-raw-while',
+          file_id: 'file-diagnostics',
+          label_id: 'label-duplicate-cheese',
+          parent_node_id: null,
+          type: 'raw_block',
+          content: 'while crumb_count < 3:\n    $ crumb_count += 1',
+          order: '0001',
+          source_span: { start_line: 9, end_line: 10 },
+          metadata: { raw_block_type: 'while' },
+          visual: { position: { x: 64, y: 248 }, size: { width: 320, height: 120 } },
+        },
+      ],
+      edges: [],
+      diagnostics: [
+        {
+          id: 'diagnostic-dynamic-target',
+          code: 'dynamic_target',
+          severity: 'info',
+          message: 'Dynamic target is preserved but cannot be resolved statically.',
+          blocking: false,
+          file_id: 'file-diagnostics',
+          label_id: 'label-duplicate-cheese',
+          node_id: 'node-dynamic',
+          source_span: { start_line: 5, end_line: 5 },
+          metadata: {},
+        },
+        {
+          id: 'diagnostic-raw-block',
+          code: 'unsupported_raw_block',
+          severity: 'warning',
+          message: 'Unsupported control-flow block is preserved as raw text for MVP.',
+          blocking: false,
+          file_id: 'file-diagnostics',
+          label_id: 'label-duplicate-cheese',
+          node_id: 'node-raw-while',
+          source_span: { start_line: 9, end_line: 10 },
+          metadata: {},
+        },
+      ],
+      source_index: { files: {} },
+    };
+
+    expect(projectGraphDiagnosticsToProblems(diagnosticGraph)).toEqual([
+      expect.objectContaining({
+        id: 'diagnostic-dynamic-target',
+        code: 'dynamic_target',
+        severity: 'info',
+        blocking: false,
+        nodeId: 'node-dynamic',
+      }),
+      expect.objectContaining({
+        id: 'diagnostic-raw-block',
+        code: 'unsupported_raw_block',
+        severity: 'warning',
+        blocking: false,
+        nodeId: 'node-raw-while',
+      }),
+    ]);
+  });
 });

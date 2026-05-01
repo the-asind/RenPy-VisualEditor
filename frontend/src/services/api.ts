@@ -34,6 +34,25 @@ export interface InsertNodeResponse {
   tree: any;
 }
 
+export interface ProjectGraphDiagnosticsSummary {
+  total: number;
+  blocking: number;
+  info: number;
+  warning: number;
+  error: number;
+}
+
+export interface ProjectGraphImportResult {
+  project_id: string;
+  file_count: number;
+  label_count: number;
+  label_start_count: number;
+  node_count: number;
+  edge_count: number;
+  diagnostics: ProjectGraphDiagnosticsSummary;
+  snapshot_available: boolean;
+}
+
 const runtimeConfig = typeof window !== 'undefined' ? (window as any).RUNTIME_CONFIG : undefined;
 const effectiveApiUrl = runtimeConfig?.VITE_API_URL || import.meta.env.VITE_API_URL;
 // Log the URL being used to help debug
@@ -301,6 +320,49 @@ export const loadProjectGraphSnapshot = async (projectId: string): Promise<Proje
 export const loadProjectGraphCrdtDocument = async (projectId: string): Promise<ProjectGraphCrdtDoc> => {
   const snapshot = await getProjectGraphCrdtSnapshot(projectId);
   return importProjectGraphCrdtSnapshot(snapshot);
+};
+
+export const importProjectGraphFiles = async (
+  projectId: string,
+  files: File[],
+): Promise<ProjectGraphImportResult> => {
+  const formData = new FormData();
+  for (const file of files) {
+    formData.append('files', file);
+  }
+
+  const targetUrl = `${apiClient.defaults.baseURL}/projects/${projectId}/graph-import`;
+  console.log(`[API Request] POST ${targetUrl} with ${files.length} ProjectGraph import file(s)`);
+
+  try {
+    const response = await apiClient.post<ProjectGraphImportResult>(
+      `/projects/${projectId}/graph-import`,
+      formData,
+      {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      },
+    );
+    return response.data;
+  } catch (error) {
+    console.error('[API Error] Failed during importProjectGraphFiles call.');
+    console.error('Project ID:', projectId);
+    console.error('Files:', files.map((file) => file.name).join(', '));
+
+    const axiosError = error as AxiosError;
+
+    if (axiosError.response) {
+      console.error('Error Response Data:', axiosError.response.data);
+      console.error('Error Response Status:', axiosError.response.status);
+    } else if (axiosError.request) {
+      console.error('Error Request:', axiosError.request);
+    } else {
+      console.error('Error Message:', axiosError.message);
+    }
+
+    throw axiosError.response?.data || new Error(`Failed to import ProjectGraph. Status: ${axiosError.response?.status || 'unknown'}. ${axiosError.message}`);
+  }
 };
 
 export const saveProjectGraphCrdtSnapshot = async (

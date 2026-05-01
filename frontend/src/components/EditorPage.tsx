@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 import {
   apiClient,
   exportProjectGraphFiles,
+  importProjectGraphFiles,
   loadProjectGraphCrdtDocument,
   saveProjectGraphCrdtSnapshot,
 } from '../services/api';
@@ -23,11 +24,16 @@ export const getEditorProjectId = (search: string): string | null => {
 
 const EditorPage = () => {
   const location = useLocation();
+  const navigate = useNavigate();
   const projectId = getEditorProjectId(location.search);
   const sessionRef = useRef<ProjectGraphCollaborationSession | null>(null);
   const socketRef = useRef<ProjectGraphSocketHandle | null>(null);
   const [graph, setGraph] = useState<ProjectGraphSnapshot | null>(null);
   const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [importStatus, setImportStatus] = useState<'idle' | 'importing' | 'error'>('idle');
+  const [importMessage, setImportMessage] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const [exportStatus, setExportStatus] = useState<string | null>(null);
 
   useEffect(() => {
@@ -72,7 +78,7 @@ const EditorPage = () => {
       isActive = false;
       sessionRef.current = null;
     };
-  }, [projectId]);
+  }, [projectId, reloadKey]);
 
   useEffect(() => {
     if (!projectId || status !== 'ready') {
@@ -123,6 +129,40 @@ const EditorPage = () => {
       });
   }, [projectId]);
 
+  const handleProjectGraphImport = useCallback(() => {
+    if (!projectId || selectedFiles.length === 0) {
+      return;
+    }
+
+    setImportStatus('importing');
+    setImportMessage(null);
+    void importProjectGraphFiles(projectId, selectedFiles)
+      .then((result) => {
+        if (result.diagnostics.blocking > 0) {
+          setImportStatus('error');
+          setImportMessage(`Import blocked by ${result.diagnostics.blocking} problem(s).`);
+          return;
+        }
+        if (!result.snapshot_available) {
+          setImportStatus('error');
+          setImportMessage('Import did not create a project graph snapshot.');
+          return;
+        }
+
+        setImportStatus('idle');
+        setImportMessage(
+          `Imported ${result.file_count} file(s), ${result.label_count} label(s), ${result.node_count} node(s).`,
+        );
+        navigate(`/editor?project=${encodeURIComponent(result.project_id)}`, { replace: true });
+        setReloadKey((value) => value + 1);
+      })
+      .catch((error) => {
+        console.error('Failed to import ProjectGraph:', error);
+        setImportStatus('error');
+        setImportMessage('Import failed.');
+      });
+  }, [navigate, projectId, selectedFiles]);
+
   if (status === 'loading') {
     return (
       <div className="project-graph-canvas" style={{ display: 'grid', placeItems: 'center' }}>
@@ -133,8 +173,34 @@ const EditorPage = () => {
 
   if (status === 'error' || !graph) {
     return (
-      <div className="project-graph-canvas" style={{ display: 'grid', placeItems: 'center' }}>
-        Project graph snapshot is not available.
+      <div className="project-graph-canvas project-graph-canvas--empty">
+        <div className="project-graph-import">
+          <div className="project-graph-import__title">
+            {projectId ? 'Import RenPy project files' : 'Project is not selected'}
+          </div>
+          {projectId ? (
+            <>
+              <input
+                accept=".rpy"
+                className="project-graph-import__file"
+                multiple
+                onChange={(event) => setSelectedFiles(Array.from(event.target.files ?? []))}
+                type="file"
+              />
+              <button
+                className="project-graph-import__button"
+                disabled={selectedFiles.length === 0 || importStatus === 'importing'}
+                onClick={handleProjectGraphImport}
+                type="button"
+              >
+                {importStatus === 'importing' ? 'Importing...' : 'Import'}
+              </button>
+              {importMessage ? <div className="project-graph-import__message">{importMessage}</div> : null}
+            </>
+          ) : (
+            <div className="project-graph-import__message">Open the editor from a project.</div>
+          )}
+        </div>
       </div>
     );
   }

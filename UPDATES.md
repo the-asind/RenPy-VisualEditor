@@ -602,6 +602,38 @@ Result:
 8. Tests passed: `python -m pytest backend\tests\test_project_graph_snapshot_route.py backend\tests\test_project_graph_crdt_persistence.py backend\tests\test_project_graph_sprint_1_2_blackbox.py backend\tests\test_project_graph_export_roundtrip_contract.py backend\tests\test_websocket.py -q`.
 9. Tests passed: `npm test -- --run`.
 10. Build passed: `npm run build`.
+
+### Sprint 8 / MVP Actions 8.1-8.4 Product Import And Open Pipeline
+
+Started Sprint 8 by wiring the product import path from uploaded `.rpy` files to a persisted ProjectGraph 2.0 canvas snapshot.
+
+Files:
+
+1. `backend/app/api/routes/projects.py`
+2. `backend/app/services/project_graph/crdt_bridge.py`
+3. `backend/tests/test_project_graph_import_route.py`
+4. `frontend/scripts/project-graph-snapshot-cli.mjs`
+5. `frontend/src/services/api.ts`
+6. `frontend/src/services/__tests__/api.test.ts`
+7. `frontend/src/components/EditorPage.tsx`
+8. `frontend/src/components/projectGraph/ProjectGraphCanvas.css`
+9. `frontend/src/utils/__tests__/projectGraphProjection.test.ts`
+10. `docs/editor-2.0-architecture.md`
+
+Result:
+
+1. Added authenticated `POST /api/projects/{project_id}/graph-import` accepting multiple `.rpy` files as multipart form data.
+2. The import route runs ProjectGraph importer, resolver, diagnostics, creates a real binary Loro snapshot, persists it, and returns counts plus diagnostics summary.
+3. Because backend Python does not have native Loro installed, the initial snapshot is created by a checked-in Node/Loro bridge that uses the same CRDT container schema as the frontend adapter.
+4. `GET /graph-snapshot` after import returns bytes that decode back into the imported ProjectGraph with stable entity IDs.
+5. Frontend API now posts multi-file ProjectGraph import requests.
+6. `EditorPage` can import `.rpy` files when a project has no snapshot yet, then reload the canvas from the saved CRDT snapshot.
+7. Non-blocking import diagnostics are preserved in the snapshot and projected into focusable Problems.
+8. Import-export-reimport contract now compares labels, node type counts, relation edges, diagnostics, comments, raw blocks, and action content across the full mouse RenPy corpus.
+9. Tests passed: `python -m pytest backend/tests/test_project_graph_import_route.py -q`.
+10. Tests passed: `npm test -- --run src/services/__tests__/api.test.ts`.
+11. Tests passed: `npm test -- --run src/utils/__tests__/projectGraphProjection.test.ts`.
+
 ## 2026-04-30
 
 ### Branch And Initial Architecture

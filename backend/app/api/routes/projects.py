@@ -1,7 +1,13 @@
-from fastapi import APIRouter, Depends, HTTPException, Body, Request, Response
+import tempfile
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, HTTPException, Body, Request, Response, File, UploadFile
 from typing import List, Dict, Any, Optional
 from ...services.database import DatabaseService
+from ...services.project_graph.crdt_bridge import ProjectGraphCrdtSnapshotBridge
 from ...services.project_graph.exporter import ProjectGraphExporter
+from ...services.project_graph.importer import ProjectGraphImporter
+from ...services.project_graph.resolver import ProjectGraphResolver
 from ...services.project_graph.snapshot import ProjectGraphSnapshotCodec
 from ...api.routes.auth import get_current_user
 import uuid
@@ -29,6 +35,22 @@ def _get_accessible_project(project_id: str, user: Dict) -> Dict:
 def _ensure_project_editor(project: Dict) -> None:
     if project.get("role") not in ["Owner", "Editor"]:
         raise HTTPException(status_code=403, detail="You don't have permission to edit this project")
+
+
+def _project_graph_diagnostics_summary(graph_snapshot) -> Dict[str, int]:
+    summary = {
+        "total": len(graph_snapshot.diagnostics),
+        "blocking": 0,
+        "info": 0,
+        "warning": 0,
+        "error": 0,
+    }
+    for diagnostic in graph_snapshot.diagnostics:
+        if diagnostic.blocking:
+            summary["blocking"] += 1
+        if diagnostic.severity in {"info", "warning", "error"}:
+            summary[diagnostic.severity] += 1
+    return summary
 
 @projects_router.post("/")
 async def create_project(
@@ -128,6 +150,59 @@ async def save_project_graph_snapshot(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to save project graph snapshot: {str(e)}")
+
+
+@projects_router.post("/{project_id}/graph-import")
+async def import_project_graph(
+    project_id: str,
+    files: List[UploadFile] = File(...),
+    user: Dict = Depends(get_current_user),
+) -> Dict[str, Any]:
+    """Import uploaded Ren'Py files into one ProjectGraph and persist its Loro snapshot."""
+    try:
+        project = _get_accessible_project(project_id, user)
+        _ensure_project_editor(project)
+
+        if not files:
+            raise HTTPException(status_code=400, detail="At least one .rpy file is required")
+
+        with tempfile.TemporaryDirectory(prefix="renpy-graph-import-") as temp_dir:
+            temp_paths: list[Path] = []
+            for upload in files:
+                filename = Path(upload.filename or "").name
+                if not filename:
+                    raise HTTPException(status_code=400, detail="Uploaded file must have a filename")
+                if Path(filename).suffix.lower() != ".rpy":
+                    raise HTTPException(status_code=400, detail="Only .rpy files can be imported")
+
+                content = await upload.read()
+                if not content:
+                    raise HTTPException(status_code=400, detail=f"Uploaded file is empty: {filename}")
+
+                temp_path = Path(temp_dir) / filename
+                temp_path.write_bytes(content)
+                temp_paths.append(temp_path)
+
+            imported_graph = ProjectGraphImporter().import_files(project_id=project_id, files=temp_paths)
+            graph = ProjectGraphResolver().resolve(imported_graph)
+
+        snapshot = ProjectGraphCrdtSnapshotBridge().export_snapshot(graph)
+        db_service.save_project_crdt_snapshot(project_id, snapshot)
+
+        return {
+            "project_id": project_id,
+            "file_count": len(graph.files),
+            "label_count": len(graph.labels),
+            "label_start_count": len(graph.label_starts),
+            "node_count": len(graph.nodes),
+            "edge_count": len(graph.edges),
+            "diagnostics": _project_graph_diagnostics_summary(graph),
+            "snapshot_available": db_service.get_project_crdt_snapshot(project_id) is not None,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to import project graph: {str(e)}")
 
 
 @projects_router.post("/{project_id}/graph-export")

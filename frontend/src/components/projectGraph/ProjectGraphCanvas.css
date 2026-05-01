@@ -6,6 +6,58 @@
   background: #f7f8fb;
 }
 
+.project-graph-canvas--empty {
+  display: grid;
+  place-items: center;
+}
+
+.project-graph-import {
+  display: flex;
+  width: min(420px, calc(100% - 32px));
+  flex-direction: column;
+  gap: 12px;
+  border: 1px solid rgba(15, 23, 42, 0.14);
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 18px;
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.12);
+}
+
+.project-graph-import__title {
+  color: #0f172a;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.project-graph-import__file {
+  color: #334155;
+  font-size: 13px;
+}
+
+.project-graph-import__button {
+  height: 36px;
+  border: 1px solid rgba(37, 99, 235, 0.42);
+  border-radius: 8px;
+  background: #2563eb;
+  color: #ffffff;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.project-graph-import__button:disabled {
+  border-color: rgba(100, 116, 139, 0.24);
+  background: #cbd5e1;
+  cursor: not-allowed;
+}
+
+.project-graph-import__message {
+  color: #475569;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
 .project-graph-canvas .react-flow__node {
   border-radius: 8px;
 }
