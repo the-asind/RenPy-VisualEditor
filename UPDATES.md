@@ -776,6 +776,39 @@ Result:
 4. Frontend build passed: `npm run build`.
 5. Known build warnings remain non-blocking for Sprint 10: large Loro bundle chunk, `/env.js` script module warning, and outdated Browserslist data. Sprint 11 release gate must either document these as MVP exceptions or fix them.
 
+### Sprint 11 / MVP Release Gate
+
+Closed the MVP 2.0 release gate around cross-sprint behavior, legacy path isolation, bundle budget, and operator documentation.
+
+Files:
+
+1. `backend/tests/test_project_graph_import_route.py`
+2. `frontend/src/components/__tests__/EditorPage.mvp2.test.ts`
+3. `frontend/scripts/check-mvp-bundle.mjs`
+4. `frontend/package.json`
+5. `README.md`
+6. `docs/editor-2.0-architecture.md`
+
+Result:
+
+1. Added a release contract test that imports the full mouse RenPy corpus through the API, opens the saved Loro snapshot, edits a dialogue node, moves ProjectGraph visual metadata, exports with non-blocking diagnostics, reimports the exported files, and compares MVP semantics.
+2. Added a frontend isolation guard proving the MVP 2.0 `EditorPage` path uses ProjectGraph snapshot/import/export APIs and does not call legacy line-range parse/update/insert or lock collaboration APIs.
+3. Added `npm run check:mvp-bundle` with an explicit MVP budget: largest frontend JS chunk must be at or below 6,000,000 bytes.
+4. Updated README with MVP status, run commands, demo path, release gate commands, bundle budget, and known non-blocking MVP exceptions.
+5. Updated the architecture document with current release gate status and accepted MVP exceptions.
+6. Tests passed: `python -m pytest backend/tests/test_project_graph_import_route.py -q`.
+7. Tests passed: `npm test -- --run src/components/__tests__/EditorPage.mvp2.test.ts`.
+8. Check passed: `npm run check:mvp-bundle`.
+
+Final release gate:
+
+1. Backend tests passed: `python -m pytest backend/tests -q` with 143 tests.
+2. Frontend unit tests passed: `npm test -- --run` with 31 tests.
+3. Frontend build passed: `npm run build`.
+4. Bundle budget passed: `npm run check:mvp-bundle`, largest JS chunk 5,283,267 bytes under the 6,000,000 byte MVP budget.
+5. Frontend E2E passed: `npm run test:e2e` with 2 Playwright Chromium tests.
+6. MVP 2.0 ProjectGraph path is now considered a working MVP on this branch.
+
 ## 2026-04-30
 
 ### Branch And Initial Architecture

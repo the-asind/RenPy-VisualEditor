@@ -209,6 +209,7 @@ def _semantic_signature(graph: dict) -> dict:
             for edge in graph["edges"]
         ),
         "diagnostics": Counter(diagnostic["code"] for diagnostic in graph["diagnostics"]),
+        "dialogue": sorted(node["content"] for node in graph["nodes"] if node["type"] == "dialogue"),
         "comments": sorted(node["content"] for node in graph["nodes"] if node["type"] == "comment"),
         "raw_blocks": sorted(node["metadata"].get("raw_block_type") for node in graph["nodes"] if node["type"] == "raw_block"),
         "actions": sorted(
@@ -300,3 +301,89 @@ def test_project_graph_import_export_reimport_preserves_mvp_semantics(client, pr
     assert "# RenPy wakes up under the keyboard." in joined_export
     assert "show renpy happy:" in joined_export
     assert "renpy_note = \"raw python block survives the graph\"" in joined_export
+
+
+def test_mvp_2_release_contract_import_open_edit_export_reimport(client, project_owner, tmp_path):
+    import_response = _upload_files(
+        client,
+        project_owner["project_id"],
+        [
+            "renpy_mouse_day_1.rpy",
+            "renpy_mouse_day_2.rpy",
+            "renpy_mouse_diagnostics.rpy",
+        ],
+    )
+    assert import_response.status_code == 200
+    assert import_response.json()["diagnostics"]["blocking"] == 0
+
+    snapshot_response = client.get(f"/api/projects/{project_owner['project_id']}/graph-snapshot")
+    assert snapshot_response.status_code == 200
+    opened_graph = _decode_loro_snapshot(snapshot_response.content)
+
+    edited_dialogue = next(node for node in opened_graph["nodes"] if node["type"] == "dialogue")
+    edited_dialogue["content"] = 'r "RenPy Mouse signs the MVP 2 release scroll."'
+    edited_dialogue["metadata"]["editor_state"] = "must not export"
+    opened_graph["files"][0]["visual"]["position"] = {"x": 321, "y": 123}
+
+    export_response = client.post(f"/api/projects/{project_owner['project_id']}/graph-export", json=opened_graph)
+    assert export_response.status_code == 200
+    exported = export_response.json()["files"]
+    assert set(exported) == {
+        "renpy_mouse_day_1.rpy",
+        "renpy_mouse_day_2.rpy",
+        "renpy_mouse_diagnostics.rpy",
+    }
+
+    joined_export = "\n".join(exported.values())
+    assert 'r "RenPy Mouse signs the MVP 2 release scroll."' in joined_export
+    assert "editor_state" not in joined_export
+    assert "position" not in joined_export
+
+    exported_paths = []
+    for filename, content in exported.items():
+        path = tmp_path / filename
+        path.write_text(content, encoding="utf-8")
+        exported_paths.append(path)
+
+    reimported_graph = ProjectGraphResolver().resolve(
+        ProjectGraphImporter().import_files(project_owner["project_id"], sorted(exported_paths))
+    )
+    reimported_snapshot = {
+        "project_id": reimported_graph.project_id,
+        "files": [
+            {"id": file.id, "path": file.path, "order": file.order}
+            for file in reimported_graph.files
+        ],
+        "labels": [
+            {
+                "id": label.id,
+                "file_id": label.file_id,
+                "qualified_name": label.qualified_name,
+                "scope": label.scope,
+            }
+            for label in reimported_graph.labels
+        ],
+        "nodes": [
+            {
+                "type": node.type,
+                "content": node.content,
+                "metadata": node.metadata,
+            }
+            for node in reimported_graph.nodes
+        ],
+        "edges": [
+            {
+                "kind": edge.kind,
+                "metadata": edge.metadata,
+            }
+            for edge in reimported_graph.edges
+        ],
+        "diagnostics": [
+            {
+                "code": diagnostic.code,
+            }
+            for diagnostic in reimported_graph.diagnostics
+        ],
+    }
+
+    assert _semantic_signature(reimported_snapshot) == _semantic_signature(opened_graph)

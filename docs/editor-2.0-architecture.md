@@ -4,6 +4,16 @@
 
 Статус: архитектурная и миграционная ветка `codex/editor-2-architecture`.
 
+MVP 2.0 release gate status на 2026-05-02: основной ProjectGraph путь считается рабочим MVP при прохождении команд из `README.md`:
+
+1. `python -m pytest backend/tests -q`
+2. `npm test -- --run`
+3. `npm run build`
+4. `npm run check:mvp-bundle`
+5. `npm run test:e2e`
+
+Известные MVP exceptions: крупный frontend chunk из-за `loro-crdt/base64`, Vite warning для `/env.js` без `type="module"`, устаревший Browserslist/caniuse-lite cache.
+
 ## 1. Цель
 
 MVP 2.0 должен заменить модель `один файл = один граф` на модель `один проект = один большой холст`.
