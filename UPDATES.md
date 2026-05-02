@@ -4,6 +4,24 @@ This file is the short project memory for RenPy Visual Editor 2.0. Keep it curre
 
 ## 2026-05-02
 
+### Deployment Packaging Fix
+
+Fixed the Docker backend image contract for the MVP 2.0 import path after remote deployment smoke testing found that `POST /api/projects/{project_id}/graph-import` could not create initial Loro snapshots inside the container.
+
+Files:
+
+1. `docker-compose.yml`
+2. `.dockerignore`
+3. `backend/Dockerfile`
+4. `backend/tests/test_docker_packaging.py`
+
+Result:
+
+1. Backend Docker builds now use the repository root as context so the image can package the checked-in frontend Loro snapshot bridge.
+2. Backend images install Node.js/npm, install frontend production dependencies, and copy `frontend/scripts` beside the Python app.
+3. Added a packaging contract test so future compose/Dockerfile edits do not silently remove the runtime needed by `ProjectGraphCrdtSnapshotBridge`.
+4. Added root `.dockerignore` entries to keep the widened backend build context from sending git history, local node modules, build output, caches, and debug databases.
+
 ### MVP 2.0 Release Sprint Plan
 
 Extended `docs/editor-2.0-architecture.md` with the remaining release path to a working MVP 2.0.

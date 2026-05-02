@@ -1,0 +1,12 @@
+.git
+.pytest_cache
+**/.pytest_cache
+**/__pycache__
+**/*.pyc
+frontend/node_modules
+frontend/dist
+frontend/playwright-report
+frontend/test-results
+backend/database
+backend/*.db
+backend/*_test.db
