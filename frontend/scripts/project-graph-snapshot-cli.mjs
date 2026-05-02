@@ -1,4 +1,4 @@
-import * as loroCrdt from 'loro-crdt/base64/index.js';
+import * as loroCrdt from 'loro-crdt';
 
 const { LoroDoc } = loroCrdt.default ?? loroCrdt;
 

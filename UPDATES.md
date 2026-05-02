@@ -24,7 +24,7 @@ Result:
 2. Backend images install Node.js/npm, install frontend production dependencies, and copy `frontend/scripts` beside the Python app.
 3. Backend images set `PROJECT_GRAPH_FRONTEND_DIR=/app/frontend`, and `ProjectGraphCrdtSnapshotBridge` now respects that explicit runtime path with local fallback discovery for development.
 4. Added packaging and bridge path contract tests so future compose/Dockerfile edits do not silently remove the runtime needed by `ProjectGraphCrdtSnapshotBridge`.
-5. The snapshot CLI now imports `loro-crdt/base64` through a CommonJS/ESM-compatible namespace import so it works with the production container dependency layout.
+5. The snapshot CLI now imports the Node package entrypoint for `loro-crdt` through a CommonJS/ESM-compatible namespace import. The browser-facing frontend adapter still uses `loro-crdt/base64`, but the backend CLI runs in Node and must use the package's Node build.
 6. Added root `.dockerignore` entries to keep the widened backend build context from sending git history, local node modules, build output, caches, and debug databases.
 
 ### MVP 2.0 Release Sprint Plan
