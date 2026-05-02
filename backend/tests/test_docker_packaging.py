@@ -17,6 +17,7 @@ def test_backend_docker_image_packages_project_graph_snapshot_bridge_runtime():
 
     dockerfile = (ROOT_DIR / "backend" / "Dockerfile").read_text(encoding="utf-8")
 
+    assert "ENV PROJECT_GRAPH_FRONTEND_DIR=/app/frontend" in dockerfile
     assert "nodejs npm" in dockerfile
     assert "COPY frontend/package*.json ./frontend/" in dockerfile
     assert "npm ci --omit=dev" in dockerfile

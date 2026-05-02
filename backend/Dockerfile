@@ -1,6 +1,7 @@
 FROM python:3.11-slim
 
 WORKDIR /app
+ENV PROJECT_GRAPH_FRONTEND_DIR=/app/frontend
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends nodejs npm && \

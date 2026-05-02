@@ -14,13 +14,16 @@ Files:
 2. `.dockerignore`
 3. `backend/Dockerfile`
 4. `backend/tests/test_docker_packaging.py`
+5. `backend/app/services/project_graph/crdt_bridge.py`
+6. `backend/tests/test_project_graph_crdt_bridge.py`
 
 Result:
 
 1. Backend Docker builds now use the repository root as context so the image can package the checked-in frontend Loro snapshot bridge.
 2. Backend images install Node.js/npm, install frontend production dependencies, and copy `frontend/scripts` beside the Python app.
-3. Added a packaging contract test so future compose/Dockerfile edits do not silently remove the runtime needed by `ProjectGraphCrdtSnapshotBridge`.
-4. Added root `.dockerignore` entries to keep the widened backend build context from sending git history, local node modules, build output, caches, and debug databases.
+3. Backend images set `PROJECT_GRAPH_FRONTEND_DIR=/app/frontend`, and `ProjectGraphCrdtSnapshotBridge` now respects that explicit runtime path with local fallback discovery for development.
+4. Added packaging and bridge path contract tests so future compose/Dockerfile edits do not silently remove the runtime needed by `ProjectGraphCrdtSnapshotBridge`.
+5. Added root `.dockerignore` entries to keep the widened backend build context from sending git history, local node modules, build output, caches, and debug databases.
 
 ### MVP 2.0 Release Sprint Plan
 
