@@ -1,4 +1,6 @@
-import { LoroDoc } from 'loro-crdt/base64/index.js';
+import * as loroCrdt from 'loro-crdt/base64/index.js';
+
+const { LoroDoc } = loroCrdt.default ?? loroCrdt;
 
 const TREE_CONTAINER = 'project_graph_tree';
 const META_CONTAINER = 'project_graph_meta';
