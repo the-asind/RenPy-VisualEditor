@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ProjectGraph Collaboration Harness</title>
+  </head>
+  <body>
+    <main>
+      <div id="node-content"></div>
+      <div id="label-position"></div>
+      <div id="change-count"></div>
+      <div id="save-status"></div>
+    </main>
+
+    <script type="module">
+      import {
+        createProjectGraphCrdtDoc,
+        exportProjectGraphCrdtSnapshot,
+        importProjectGraphCrdtSnapshot,
+      } from '/src/utils/projectGraphCrdt.ts';
+      import {
+        ProjectGraphCollaborationSession,
+        connectProjectGraphCollaborationSocket,
+      } from '/src/utils/projectGraphCollaboration.ts';
+
+      const render = (graph, changes, status) => {
+        const node = graph.nodes.find((candidate) => candidate.id === 'node-intro');
+        const label = graph.labels.find((candidate) => candidate.id === 'label-start');
+        document.querySelector('#node-content').textContent = node?.content ?? '';
+        document.querySelector('#label-position').textContent = JSON.stringify(label?.visual.position ?? null);
+        document.querySelector('#change-count').textContent = String(changes.length);
+        document.querySelector('#save-status').textContent = status ?? 'idle';
+      };
+
+      window.projectGraphHarness = {
+        changes: [],
+        persistedSnapshots: [],
+        status: 'idle',
+        session: null,
+        socket: null,
+
+        createFromGraph(graph, peerId, socketUrl) {
+          return this.createFromDoc(createProjectGraphCrdtDoc(graph, { peerId }), socketUrl);
+        },
+
+        createFromSnapshot(snapshot, peerId, socketUrl) {
+          return this.createFromDoc(importProjectGraphCrdtSnapshot(new Uint8Array(snapshot), { peerId }), socketUrl);
+        },
+
+        createFromDoc(doc, socketUrl) {
+          this.socket = connectProjectGraphCollaborationSocket({
+            url: socketUrl,
+            onUpdate: (update) => this.session?.receiveRemoteUpdate(update),
+          });
+          this.session = new ProjectGraphCollaborationSession(doc, {
+            sendUpdate: (update) => this.socket.sendBinary(update),
+            persistDebounceMs: 15,
+            persistSnapshot: async (snapshot) => {
+              this.persistedSnapshots.push([...snapshot]);
+            },
+            onPersistenceStatusChange: (status) => {
+              this.status = status;
+              render(this.session.graph, this.changes, this.status);
+            },
+            onGraphChange: (graph) => {
+              this.changes.push(graph);
+              render(graph, this.changes, this.status);
+            },
+          });
+          render(this.session.graph, this.changes, this.status);
+          return [...exportProjectGraphCrdtSnapshot(doc)];
+        },
+
+        edit(nodeId, content) {
+          this.session.editScenarioContent(nodeId, content);
+        },
+
+        move(entityId, position) {
+          this.session.moveEntity(entityId, position);
+        },
+
+        graph() {
+          return this.session.graph;
+        },
+
+        close() {
+          this.socket?.close();
+        },
+      };
+    </script>
+  </body>
+</html>

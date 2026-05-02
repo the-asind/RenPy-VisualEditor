@@ -943,6 +943,8 @@ Definition of Done:
 
 Black-box expectation: two real browser contexts see the same project; edit/drag in client A appears in client B without manual refresh.
 
+MVP implementation note: the automated Sprint 9 smoke uses Playwright Chromium contexts and a small test-only WebSocket relay. It verifies browser runtime compatibility of Loro, the frontend socket helper, binary updates, JSON frame isolation, and DOM-visible content/position updates. The production backend mixed-frame route remains covered by backend WebSocket tests.
+
 Action tests:
 
 1. Start backend and frontend test server.

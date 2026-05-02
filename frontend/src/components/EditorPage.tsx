@@ -12,6 +12,7 @@ import {
   ProjectGraphCollaborationSession,
   connectProjectGraphCollaborationSocket,
   toProjectGraphWebSocketUrl,
+  type ProjectGraphPersistenceStatus,
   type ProjectGraphSocketHandle,
 } from '../utils/projectGraphCollaboration';
 import type { GraphPoint, ProjectGraphSnapshot } from '../utils/projectGraphProjection';
@@ -35,6 +36,7 @@ const EditorPage = () => {
   const [importMessage, setImportMessage] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [exportStatus, setExportStatus] = useState<string | null>(null);
+  const [saveStatus, setSaveStatus] = useState<ProjectGraphPersistenceStatus>('idle');
 
   useEffect(() => {
     if (!projectId) {
@@ -46,6 +48,7 @@ const EditorPage = () => {
     let isActive = true;
     setStatus('loading');
     setGraph(null);
+    setSaveStatus('idle');
     sessionRef.current = null;
 
     loadProjectGraphCrdtDocument(projectId)
@@ -55,11 +58,11 @@ const EditorPage = () => {
         }
         const session = new ProjectGraphCollaborationSession(doc, {
           sendUpdate: (update) => socketRef.current?.sendBinary(update),
-          persistSnapshot: (snapshot) => {
-            void saveProjectGraphCrdtSnapshot(projectId, snapshot).catch((error) => {
-              console.error('Failed to persist ProjectGraph snapshot:', error);
-            });
+          persistDebounceMs: 500,
+          persistSnapshot: async (snapshot) => {
+            await saveProjectGraphCrdtSnapshot(projectId, snapshot);
           },
+          onPersistenceStatusChange: setSaveStatus,
           onGraphChange: setGraph,
         });
         sessionRef.current = session;
@@ -210,6 +213,7 @@ const EditorPage = () => {
       <ProjectGraphCanvas
         exportStatus={exportStatus}
         graph={graph}
+        saveStatus={saveStatus === 'idle' ? null : saveStatus === 'saving' ? 'Saving...' : saveStatus === 'saved' ? 'Saved' : 'Save failed'}
         onEntityPositionChange={handleEntityPositionChange}
         onExportProjectGraph={handleExportProjectGraph}
         onScenarioContentChange={handleScenarioContentChange}

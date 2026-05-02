@@ -652,6 +652,43 @@ class TestConnectionManager:
         assert ws_peer.sent_messages == []
         assert ws_other_project.sent_messages == []
 
+    async def test_project_presence_json_and_binary_crdt_updates_share_room_without_cross_pollution(
+        self,
+        connection_manager,
+    ):
+        """Project presence JSON and binary CRDT updates should stay on separate frame types."""
+        ws_sender = MockWebSocket()
+        ws_peer = MockWebSocket()
+
+        await connection_manager.connect_project(ws_sender, "project-mixed", "u1", "User1")
+        await connection_manager.connect_project(ws_peer, "project-mixed", "u2", "User2")
+        ws_sender.sent_messages.clear()
+        ws_peer.sent_messages.clear()
+
+        await connection_manager.broadcast_project_active_users("project-mixed")
+        await connection_manager.handle_project_crdt_update(
+            websocket=ws_sender,
+            project_id="project-mixed",
+            update=b"\x01loro-mixed-frame\x02",
+        )
+
+        sender_json = [json.loads(message) for message in ws_sender.sent_messages]
+        peer_json = [json.loads(message) for message in ws_peer.sent_messages]
+        assert sender_json == [
+            {
+                "type": "active_users",
+                "users": sender_json[0]["users"],
+            }
+        ]
+        assert peer_json == [
+            {
+                "type": "active_users",
+                "users": peer_json[0]["users"],
+            }
+        ]
+        assert ws_sender.sent_bytes == []
+        assert ws_peer.sent_bytes == [b"\x01loro-mixed-frame\x02"]
+
     async def test_script_active_users_updates(self, connection_manager):
         """Users editing the same script should see updated active user lists."""
         ws1 = MockWebSocket()

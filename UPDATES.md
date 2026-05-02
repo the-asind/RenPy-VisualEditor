@@ -634,6 +634,43 @@ Result:
 10. Tests passed: `npm test -- --run src/services/__tests__/api.test.ts`.
 11. Tests passed: `npm test -- --run src/utils/__tests__/projectGraphProjection.test.ts`.
 
+### Sprint 9 / MVP Actions 9.1-9.4 Collaboration And Persistence Hardening
+
+Started Sprint 9 by hardening the ProjectGraph collaboration layer around two-client update flow, debounced persistence, reload recovery, and JSON/binary WebSocket separation.
+
+Files:
+
+1. `frontend/src/utils/projectGraphCollaboration.ts`
+2. `frontend/src/utils/__tests__/projectGraphCollaboration.test.ts`
+3. `frontend/src/components/EditorPage.tsx`
+4. `frontend/src/components/projectGraph/ProjectGraphCanvas.tsx`
+5. `backend/tests/test_websocket.py`
+6. `frontend/e2e/project-graph-collaboration.spec.ts`
+7. `frontend/public/e2e/project-graph-collaboration.html`
+8. `frontend/playwright.config.ts`
+9. `frontend/vite.config.ts`
+10. `frontend/package.json`
+11. `frontend/package-lock.json`
+
+Result:
+
+1. Added a two-client browser-like WebSocket relay smoke test for content edits and drag updates.
+2. Verified JSON presence messages are ignored by frontend CRDT update handling and do not mutate the graph.
+3. Added debounced snapshot persistence to `ProjectGraphCollaborationSession`.
+4. Added observable persistence statuses: `idle`, `saving`, `saved`, `error`.
+5. `EditorPage` now passes a debounced persistence callback and displays save status on the canvas.
+6. Rapid local edits and drag events coalesce into one persisted snapshot while preserving the final content and position.
+7. Persistence errors no longer become unhandled promise rejections; they report `error`.
+8. Added reconnect/reload recovery coverage: a disconnected client can recover the latest graph from the saved Loro snapshot without duplicate files, labels, label starts, or scenario nodes.
+9. Added backend mixed-frame coverage proving project presence JSON and binary CRDT updates share the project room without crossing frame types.
+10. Added Playwright as the real browser E2E harness for MVP 2.0 collaboration smoke coverage.
+11. Added a real Chromium two-context E2E test using the production Loro adapter, the frontend WebSocket helper, and a small test WebSocket relay.
+12. E2E verifies content edit and drag update visibility in the second browser context.
+13. E2E verifies JSON presence frames do not change the ProjectGraph DOM projection.
+14. Tests passed: `npm test -- --run src/utils/__tests__/projectGraphCollaboration.test.ts`.
+15. Tests passed: `python -m pytest backend/tests/test_websocket.py -q`.
+16. Tests passed: `npm run test:e2e`.
+
 ## 2026-04-30
 
 ### Branch And Initial Architecture

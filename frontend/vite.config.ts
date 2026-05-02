@@ -7,6 +7,11 @@ export default defineConfig({
   build: {
     target: 'esnext',
   },
+  optimizeDeps: {
+    esbuildOptions: {
+      target: 'esnext',
+    },
+  },
   server: {
     port: 3000, // Match docker-compose port mapping
     host: true, // Needed for Docker container mapping
@@ -16,6 +21,7 @@ export default defineConfig({
     },
   },
   test: {
-    environment: 'node'
+    environment: 'node',
+    exclude: ['**/node_modules/**', '**/dist/**', '**/e2e/**'],
   }
 })

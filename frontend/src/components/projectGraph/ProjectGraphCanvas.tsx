@@ -68,6 +68,7 @@ export interface ProjectGraphCanvasProps {
   graph: ProjectGraphSnapshot;
   className?: string;
   exportStatus?: string | null;
+  saveStatus?: string | null;
   onExportProjectGraph?: () => void;
   onEntityPositionChange?: (entityId: string, position: GraphPoint) => void;
   onScenarioContentChange?: (nodeId: string, content: string) => void;
@@ -77,6 +78,7 @@ const ProjectGraphCanvasInner = ({
   graph,
   className,
   exportStatus,
+  saveStatus,
   onExportProjectGraph,
   onEntityPositionChange,
   onScenarioContentChange,
@@ -125,6 +127,7 @@ const ProjectGraphCanvasInner = ({
           </button>
         ) : null}
         {exportStatus ? <div className="project-graph-canvas__status">{exportStatus}</div> : null}
+        {saveStatus ? <div className="project-graph-canvas__status">{saveStatus}</div> : null}
         <input
           aria-label="Search nodes"
           className="project-graph-canvas__search"

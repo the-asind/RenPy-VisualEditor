@@ -10,14 +10,19 @@ import {
 } from './projectGraphCrdt';
 import type { GraphPoint, ProjectGraphSnapshot } from './projectGraphProjection';
 
+export type ProjectGraphPersistenceStatus = 'idle' | 'saving' | 'saved' | 'error';
+
 export interface ProjectGraphCollaborationSessionOptions {
   sendUpdate?: (update: Uint8Array) => void;
-  persistSnapshot?: (snapshot: Uint8Array) => void;
+  persistSnapshot?: (snapshot: Uint8Array) => void | Promise<void>;
+  persistDebounceMs?: number;
+  onPersistenceStatusChange?: (status: ProjectGraphPersistenceStatus) => void;
   onGraphChange?: (graph: ProjectGraphSnapshot) => void;
 }
 
 export class ProjectGraphCollaborationSession {
   private version;
+  private persistTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     private readonly doc: ProjectGraphCrdtDoc,
@@ -68,7 +73,36 @@ export class ProjectGraphCollaborationSession {
   }
 
   private persistCurrentSnapshot(): void {
-    this.options.persistSnapshot?.(this.exportSnapshot());
+    if (!this.options.persistSnapshot) {
+      return;
+    }
+
+    const debounceMs = this.options.persistDebounceMs ?? 0;
+    this.options.onPersistenceStatusChange?.('saving');
+
+    if (this.persistTimer) {
+      clearTimeout(this.persistTimer);
+      this.persistTimer = null;
+    }
+
+    if (debounceMs <= 0) {
+      void this.flushSnapshotPersistence();
+      return;
+    }
+
+    this.persistTimer = setTimeout(() => {
+      this.persistTimer = null;
+      void this.flushSnapshotPersistence();
+    }, debounceMs);
+  }
+
+  private async flushSnapshotPersistence(): Promise<void> {
+    try {
+      await this.options.persistSnapshot?.(this.exportSnapshot());
+      this.options.onPersistenceStatusChange?.('saved');
+    } catch (error) {
+      this.options.onPersistenceStatusChange?.('error');
+    }
   }
 }
 
