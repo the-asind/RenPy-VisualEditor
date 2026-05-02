@@ -36,6 +36,7 @@ const EditorPage = () => {
   const [importMessage, setImportMessage] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [exportStatus, setExportStatus] = useState<string | null>(null);
+  const [exportedFiles, setExportedFiles] = useState<Record<string, string> | null>(null);
   const [saveStatus, setSaveStatus] = useState<ProjectGraphPersistenceStatus>('idle');
 
   useEffect(() => {
@@ -112,6 +113,10 @@ const EditorPage = () => {
     sessionRef.current?.editScenarioContent(nodeId, content);
   }, []);
 
+  const handleScenarioMetadataChange = useCallback((nodeId: string, metadataPatch: Record<string, unknown>) => {
+    sessionRef.current?.editScenarioMetadata(nodeId, metadataPatch);
+  }, []);
+
   const handleEntityPositionChange = useCallback((entityId: string, position: GraphPoint) => {
     sessionRef.current?.moveEntity(entityId, position);
   }, []);
@@ -122,12 +127,15 @@ const EditorPage = () => {
     }
 
     setExportStatus('Exporting...');
+    setExportedFiles(null);
     void exportProjectGraphFiles(projectId, sessionRef.current.graph)
       .then((files) => {
+        setExportedFiles(files);
         setExportStatus(`Exported ${Object.keys(files).length} file(s).`);
       })
       .catch((error) => {
         console.error('Failed to export ProjectGraph:', error);
+        setExportedFiles(null);
         setExportStatus('Export failed.');
       });
   }, [projectId]);
@@ -211,12 +219,14 @@ const EditorPage = () => {
   return (
     <div style={{ width: '100%', height: '100vh', minHeight: 0 }}>
       <ProjectGraphCanvas
+        exportedFiles={exportedFiles}
         exportStatus={exportStatus}
         graph={graph}
         saveStatus={saveStatus === 'idle' ? null : saveStatus === 'saving' ? 'Saving...' : saveStatus === 'saved' ? 'Saved' : 'Save failed'}
         onEntityPositionChange={handleEntityPositionChange}
         onExportProjectGraph={handleExportProjectGraph}
         onScenarioContentChange={handleScenarioContentChange}
+        onScenarioMetadataChange={handleScenarioMetadataChange}
       />
     </div>
   );

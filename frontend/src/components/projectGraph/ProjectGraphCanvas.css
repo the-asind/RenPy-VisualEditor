@@ -150,7 +150,8 @@
 
 .project-graph-canvas__toolbar,
 .project-graph-canvas__problems,
-.project-graph-canvas__node-editor {
+.project-graph-canvas__node-editor,
+.project-graph-canvas__export-results {
   position: absolute;
   z-index: 10;
   display: flex;
@@ -181,6 +182,27 @@
   top: 16px;
   right: 16px;
   padding: 12px;
+}
+
+.project-graph-canvas__export-results {
+  left: 16px;
+  bottom: 16px;
+  max-height: min(380px, calc(100% - 32px));
+  padding: 12px;
+  overflow: auto;
+}
+
+.project-graph-canvas__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.project-graph-canvas__field span {
+  color: #475569;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.2;
 }
 
 .project-graph-canvas__search {
@@ -235,7 +257,19 @@
   font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
 }
 
-.project-graph-canvas__node-editor-input:focus {
+.project-graph-canvas__node-editor-line-input {
+  box-sizing: border-box;
+  width: 100%;
+  border: 1px solid rgba(71, 85, 105, 0.28);
+  border-radius: 6px;
+  padding: 9px 10px;
+  background: #ffffff;
+  color: #172033;
+  font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+.project-graph-canvas__node-editor-input:focus,
+.project-graph-canvas__node-editor-line-input:focus {
   border-color: rgba(20, 184, 166, 0.58);
   outline: 2px solid rgba(20, 184, 166, 0.16);
 }
@@ -295,6 +329,35 @@
 
 .project-graph-canvas__empty {
   padding: 8px 4px;
+}
+
+.project-graph-canvas__export-file {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 6px;
+  background: #ffffff;
+  padding: 8px;
+}
+
+.project-graph-canvas__export-file-name {
+  overflow: hidden;
+  color: #0f172a;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-graph-canvas__export-file pre {
+  max-height: 140px;
+  margin: 0;
+  overflow: auto;
+  color: #334155;
+  font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  white-space: pre-wrap;
 }
 
 .project-graph-canvas__problem--error {

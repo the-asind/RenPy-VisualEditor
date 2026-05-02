@@ -5,10 +5,12 @@ import {
   importProjectGraphCrdtUpdate,
   moveProjectGraphEntity,
   projectGraphFromCrdtDoc,
+  replaceProjectGraphDiagnostics,
   updateScenarioNodeContent,
+  updateScenarioNodeMetadata,
   type ProjectGraphCrdtDoc,
 } from './projectGraphCrdt';
-import type { GraphPoint, ProjectGraphSnapshot } from './projectGraphProjection';
+import type { GraphDiagnosticSnapshot, GraphPoint, ProjectGraphSnapshot } from './projectGraphProjection';
 
 export type ProjectGraphPersistenceStatus = 'idle' | 'saving' | 'saved' | 'error';
 
@@ -38,6 +40,18 @@ export class ProjectGraphCollaborationSession {
   editScenarioContent(nodeId: string, content: string): void {
     const from = this.version;
     updateScenarioNodeContent(this.doc, nodeId, content);
+    this.publishLocalChange(from);
+  }
+
+  editScenarioMetadata(nodeId: string, metadataPatch: Record<string, unknown>): void {
+    const from = this.version;
+    updateScenarioNodeMetadata(this.doc, nodeId, metadataPatch);
+    this.publishLocalChange(from);
+  }
+
+  replaceDiagnostics(diagnostics: GraphDiagnosticSnapshot[]): void {
+    const from = this.version;
+    replaceProjectGraphDiagnostics(this.doc, diagnostics);
     this.publishLocalChange(from);
   }
 

@@ -671,6 +671,111 @@ Result:
 15. Tests passed: `python -m pytest backend/tests/test_websocket.py -q`.
 16. Tests passed: `npm run test:e2e`.
 
+### Sprint 10 / MVP Action 10.1 Typed Scenario Node Editor
+
+Started Sprint 10 by extending the editable ProjectGraph canvas from plain content edits to typed scenario editing contracts.
+
+Files:
+
+1. `frontend/src/utils/projectGraphCollaboration.ts`
+2. `frontend/src/utils/__tests__/projectGraphCollaboration.test.ts`
+3. `frontend/src/components/EditorPage.tsx`
+4. `frontend/src/components/projectGraph/ProjectGraphCanvas.tsx`
+5. `frontend/src/components/projectGraph/ProjectGraphCanvas.css`
+
+Result:
+
+1. Added a black-box collaboration test that edits dialogue, comment, jump, call, return, raw_action, raw_block, menu prompt, and menu choice nodes.
+2. Added `ProjectGraphCollaborationSession.editScenarioMetadata()` so typed editor metadata changes publish as binary Loro updates, update the projected graph, and remain persistable.
+3. `ProjectGraphCanvas` now labels the editor by scenario type and exposes a dedicated menu choice condition field.
+4. Editing a menu choice condition updates the visible Ren'Py choice line and the node metadata condition field.
+5. The action test asserts that typed editing does not introduce UI/editor metadata fields into ProjectGraph nodes.
+6. Tests passed: `npm test -- --run src/utils/__tests__/projectGraphCollaboration.test.ts`.
+
+### Sprint 10 / MVP Action 10.2 Manual Layout Persistence
+
+Closed the manual layout persistence contract for all MVP entity levels.
+
+Files:
+
+1. `frontend/src/utils/__tests__/projectGraphCollaboration.test.ts`
+
+Result:
+
+1. Added a black-box collaboration/reload test that moves a `FileFrame`, `LabelFrame`, `LabelStartNode`, and `ScenarioNode`.
+2. Verified the moved positions sync to a second CRDT client through binary updates.
+3. Verified the same positions survive binary snapshot export/import reload.
+4. No new implementation was required because the existing Sprint 7/Sprint 9 `moveEntity()` operation already works on all ProjectGraph entity kinds.
+5. Tests passed: `npm test -- --run src/utils/__tests__/projectGraphCollaboration.test.ts`.
+
+### Sprint 10 / MVP Action 10.3 Export Safety Gate
+
+Added the first user-facing export safety gate to the ProjectGraph export API.
+
+Files:
+
+1. `backend/app/api/routes/projects.py`
+2. `backend/tests/test_project_graph_snapshot_route.py`
+
+Result:
+
+1. Added route tests proving non-blocking warning diagnostics still allow normalized `.rpy` export.
+2. Added route tests proving explicitly blocking diagnostics stop export with a clear `400` response.
+3. The export route now checks loaded ProjectGraph diagnostics before invoking the exporter.
+4. The blocking response returns concise diagnostic IDs, codes, severities, messages, and node IDs without dumping full graph internals.
+5. Tests passed: `python -m pytest backend/tests/test_project_graph_snapshot_route.py -q`.
+
+### Sprint 10 / MVP Action 10.4 Live Search And Problems After Edits
+
+Closed the live search/problems update contract for the collaborative ProjectGraph canvas.
+
+Files:
+
+1. `frontend/src/utils/projectGraphCrdt.ts`
+2. `frontend/src/utils/projectGraphCollaboration.ts`
+3. `frontend/src/utils/__tests__/projectGraphCollaboration.test.ts`
+
+Result:
+
+1. Added a black-box test proving search results are derived from the current CRDT graph after a remote content edit.
+2. Added `replaceProjectGraphDiagnostics()` to the CRDT adapter.
+3. Added `ProjectGraphCollaborationSession.replaceDiagnostics()` so diagnostic-bearing updates publish through the same binary collaboration path.
+4. Added coverage proving the Problems projection updates after a remote diagnostic replacement.
+5. Tests passed: `npm test -- --run src/utils/__tests__/projectGraphCollaboration.test.ts`.
+
+### Sprint 10 / MVP Action 10.5 Export UX Contract
+
+Closed the visible export result contract for the ProjectGraph canvas.
+
+Files:
+
+1. `frontend/src/components/EditorPage.tsx`
+2. `frontend/src/components/projectGraph/ProjectGraphCanvas.tsx`
+3. `frontend/src/components/projectGraph/ProjectGraphCanvas.css`
+4. `frontend/e2e/project-graph-collaboration.spec.ts`
+5. `frontend/public/e2e/project-graph-export-ux.html`
+6. `frontend/src/e2e/project-graph-export-ux.tsx`
+
+Result:
+
+1. `EditorPage` now keeps the returned export file map instead of discarding it after a successful export.
+2. `ProjectGraphCanvas` renders an Exported Files panel with stable sorted filenames and normalized `.rpy` text previews.
+3. Export failure clears stale exported file results.
+4. Added a Playwright export UX harness and test that clicks Export, observes `Exporting...`, resolves the export, and verifies returned filenames and content.
+5. Tests passed: `npm run test:e2e -- --grep "canvas export UX"`.
+
+### Sprint 10 Verification
+
+Sprint 10 editor/export readiness gate passed.
+
+Result:
+
+1. Backend tests passed: `python -m pytest backend/tests -q` with 142 tests.
+2. Frontend unit tests passed: `npm test -- --run` with 30 tests.
+3. Frontend E2E tests passed: `npm run test:e2e` with 2 Playwright tests.
+4. Frontend build passed: `npm run build`.
+5. Known build warnings remain non-blocking for Sprint 10: large Loro bundle chunk, `/env.js` script module warning, and outdated Browserslist data. Sprint 11 release gate must either document these as MVP exceptions or fix them.
+
 ## 2026-04-30
 
 ### Branch And Initial Architecture

@@ -11,7 +11,12 @@ import {
   importProjectGraphCrdtSnapshot,
   projectGraphFromCrdtDoc,
 } from '../projectGraphCrdt';
-import { projectGraphToReactFlow, type ProjectGraphSnapshot } from '../projectGraphProjection';
+import {
+  projectGraphDiagnosticsToProblems,
+  projectGraphToReactFlow,
+  searchProjectGraph,
+  type ProjectGraphSnapshot,
+} from '../projectGraphProjection';
 
 const graph: ProjectGraphSnapshot = {
   project_id: 'sprint-7-project',
@@ -58,6 +63,114 @@ const graph: ProjectGraphSnapshot = {
       source_span: { start_line: 1, end_line: 1 },
       metadata: {},
       visual: { position: { x: 64, y: 136 }, size: { width: 360, height: 88 } },
+    },
+    {
+      id: 'node-comment',
+      file_id: 'file-day-1',
+      label_id: 'label-start',
+      parent_node_id: null,
+      type: 'comment',
+      content: '# RenPy Mouse records the editorial squeak.',
+      order: '0001',
+      source_span: { start_line: 2, end_line: 2 },
+      metadata: {},
+      visual: { position: { x: 64, y: 248 }, size: { width: 360, height: 72 } },
+    },
+    {
+      id: 'node-jump',
+      file_id: 'file-day-1',
+      label_id: 'label-start',
+      parent_node_id: null,
+      type: 'jump',
+      content: 'jump day_two',
+      order: '0002',
+      source_span: { start_line: 3, end_line: 3 },
+      metadata: { target: 'day_two' },
+      visual: { position: { x: 64, y: 344 }, size: { width: 280, height: 72 } },
+    },
+    {
+      id: 'node-call',
+      file_id: 'file-day-1',
+      label_id: 'label-start',
+      parent_node_id: null,
+      type: 'call',
+      content: 'call cheese_count',
+      order: '0003',
+      source_span: { start_line: 4, end_line: 4 },
+      metadata: { target: 'cheese_count' },
+      visual: { position: { x: 64, y: 440 }, size: { width: 280, height: 72 } },
+    },
+    {
+      id: 'node-return',
+      file_id: 'file-day-1',
+      label_id: 'label-start',
+      parent_node_id: null,
+      type: 'return',
+      content: 'return',
+      order: '0004',
+      source_span: { start_line: 5, end_line: 5 },
+      metadata: {},
+      visual: { position: { x: 64, y: 536 }, size: { width: 220, height: 72 } },
+    },
+    {
+      id: 'node-raw-action',
+      file_id: 'file-day-1',
+      label_id: 'label-start',
+      parent_node_id: null,
+      type: 'raw_action',
+      content: 'show renpy_mouse proud with dissolve',
+      order: '0005',
+      source_span: { start_line: 6, end_line: 6 },
+      metadata: {},
+      visual: { position: { x: 64, y: 632 }, size: { width: 360, height: 72 } },
+    },
+    {
+      id: 'node-raw-block',
+      file_id: 'file-day-1',
+      label_id: 'label-start',
+      parent_node_id: null,
+      type: 'raw_block',
+      content: 'python:\n    renpy_mouse_notes.append("cheese")',
+      order: '0006',
+      source_span: { start_line: 7, end_line: 8 },
+      metadata: { raw_block_type: 'python' },
+      visual: { position: { x: 64, y: 728 }, size: { width: 400, height: 96 } },
+    },
+    {
+      id: 'node-menu',
+      file_id: 'file-day-1',
+      label_id: 'label-start',
+      parent_node_id: null,
+      type: 'menu',
+      content: 'menu:',
+      order: '0007',
+      source_span: { start_line: 9, end_line: 9 },
+      metadata: {},
+      visual: { position: { x: 500, y: 136 }, size: { width: 360, height: 220 } },
+    },
+    {
+      id: 'node-menu-prompt',
+      file_id: 'file-day-1',
+      label_id: 'label-start',
+      parent_node_id: 'node-menu',
+      type: 'menu_prompt',
+      content: '"Where should RenPy hide the crumb?"',
+      order: '0007.0000',
+      source_span: { start_line: 10, end_line: 10 },
+      metadata: { prompt_text: 'Where should RenPy hide the crumb?' },
+      visual: { position: { x: 32, y: 72 }, size: { width: 300, height: 72 } },
+    },
+    {
+      id: 'node-menu-choice',
+      file_id: 'file-day-1',
+      label_id: 'label-start',
+      parent_node_id: 'node-menu',
+      type: 'menu_choice',
+      content: '"Under the quiet cup" if has_quiet_cup:',
+      order: '0007.0001',
+      source_span: { start_line: 11, end_line: 11 },
+      metadata: { choice_text: 'Under the quiet cup', condition: 'has_quiet_cup' },
+      visual: { position: { x: 32, y: 168 }, size: { width: 300, height: 72 } },
     },
   ],
   edges: [],
@@ -156,6 +269,50 @@ describe('ProjectGraphCollaborationSession', () => {
     });
   });
 
+  it('edits every MVP scenario node type through content and metadata operations without editor metadata leakage', () => {
+    const clientA = createProjectGraphCrdtDoc(graph, { peerId: '1' });
+    const clientB = importProjectGraphCrdtSnapshot(exportProjectGraphCrdtSnapshot(clientA), { peerId: '2' });
+    const updates: Uint8Array[] = [];
+    const sessionA = new ProjectGraphCollaborationSession(clientA, {
+      sendUpdate: (update) => updates.push(update),
+    });
+    const sessionB = new ProjectGraphCollaborationSession(clientB);
+    const expectedContentById = new Map([
+      ['node-intro', 'r "RenPy Mouse edits dialogue in sprint ten."'],
+      ['node-comment', '# RenPy Mouse keeps comments editable.'],
+      ['node-jump', 'jump crumb_vault'],
+      ['node-call', 'call cheese_count(3)'],
+      ['node-return', 'return crumb_total'],
+      ['node-raw-action', 'scene kitchen_floor with fade'],
+      ['node-raw-block', 'python:\n    renpy_mouse_notes.append("typed editor")'],
+      ['node-menu-prompt', '"Which crumb gets promoted?"'],
+      ['node-menu-choice', '"The brave crumb" if has_brave_crumb:'],
+    ]);
+
+    for (const [nodeId, content] of expectedContentById) {
+      sessionA.editScenarioContent(nodeId, content);
+    }
+    sessionA.editScenarioMetadata('node-menu-choice', {
+      choice_text: 'The brave crumb',
+      condition: 'has_brave_crumb',
+    });
+
+    for (const update of updates) {
+      sessionB.receiveRemoteUpdate(update);
+    }
+
+    const graphB = sessionB.graph;
+    for (const [nodeId, content] of expectedContentById) {
+      expect(graphB.nodes.find((node) => node.id === nodeId)?.content).toBe(content);
+    }
+    expect(graphB.nodes.find((node) => node.id === 'node-menu-choice')?.metadata).toEqual({
+      choice_text: 'The brave crumb',
+      condition: 'has_brave_crumb',
+    });
+    expect(graphB.nodes.flatMap((node) => Object.keys(node.metadata))).not.toContain('editor_state');
+    expect(graphB.nodes.flatMap((node) => Object.keys(node.metadata))).not.toContain('ui_selected');
+  });
+
   it('debounces snapshot persistence while keeping the final content and position reloadable', async () => {
     vi.useFakeTimers();
     const persistedSnapshots: Uint8Array[] = [];
@@ -188,6 +345,96 @@ describe('ProjectGraphCollaborationSession', () => {
       x: 188,
       y: 144,
     });
+  });
+
+  it('persists manual layout for files, labels, label starts, and scenario nodes after collaboration and reload', () => {
+    const clientA = createProjectGraphCrdtDoc(graph, { peerId: '1' });
+    const clientB = importProjectGraphCrdtSnapshot(exportProjectGraphCrdtSnapshot(clientA), { peerId: '2' });
+    const updates: Uint8Array[] = [];
+    const persistedSnapshots: Uint8Array[] = [];
+    const sessionA = new ProjectGraphCollaborationSession(clientA, {
+      sendUpdate: (update) => updates.push(update),
+      persistSnapshot: (snapshot) => persistedSnapshots.push(snapshot),
+    });
+    const sessionB = new ProjectGraphCollaborationSession(clientB);
+
+    sessionA.moveEntity('file-day-1', { x: 320, y: 180 });
+    sessionA.moveEntity('label-start', { x: 72, y: 84 });
+    sessionA.moveEntity('label-start-node', { x: 44, y: 52 });
+    sessionA.moveEntity('node-comment', { x: 96, y: 288 });
+
+    for (const update of updates) {
+      sessionB.receiveRemoteUpdate(update);
+    }
+
+    const reloadedGraph = projectGraphFromCrdtDoc(
+      importProjectGraphCrdtSnapshot(persistedSnapshots.at(-1)!, { peerId: '3' }),
+    );
+    for (const checkedGraph of [sessionB.graph, reloadedGraph]) {
+      expect(checkedGraph.files.find((file) => file.id === 'file-day-1')?.visual.position).toEqual({
+        x: 320,
+        y: 180,
+      });
+      expect(checkedGraph.labels.find((label) => label.id === 'label-start')?.visual.position).toEqual({
+        x: 72,
+        y: 84,
+      });
+      expect(checkedGraph.label_starts.find((start) => start.id === 'label-start-node')?.visual.position).toEqual({
+        x: 44,
+        y: 52,
+      });
+      expect(checkedGraph.nodes.find((node) => node.id === 'node-comment')?.visual.position).toEqual({
+        x: 96,
+        y: 288,
+      });
+    }
+  });
+
+  it('updates search and problems from the current CRDT graph after live content and diagnostic changes', () => {
+    const clientA = createProjectGraphCrdtDoc(graph, { peerId: '1' });
+    const clientB = importProjectGraphCrdtSnapshot(exportProjectGraphCrdtSnapshot(clientA), { peerId: '2' });
+    const updates: Uint8Array[] = [];
+    const sessionA = new ProjectGraphCollaborationSession(clientA, {
+      sendUpdate: (update) => updates.push(update),
+    });
+    const sessionB = new ProjectGraphCollaborationSession(clientB);
+
+    expect(searchProjectGraph(sessionB.graph, 'moon crumb')).toEqual([]);
+
+    sessionA.editScenarioContent('node-intro', 'r "RenPy Mouse finds the moon crumb."');
+    sessionB.receiveRemoteUpdate(updates.shift()!);
+
+    expect(searchProjectGraph(sessionB.graph, 'moon crumb')).toMatchObject([
+      {
+        nodeId: 'node-intro',
+        content: 'r "RenPy Mouse finds the moon crumb."',
+      },
+    ]);
+
+    sessionA.replaceDiagnostics([
+      {
+        id: 'diagnostic-live-unresolved',
+        code: 'unresolved_target',
+        severity: 'warning',
+        message: 'RenPy Mouse has not named this moon door yet.',
+        blocking: false,
+        file_id: 'file-day-1',
+        label_id: 'label-start',
+        node_id: 'node-jump',
+        source_span: { start_line: 3, end_line: 3 },
+        metadata: { target: 'moon_door' },
+      },
+    ]);
+    sessionB.receiveRemoteUpdate(updates.shift()!);
+
+    expect(projectGraphDiagnosticsToProblems(sessionB.graph)).toMatchObject([
+      {
+        id: 'diagnostic-live-unresolved',
+        code: 'unresolved_target',
+        nodeId: 'node-jump',
+        severity: 'warning',
+      },
+    ]);
   });
 
   it('reports persistence errors after a debounced save fails', async () => {

@@ -52,6 +52,20 @@ def _project_graph_diagnostics_summary(graph_snapshot) -> Dict[str, int]:
             summary[diagnostic.severity] += 1
     return summary
 
+
+def _blocking_export_diagnostics(graph_snapshot) -> list[Dict[str, Any]]:
+    return [
+        {
+            "id": diagnostic.id,
+            "code": diagnostic.code,
+            "severity": diagnostic.severity,
+            "message": diagnostic.message,
+            "node_id": diagnostic.node_id,
+        }
+        for diagnostic in graph_snapshot.diagnostics
+        if diagnostic.blocking
+    ]
+
 @projects_router.post("/")
 async def create_project(
     name: str = Body(...), 
@@ -218,6 +232,16 @@ async def export_project_graph(
             raise HTTPException(status_code=400, detail="ProjectGraph project_id does not match route project_id")
 
         graph = ProjectGraphSnapshotCodec.load(graph_snapshot)
+        blocking_diagnostics = _blocking_export_diagnostics(graph)
+        if blocking_diagnostics:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "message": "ProjectGraph export blocked by blocking diagnostics",
+                    "diagnostics": blocking_diagnostics,
+                },
+            )
+
         exported_files = ProjectGraphExporter().export(graph)
         return {"files": exported_files}
     except HTTPException:

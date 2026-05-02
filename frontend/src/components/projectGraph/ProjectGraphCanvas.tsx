@@ -68,20 +68,44 @@ export interface ProjectGraphCanvasProps {
   graph: ProjectGraphSnapshot;
   className?: string;
   exportStatus?: string | null;
+  exportedFiles?: Record<string, string> | null;
   saveStatus?: string | null;
   onExportProjectGraph?: () => void;
   onEntityPositionChange?: (entityId: string, position: GraphPoint) => void;
   onScenarioContentChange?: (nodeId: string, content: string) => void;
+  onScenarioMetadataChange?: (nodeId: string, metadataPatch: Record<string, unknown>) => void;
 }
+
+const contentEditorLabelByType = new Map<string, string>([
+  ['dialogue', 'Dialogue or narration'],
+  ['comment', 'Comment'],
+  ['jump', 'Jump statement'],
+  ['call', 'Call statement'],
+  ['return', 'Return statement'],
+  ['raw_action', 'Action statement'],
+  ['raw_block', 'Raw block'],
+  ['menu_prompt', 'Menu prompt'],
+  ['menu_choice', 'Menu choice line'],
+]);
+
+const menuChoiceLineWithCondition = (content: string, condition: string): string => {
+  const trimmedContent = content.trimEnd();
+  const withoutExistingCondition = trimmedContent.replace(/\s+if\s+[^:]+:$/, ':');
+  const base = withoutExistingCondition.endsWith(':') ? withoutExistingCondition.slice(0, -1) : withoutExistingCondition;
+  const trimmedCondition = condition.trim();
+  return trimmedCondition ? `${base} if ${trimmedCondition}:` : `${base}:`;
+};
 
 const ProjectGraphCanvasInner = ({
   graph,
   className,
   exportStatus,
+  exportedFiles,
   saveStatus,
   onExportProjectGraph,
   onEntityPositionChange,
   onScenarioContentChange,
+  onScenarioMetadataChange,
 }: ProjectGraphCanvasProps) => {
   const [reactFlowInstance, setReactFlowInstance] = useState<ReactFlowInstance | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -100,6 +124,15 @@ const ProjectGraphCanvasInner = ({
         selected: node.id === selectedNodeId,
       })),
     [projection.nodes, selectedNodeId],
+  );
+  const selectedContentLabel = selectedScenario
+    ? (contentEditorLabelByType.get(selectedScenario.type) ?? 'Scenario content')
+    : 'Scenario content';
+  const selectedChoiceCondition =
+    selectedScenario?.type === 'menu_choice' ? String(selectedScenario.metadata.condition ?? '') : '';
+  const exportedFileEntries = useMemo(
+    () => Object.entries(exportedFiles ?? {}).sort(([pathA], [pathB]) => pathA.localeCompare(pathB)),
+    [exportedFiles],
   );
 
   const focusNode = (nodeId: string) => {
@@ -157,12 +190,35 @@ const ProjectGraphCanvasInner = ({
       {selectedScenario ? (
         <div className="project-graph-canvas__node-editor">
           <div className="project-graph-canvas__panel-title">{selectedScenario.type}</div>
-          <textarea
-            aria-label="Edit scenario node content"
-            className="project-graph-canvas__node-editor-input"
-            onChange={(event) => onScenarioContentChange?.(selectedScenario.id, event.target.value)}
-            value={selectedScenario.content}
-          />
+          <label className="project-graph-canvas__field">
+            <span>{selectedContentLabel}</span>
+            <textarea
+              aria-label="Edit scenario node content"
+              className="project-graph-canvas__node-editor-input"
+              onChange={(event) => onScenarioContentChange?.(selectedScenario.id, event.target.value)}
+              value={selectedScenario.content}
+            />
+          </label>
+          {selectedScenario.type === 'menu_choice' ? (
+            <label className="project-graph-canvas__field">
+              <span>Choice condition</span>
+              <input
+                aria-label="Edit menu choice condition"
+                className="project-graph-canvas__node-editor-line-input"
+                onChange={(event) => {
+                  const condition = event.target.value;
+                  onScenarioContentChange?.(
+                    selectedScenario.id,
+                    menuChoiceLineWithCondition(selectedScenario.content, condition),
+                  );
+                  onScenarioMetadataChange?.(selectedScenario.id, {
+                    condition: condition.trim() ? condition.trim() : null,
+                  });
+                }}
+                value={selectedChoiceCondition}
+              />
+            </label>
+          ) : null}
         </div>
       ) : null}
 
@@ -179,6 +235,18 @@ const ProjectGraphCanvasInner = ({
               <span>{problem.code}</span>
               <small>{problem.message}</small>
             </button>
+          ))}
+        </div>
+      ) : null}
+
+      {exportedFileEntries.length > 0 ? (
+        <div className="project-graph-canvas__export-results">
+          <div className="project-graph-canvas__panel-title">Exported Files</div>
+          {exportedFileEntries.map(([path, content]) => (
+            <section className="project-graph-canvas__export-file" key={path}>
+              <div className="project-graph-canvas__export-file-name">{path}</div>
+              <pre>{content}</pre>
+            </section>
           ))}
         </div>
       ) : null}

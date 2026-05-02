@@ -9,6 +9,7 @@ declare global {
       edit(nodeId: string, content: string): void;
       move(entityId: string, position: { x: number; y: number }): void;
     };
+    resolveExport?: () => void;
   }
 }
 
@@ -98,6 +99,22 @@ test('two browser contexts exchange ProjectGraph CRDT content and drag updates',
   await contextA.close();
   await contextB.close();
   await relay.close();
+});
+
+test('canvas export UX shows status, returned filenames, and normalized content', async ({ page }) => {
+  await page.goto('/e2e/project-graph-export-ux.html');
+
+  await page.getByRole('button', { name: 'Export' }).click();
+  await expect(page.getByText('Exporting...')).toBeVisible();
+
+  await page.evaluate(() => window.resolveExport?.());
+
+  const exportResults = page.locator('.project-graph-canvas__export-results');
+  await expect(page.getByText('Exported 2 file(s).')).toBeVisible();
+  await expect(exportResults.getByText('renpy_mouse_day_1.rpy')).toBeVisible();
+  await expect(exportResults.getByText('renpy_mouse_day_2.rpy')).toBeVisible();
+  await expect(exportResults.getByText('label start:')).toBeVisible();
+  await expect(exportResults.getByText('r "RenPy Mouse previews exported files."')).toBeVisible();
 });
 
 const startRelayServer = async (): Promise<{

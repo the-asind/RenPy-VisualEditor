@@ -56,41 +56,9 @@ def client(temp_database, project_owner):
         projects.db_service = original_projects_db
 
 
-def test_project_graph_snapshot_route_returns_opaque_binary_snapshot(client, temp_database, project_owner):
-    snapshot = b"\x00loro-project-graph-snapshot\xff"
-    temp_database.save_project_crdt_snapshot(project_owner["project_id"], snapshot)
-
-    response = client.get(f"/api/projects/{project_owner['project_id']}/graph-snapshot")
-
-    assert response.status_code == 200
-    assert response.headers["content-type"] == "application/octet-stream"
-    assert response.content == snapshot
-
-
-def test_project_graph_snapshot_route_returns_404_when_snapshot_missing(client, project_owner):
-    response = client.get(f"/api/projects/{project_owner['project_id']}/graph-snapshot")
-
-    assert response.status_code == 404
-    assert response.json()["detail"] == "Project graph snapshot not found"
-
-
-def test_project_graph_snapshot_route_saves_opaque_binary_snapshot(client, temp_database, project_owner):
-    snapshot = b"\x01updated-loro-project-graph-snapshot\x02"
-
-    response = client.put(
-        f"/api/projects/{project_owner['project_id']}/graph-snapshot",
-        content=snapshot,
-        headers={"content-type": "application/octet-stream"},
-    )
-
-    assert response.status_code == 200
-    assert response.json() == {"status": "success"}
-    assert temp_database.get_project_crdt_snapshot(project_owner["project_id"]) == snapshot
-
-
-def test_project_graph_export_route_uses_project_graph_payload(client, project_owner):
-    graph = {
-        "project_id": project_owner["project_id"],
+def minimal_export_graph(project_id, diagnostics=None):
+    return {
+        "project_id": project_id,
         "files": [
             {
                 "id": "file-day-1",
@@ -137,9 +105,45 @@ def test_project_graph_export_route_uses_project_graph_payload(client, project_o
             }
         ],
         "edges": [],
-        "diagnostics": [],
+        "diagnostics": diagnostics or [],
         "source_index": {"files": {}},
     }
+
+
+def test_project_graph_snapshot_route_returns_opaque_binary_snapshot(client, temp_database, project_owner):
+    snapshot = b"\x00loro-project-graph-snapshot\xff"
+    temp_database.save_project_crdt_snapshot(project_owner["project_id"], snapshot)
+
+    response = client.get(f"/api/projects/{project_owner['project_id']}/graph-snapshot")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/octet-stream"
+    assert response.content == snapshot
+
+
+def test_project_graph_snapshot_route_returns_404_when_snapshot_missing(client, project_owner):
+    response = client.get(f"/api/projects/{project_owner['project_id']}/graph-snapshot")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Project graph snapshot not found"
+
+
+def test_project_graph_snapshot_route_saves_opaque_binary_snapshot(client, temp_database, project_owner):
+    snapshot = b"\x01updated-loro-project-graph-snapshot\x02"
+
+    response = client.put(
+        f"/api/projects/{project_owner['project_id']}/graph-snapshot",
+        content=snapshot,
+        headers={"content-type": "application/octet-stream"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "success"}
+    assert temp_database.get_project_crdt_snapshot(project_owner["project_id"]) == snapshot
+
+
+def test_project_graph_export_route_uses_project_graph_payload(client, project_owner):
+    graph = minimal_export_graph(project_owner["project_id"])
 
     response = client.post(f"/api/projects/{project_owner['project_id']}/graph-export", json=graph)
 
@@ -148,4 +152,65 @@ def test_project_graph_export_route_uses_project_graph_payload(client, project_o
         "files": {
             "renpy_mouse_day_1.rpy": 'label start:\n    r "RenPy Mouse exports from ProjectGraph."\n'
         }
+    }
+
+
+def test_project_graph_export_route_allows_non_blocking_diagnostics(client, project_owner):
+    graph = minimal_export_graph(
+        project_owner["project_id"],
+        diagnostics=[
+            {
+                "id": "diagnostic-unresolved",
+                "code": "unresolved_target",
+                "severity": "warning",
+                "message": "RenPy Mouse has not built this tunnel yet.",
+                "blocking": False,
+                "file_id": "file-day-1",
+                "label_id": "label-start",
+                "node_id": "node-intro",
+                "source_span": {"start_line": 2, "end_line": 2},
+                "metadata": {"target": "missing_tunnel"},
+            }
+        ],
+    )
+
+    response = client.post(f"/api/projects/{project_owner['project_id']}/graph-export", json=graph)
+
+    assert response.status_code == 200
+    assert "renpy_mouse_day_1.rpy" in response.json()["files"]
+
+
+def test_project_graph_export_route_blocks_explicitly_blocking_diagnostics(client, project_owner):
+    graph = minimal_export_graph(
+        project_owner["project_id"],
+        diagnostics=[
+            {
+                "id": "diagnostic-blocking",
+                "code": "unsafe_containment",
+                "severity": "error",
+                "message": "RenPy Mouse cannot safely export this nested crumb.",
+                "blocking": True,
+                "file_id": "file-day-1",
+                "label_id": "label-start",
+                "node_id": "node-intro",
+                "source_span": {"start_line": 2, "end_line": 3},
+                "metadata": {"reason": "ambiguous indentation"},
+            }
+        ],
+    )
+
+    response = client.post(f"/api/projects/{project_owner['project_id']}/graph-export", json=graph)
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == {
+        "message": "ProjectGraph export blocked by blocking diagnostics",
+        "diagnostics": [
+            {
+                "id": "diagnostic-blocking",
+                "code": "unsafe_containment",
+                "severity": "error",
+                "message": "RenPy Mouse cannot safely export this nested crumb.",
+                "node_id": "node-intro",
+            }
+        ],
     }

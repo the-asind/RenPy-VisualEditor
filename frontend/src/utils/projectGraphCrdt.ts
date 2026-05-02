@@ -258,6 +258,14 @@ export const updateScenarioNodeMetadata = (
   doc.commit({ origin: 'project-graph-metadata', message: `Update scenario ${nodeId} metadata` });
 };
 
+export const replaceProjectGraphDiagnostics = (
+  doc: LoroDoc,
+  diagnostics: GraphDiagnosticSnapshot[],
+): void => {
+  doc.getMap(META_CONTAINER).set('diagnostics', diagnostics);
+  doc.commit({ origin: 'project-graph-diagnostics', message: 'Replace ProjectGraph diagnostics' });
+};
+
 export const moveProjectGraphEntity = (doc: LoroDoc, entityId: string, position: GraphPoint): void => {
   const node = getEntityNode(doc, entityId);
   node.data.set('position_x', position.x);
