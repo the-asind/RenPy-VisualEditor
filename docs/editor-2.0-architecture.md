@@ -59,6 +59,7 @@ MVP 2.0 должен заменить модель `один файл = один
 - React Flow docs: https://reactflow.dev/learn
 - React Flow sub-flows / parent-child nodes: https://reactflow.dev/learn/layouting/sub-flows
 - React Flow layouting: https://reactflow.dev/learn/layouting/layouting
+- React Flow custom edges: https://reactflow.dev/learn/customization/custom-edges
 - React Flow multiplayer guidance: https://reactflow.dev/learn/advanced-use/multiplayer
 - Loro docs: https://www.loro.dev/docs
 - Loro Tree tutorial: https://www.loro.dev/docs/tutorial/tree
@@ -77,7 +78,9 @@ MVP 2.0 должен заменить модель `один файл = один
 
 `LabelStartNode` - видимая мастер-нода начала label внутри `LabelFrame`. Именно к ней ведут `jump` и `call`.
 
-`ScenarioNode` - нода содержимого: диалог, меню, условие, переход, комментарий, action/raw блок.
+`ScenarioNode` - нода содержимого: action-блок, меню, условие, переход, raw block и другие сценарные элементы.
+
+`ActionBlock` - `ScenarioNode(type="action")`, который хранит непрерывный линейный кусок `.rpy` до ближайшего управляющего statement. В него входят dialogue/narration, comments, `scene/show/with/audio` и похожие statements, если они не создают ветвление или переход. Заголовок по умолчанию берется из первой непустой строки и может быть переименован пользователем через editor metadata.
 
 `FlowEdge` - связь между двумя нодами. Связей frame-to-frame в MVP 2.0 нет.
 
@@ -100,7 +103,7 @@ Project Canvas
   FileFrame script_a.rpy
     LabelFrame start
       LabelStartNode start
-      ScenarioNode dialogue/action/menu/if/jump/call
+      ScenarioNode action/menu/if/jump/call
       LabelFrame .local
         LabelStartNode start.local
         ScenarioNode ...
@@ -265,11 +268,20 @@ MVP parser должен быть качественным уже в первой
 
 1. First-class nodes нужны для повествования, ветвлений, переходов и редактируемых автором блоков.
 2. Непереходные presentation/action statements не создают отдельную сложную графовую семантику.
-3. `scene`, `show`, `hide`, `with`, audio, image/effect blocks, python snippets и похожие statements становятся `action`, `raw_action` или `raw_block`, если они не создают ветку графа.
-4. Строка вроде `show eileen happy at left with dissolve` никогда не является проблемой построения графа сама по себе.
-5. Если parser не понимает statement, но может безопасно сохранить его как текст, он создает raw/action node и предупреждение максимум informational/warning уровня.
-6. Blocking diagnostic нужен только когда нельзя безопасно сохранить/экспортировать структуру или становится неоднозначной вложенность.
-7. Если сложный parent block невозможно разобрать безопасно, весь parent block сохраняется как `raw_block` с предупреждением.
+3. Линейные statements между управляющими точками импортируются одним `action` block, а не отдельной canvas-ноды на каждую строку.
+4. `scene`, `show`, `hide`, `with`, audio, image/effect blocks, comments, dialogue/narration и похожие statements входят в `action` block, если они не создают ветку графа.
+5. Заголовок `action` block по умолчанию равен первой непустой строке блока; пользовательское название хранится только в metadata редактора и не экспортируется в `.rpy`.
+6. Строка вроде `show eileen happy at left with dissolve` никогда не является проблемой построения графа сама по себе.
+7. Если parser не понимает statement, но может безопасно сохранить его как текст, он создает raw/action node и предупреждение максимум informational/warning уровня.
+8. Blocking diagnostic нужен только когда нельзя безопасно сохранить/экспортировать структуру или становится неоднозначной вложенность.
+9. Если сложный parent block невозможно разобрать безопасно, весь parent block сохраняется как `raw_block` с предупреждением.
+
+Практическое правило canvas:
+
+1. Нода на холсте должна соответствовать авторскому смысловому блоку, а не физической строке файла.
+2. До `menu`, `if/elif/else`, `jump`, `call`, `return`, nested label или unsafe raw block parser накапливает текст в текущий `action` block.
+3. После управляющего statement следующий линейный участок становится новым `action` block.
+4. `dialogue`, `comment` и `raw_action` остаются допустимыми типами IR для совместимости старых snapshots/tests, но новый импорт должен предпочитать агрегированный `action` block.
 
 MVP first-class subset:
 
@@ -277,8 +289,8 @@ MVP first-class subset:
 2. Local label.
 3. Nested label.
 4. `LabelStartNode`.
-5. Dialogue/say.
-6. Comment inside editable block.
+5. Linear dialogue/say/comment/action chunk as `action` block.
+6. Comment text preserved inside related editable block.
 7. Menu block.
 8. Menu prompt text.
 9. Menu choice text.
@@ -288,8 +300,8 @@ MVP first-class subset:
 13. `jump`.
 14. `call`.
 15. `return`.
-16. Action/raw line.
-17. Action/raw block.
+16. Action block.
+17. Raw block.
 
 Тестовые fixtures должны быть общими для parser/resolver/export/layout. Они рассказывают историю про мышонка Ренпи и покрывают все инварианты применения `.rpy`, которые входят в MVP.
 
@@ -327,6 +339,25 @@ React Flow получает только проекцию `ProjectGraph`.
 4. `FlowEdge` отображается только между node endpoints.
 5. `jump`/`call` edge должен быть пунктирным или полупрозрачным, чтобы отличаться от локального flow.
 6. Unresolved/dynamic edge может отображаться faded и попадать в problems/log panel.
+7. Projection может добавлять derived `sequence` и `branch` edges для чтения дерева; они не заменяют CRDT source of truth и не экспортируются как editor metadata.
+8. `sequence` arrows показывают линейное чтение flow; для conditional-heavy labels MVP 2.0 использует top-down narrative flow, чтобы экономить горизонтальное экранное пространство.
+9. `branch` arrows показывают развилки `menu`/`if/elif/else` и ведут к первым дочерним блокам веток. Для `else/elif` compact header не рисует отдельную стрелку к своему первому child: header визуально прикреплен к child как шапка.
+10. `if/elif/else` siblings и `menu_choice` siblings должны визуально раскладываться branch lanes, а не только вертикальной вложенностью.
+11. `ScenarioNode.parentNodeId` остается доменной Ren'Py-вложенностью для export/CRDT, но не обязан становиться `parentId` React Flow. Потомки `if/elif/else`, `menu` и `menu_choice` проектируются как обычные sibling nodes внутри owning `LabelFrame`, чтобы управляющие nodes не раздувались в визуальные контейнеры.
+12. Conditional branch layout для MVP 2.0 читается как граф: входящий flow идет сверху к `if`, true branch уходит вправо-вниз от центра `if`, else/elif branch уходит влево-вниз, терминалы веток сходятся в следующий линейный блок ниже через derived sequence edges.
+13. Derived локальный flow использует ортогональную routing модель, чтобы линии читались как дерево, а не как произвольные кривые. Forward `sequence` edges могут использовать встроенный `step`; `branch` и `rejoin` используют custom near-target routing, чтобы поворот происходил около target node.
+14. Projection может помечать derived sequence edge как `flowRole="rejoin"`, если несколько terminal branch nodes сходятся в следующий линейный block. Rejoin line является вторичным визуальным hint: она должна быть слабее forward sequence и branch lines.
+15. `jump`/`call` relation edges остаются отдельным типом связи и не должны визуально конкурировать с локальными `sequence`/`branch` edges.
+16. Branch/rejoin edges используют custom near-target routing: для top-down flow поворот происходит на малом фиксированном отступе над target node, чтобы несколько сходящихся линий имели общий target-side lane и не поворачивали посередине чужих нод.
+17. Все стрелки входят в target node через верхний `flow-in` handle. Side handles могут оставаться source-side affordance для faint relation edges, но target entry остается top-only.
+18. `else/elif` остаются доменными `ScenarioNode` для CRDT/export, но в projection выглядят как компактные branch headers, прикрепленные к первому блоку своей ветки. Между header и child не должно быть отдельной стрелки или визуального зазора.
+19. `jump/call` relation edges остаются вторичными пунктирными hints, но должны быть достаточно видимыми, чтобы пользователь мог проследить переход к target `LabelStartNode` в другом label frame.
+20. `menu_prompt` остается доменным `ScenarioNode`, но в React Flow projection не должен становиться отдельной видимой canvas-нoдой. Prompt отображается внутри owning `menu` node.
+21. Все projected nodes должны иметь явную header-zone для drag. Body/content зоны нод и фреймов должны вести себя как пустой холст: LMB drag по ним панорамирует canvas. Перетаскивание ноды/фрейма начинается только из `.pg-node__drag-handle` и сохраняет позицию в CRDT.
+22. Branch-managed labels не должны выпадать из tree layout только из-за `_manual_position` на одной scenario node. Для `if/else/menu` дерева ручной drag является локальным UX offset/affordance, а не причиной отключать branch projection всего label.
+23. Attached branch headers (`else/elif`) и первый блок их ветки должны иметь общую drag-группу: если пользователь тянет child block под `else`, шапка `else` движется вместе с ним.
+24. Вложенные `LabelFrame` внутри branch-managed label располагаются после активного story-flow area родительского label. Local/nested label frame не должен оставаться сбоку от branch tree так, чтобы его внутренние линии пересекали меню, if/else или rejoin родительской истории.
+25. `LabelFrame` header является зарезервированной зоной. Первый child любого label, включая `LabelStartNode` в простых small labels, должен начинаться ниже header zone и не перекрывать `LABEL` title/name.
 
 Layout MVP:
 
@@ -338,7 +369,14 @@ Layout MVP:
 6. Sibling frames не должны пересекаться.
 7. Parent frame bounds считаются из children плюс padding.
 8. Manual positions после drag сохраняются и не перетираются автоматическим relayout без явной команды.
-9. Перед implementation проверить официальные React Flow docs по sub-flows/layouting. Если Dagre конфликтует с nested frames и внешними edges, перейти к ELK или гибридному layout.
+9. Branch lanes резервируют вертикальное пространство по фактической нижней границе subtree, а не только по высоте header-ноды ветки.
+10. Rejoin routing не должен создавать главную оранжевую/синюю "магистраль" поверх branch content; если routing становится шумным, rejoin должен становиться менее заметным или переходить в custom edge pass.
+11. Для top-down rejoin custom edge целевой поворот задается как `targetY - targetTurnOffset`; несколько incoming edges к одной target node должны использовать одинаковый `targetTurnOffset`.
+12. `else/elif` branch headers должны быть низкими и располагаться близко к первому дочернему block своей ветки.
+13. `menu_choice` lanes используют тот же top-down branch principle: `menu` по центру, choices расходятся по горизонтальным lanes, choice content идет вниз от конкретного choice.
+14. В branch-managed label порядок normalize такой: сначала применить auto branch layout и отделить nested label frames ниже story-flow, затем учитывать manual-position guard для простых не-branch groups. `_manual_position` не должен отменять structural readability родительского branch tree.
+15. Normalize должен сохранять минимальный top padding для children внутри `LabelFrame`, даже если label не содержит `if/menu` и не проходит branch auto-layout.
+16. Перед implementation проверить официальные React Flow docs по sub-flows/layouting/custom edges/handles/drag handles. Если Dagre конфликтует с nested frames и внешними edges, перейти к ELK или гибридному layout.
 
 ## 11. Loro CRDT Strategy
 

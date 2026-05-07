@@ -86,9 +86,22 @@ class ProjectGraphExporter:
         if node.type == "raw_block":
             return self._render_raw_block(node.content, indent)
 
-        lines = [f"{indent}{node.content}"]
+        lines = self._render_plain_block(node.content, indent)
         for child in sorted(children_by_parent.get(node.id, []), key=self._source_order):
             lines.extend(self._render_node(child, children_by_parent, indent + self.LABEL_INDENT))
+        return lines
+
+    def _render_plain_block(self, content: str, indent: str) -> list[str]:
+        raw_lines = content.splitlines()
+        if not raw_lines:
+            return []
+
+        lines: list[str] = []
+        for line in raw_lines:
+            if not line.strip():
+                lines.append("")
+            else:
+                lines.append(f"{indent}{line.strip()}")
         return lines
 
     def _render_raw_block(self, content: str, indent: str) -> list[str]:

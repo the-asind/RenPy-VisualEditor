@@ -270,6 +270,12 @@ export const moveProjectGraphEntity = (doc: LoroDoc, entityId: string, position:
   const node = getEntityNode(doc, entityId);
   node.data.set('position_x', position.x);
   node.data.set('position_y', position.y);
+  if (node.data.get('kind') === 'scenario') {
+    node.data.set('metadata', {
+      ...recordOrEmpty(node.data.get('metadata')),
+      _manual_position: true,
+    });
+  }
   doc.commit({ origin: 'project-graph-position', message: `Move ${entityId}` });
 };
 

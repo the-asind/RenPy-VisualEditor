@@ -12,6 +12,7 @@ def test_mouse_renpy_fixture_corpus_exists():
         "renpy_mouse_day_1.rpy",
         "renpy_mouse_day_2.rpy",
         "renpy_mouse_diagnostics.rpy",
+        "renpy_mouse_nested_if_blocks.rpy",
     }
 
     assert expected_files == {path.name for path in FIXTURE_DIR.glob("*.rpy")}
@@ -31,6 +32,7 @@ def test_mouse_renpy_fixture_corpus_covers_mvp_parser_invariants():
         "\"Which snack path should RenPy inspect?\"",
         "\"Follow the golden crumb trail\" if crumb_count == 0:",
         "if crumb_count > 2:",
+        "if secret_duck_mode:",
         "elif crumb_count == 1:",
         "else:",
         "jump .crumb_trail",

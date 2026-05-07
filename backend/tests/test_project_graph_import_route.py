@@ -320,9 +320,9 @@ def test_mvp_2_release_contract_import_open_edit_export_reimport(client, project
     assert snapshot_response.status_code == 200
     opened_graph = _decode_loro_snapshot(snapshot_response.content)
 
-    edited_dialogue = next(node for node in opened_graph["nodes"] if node["type"] == "dialogue")
-    edited_dialogue["content"] = 'r "RenPy Mouse signs the MVP 2 release scroll."'
-    edited_dialogue["metadata"]["editor_state"] = "must not export"
+    edited_action = next(node for node in opened_graph["nodes"] if node["type"] == "action")
+    edited_action["content"] = 'r "RenPy Mouse signs the MVP 2 release scroll."'
+    edited_action["metadata"]["editor_state"] = "must not export"
     opened_graph["files"][0]["visual"]["position"] = {"x": 321, "y": 123}
 
     export_response = client.post(f"/api/projects/{project_owner['project_id']}/graph-export", json=opened_graph)

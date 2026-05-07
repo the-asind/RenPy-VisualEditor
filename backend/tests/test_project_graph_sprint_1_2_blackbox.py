@@ -121,7 +121,8 @@ def test_sprint_1_and_2_full_project_graph_blackbox_contract():
     assert labels["day_two.shared_nook"][0].parent_label_id == labels["day_two"][0].id
 
     node_counts = Counter(node.type for node in graph.nodes)
-    assert node_counts["dialogue"] >= 18
+    assert node_counts["action"] >= 18
+    assert node_counts["dialogue"] == 0
     assert node_counts["menu"] == 2
     assert node_counts["menu_prompt"] == 2
     assert node_counts["menu_choice"] == 4
@@ -129,15 +130,16 @@ def test_sprint_1_and_2_full_project_graph_blackbox_contract():
     assert node_counts["elif"] == 1
     assert node_counts["else"] == 1
     assert node_counts["raw_block"] == 3
-    assert node_counts["comment"] == 3
+    assert node_counts["comment"] == 0
     assert node_counts["jump"] == 9
     assert node_counts["call"] == 3
 
     contents_by_type = {node_type: {node.content for node in nodes_by_type(graph, node_type)} for node_type in node_counts}
-    assert 'r "I smell a cheese commit."' in contents_by_type["dialogue"]
-    assert "# RenPy wakes up under the keyboard." in contents_by_type["comment"]
-    assert "scene kitchen morning" in contents_by_type["raw_action"]
-    assert "play music \"tiny_footsteps.ogg\" fadein 1.0" in contents_by_type["raw_action"]
+    action_blocks = contents_by_type["action"]
+    assert any('r "I smell a cheese commit."' in block for block in action_blocks)
+    assert any("# RenPy wakes up under the keyboard." in block for block in action_blocks)
+    assert any("scene kitchen morning" in block for block in action_blocks)
+    assert any("play music \"tiny_footsteps.ogg\" fadein 1.0" in block for block in action_blocks)
     assert any(node.content.startswith("show renpy happy:") for node in nodes_by_type(graph, "raw_block"))
     assert any(node.content.startswith("python:") for node in nodes_by_type(graph, "raw_block"))
     assert any(node.content.startswith("while ") for node in nodes_by_type(graph, "raw_block"))
@@ -161,9 +163,9 @@ def test_sprint_1_and_2_full_project_graph_blackbox_contract():
         for node in graph.nodes
         if node.parent_node_id in {branch.id for branch in branch_by_type.values()}
     } == {
-        (branch_by_type["if"].id, "dialogue", 'r "This is either a feast or a cycle."'),
-        (branch_by_type["elif"].id, "dialogue", 'r "One crumb is enough for a prototype."'),
-        (branch_by_type["else"].id, "dialogue", 'r "No crumbs, no graph."'),
+        (branch_by_type["if"].id, "action", 'r "This is either a feast or a cycle."'),
+        (branch_by_type["elif"].id, "action", 'r "One crumb is enough for a prototype."'),
+        (branch_by_type["else"].id, "action", 'r "No crumbs, no graph."'),
     }
 
     assert len(graph.edges) == 9

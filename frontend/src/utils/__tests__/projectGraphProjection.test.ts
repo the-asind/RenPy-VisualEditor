@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { projectGraphNodeTypes } from '../../components/projectGraph/ProjectGraphCanvas';
+import {
+  buildNearTargetStepPath,
+  projectGraphNodeTypes,
+} from '../../components/projectGraph/ProjectGraphCanvas';
 import {
   getAbsoluteNodePosition,
   projectGraphDiagnosticsToProblems,
@@ -32,6 +35,11 @@ const childFitsParent = (
     childBounds.y + childBounds.height <= Number(parent.height ?? 0)
   );
 };
+
+const projectionEdgesByKind = (projection: ReturnType<typeof projectGraphToReactFlow>, kind: string) =>
+  projection.edges.filter((edge) => edge.data?.kind === kind);
+
+const labelFrameContentTop = 72;
 
 const graph: ProjectGraphSnapshot = {
   project_id: 'projection-project',
@@ -95,16 +103,25 @@ describe('projectGraphToReactFlow static projection', () => {
       'start-node-start',
       'node-dialogue-1',
     ]);
-    expect(projection.edges).toEqual([]);
+    expect(projection.edges).toEqual([
+      expect.objectContaining({
+        source: 'start-node-start',
+        target: 'node-dialogue-1',
+        data: expect.objectContaining({ derived: true, kind: 'sequence' }),
+      }),
+    ]);
 
     const fileNode = projection.nodes.find((node) => node.id === 'file-day-1');
     expect(fileNode).toMatchObject({
       type: 'projectFrame',
       position: { x: 0, y: 0 },
-      data: { kind: 'file', path: 'day_1.rpy', title: 'day_1.rpy' },
-      width: 1200,
-      height: 800,
-    });
+        data: { kind: 'file', path: 'day_1.rpy', title: 'day_1.rpy' },
+      });
+    expect(projection.nodes.every((node) => node.dragHandle === '.pg-node__drag-handle')).toBe(true);
+    expect(projection.nodes.every((node) => node.className === 'project-graph-rf-node')).toBe(true);
+    expect(Number(fileNode?.width)).toBeLessThan(1200);
+    expect(Number(fileNode?.height)).toBeLessThan(800);
+    expect(fileNode?.style).toMatchObject({ width: fileNode?.width, height: fileNode?.height });
 
     const labelNode = projection.nodes.find((node) => node.id === 'label-start');
     expect(labelNode).toMatchObject({
@@ -120,7 +137,9 @@ describe('projectGraphToReactFlow static projection', () => {
       parentId: 'label-start',
       extent: 'parent',
       data: { kind: 'labelStart', qualifiedName: 'start', content: 'label start:' },
+      dragHandle: '.pg-node__drag-handle',
     });
+    expect(startNode?.position.y).toBeGreaterThanOrEqual(labelFrameContentTop);
 
     const scenarioNode = projection.nodes.find((node) => node.id === 'node-dialogue-1');
     expect(scenarioNode).toMatchObject({
@@ -128,6 +147,7 @@ describe('projectGraphToReactFlow static projection', () => {
       parentId: 'label-start',
       extent: 'parent',
       data: { kind: 'scenario', scenarioType: 'dialogue', content: 'r "Hello projection."' },
+      dragHandle: '.pg-node__drag-handle',
     });
   });
 
@@ -138,6 +158,43 @@ describe('projectGraphToReactFlow static projection', () => {
       'projectFrame',
       'scenarioNode',
     ]);
+  });
+
+  it('uses action metadata as the visible scenario title without changing content', () => {
+    const actionGraph: ProjectGraphSnapshot = {
+      ...graph,
+      nodes: [
+        {
+          id: 'node-action-block',
+          file_id: 'file-day-1',
+          label_id: 'label-start',
+          parent_node_id: null,
+          type: 'action',
+          content: [
+            '# RenPy Mouse enters the maze with too many tiny monologues.',
+            'scene maze morning',
+            'show renpy curious at center',
+            'r "The first corridor smells like compiled cheese."',
+          ].join('\n'),
+          order: '0000',
+          source_span: { start_line: 1, end_line: 4 },
+          metadata: { default_title: '# RenPy Mouse enters the maze with too many tiny monologues.' },
+          visual: { position: { x: 96, y: 136 }, size: { width: 320, height: 128 } },
+        },
+      ],
+    };
+
+    const projection = projectGraphToReactFlow(actionGraph);
+    const actionNode = projection.nodes.find((node) => node.id === 'node-action-block');
+
+    expect(actionNode).toMatchObject({
+      type: 'scenarioNode',
+      data: {
+        scenarioType: 'action',
+        title: '# RenPy Mouse enters the maze with too many tiny monologues.',
+        content: actionGraph.nodes[0].content,
+      },
+    });
   });
 
   it('keeps nested containment separate from node-to-node jump and call edges', () => {
@@ -240,13 +297,17 @@ describe('projectGraphToReactFlow static projection', () => {
     });
     expect(byId.get('node-menu-choice')).toMatchObject({
       type: 'scenarioNode',
-      parentId: 'node-menu',
-      extent: 'parent',
+      parentId: 'label-start',
+      data: expect.objectContaining({
+        original: expect.objectContaining({ parent_node_id: 'node-menu' }),
+      }),
     });
     expect(byId.get('node-call-local')).toMatchObject({
       type: 'scenarioNode',
-      parentId: 'node-menu-choice',
-      extent: 'parent',
+      parentId: 'label-start',
+      data: expect.objectContaining({
+        original: expect.objectContaining({ parent_node_id: 'node-menu-choice' }),
+      }),
     });
 
     const frameIds = new Set(
@@ -256,7 +317,8 @@ describe('projectGraphToReactFlow static projection', () => {
     );
     expect(projection.edges.every((edge) => !frameIds.has(edge.source) && !frameIds.has(edge.target))).toBe(true);
 
-    expect(projection.edges).toEqual([
+    const relationEdges = projection.edges.filter((edge) => edge.data?.kind === 'jump' || edge.data?.kind === 'call');
+    expect(relationEdges).toEqual([
       expect.objectContaining({
         id: 'edge-dialogue-jump-start',
         source: 'node-dialogue-1',
@@ -264,9 +326,15 @@ describe('projectGraphToReactFlow static projection', () => {
         type: 'smoothstep',
         animated: false,
         className: 'project-edge project-edge--jump',
-        label: 'jump',
         data: expect.objectContaining({ kind: 'jump' }),
-        style: expect.objectContaining({ opacity: 0.52, strokeDasharray: '8 6' }),
+        markerEnd: { type: 'arrowclosed' },
+        selectable: false,
+        focusable: false,
+        interactionWidth: 10,
+        zIndex: 3,
+        sourceHandle: 'relation-out',
+        targetHandle: 'flow-in',
+        style: expect.objectContaining({ opacity: 0.34, strokeWidth: 1.8, strokeDasharray: '6 8' }),
       }),
       expect.objectContaining({
         id: 'edge-call-local-start',
@@ -275,11 +343,367 @@ describe('projectGraphToReactFlow static projection', () => {
         type: 'smoothstep',
         animated: true,
         className: 'project-edge project-edge--call',
-        label: 'call',
         data: expect.objectContaining({ kind: 'call' }),
-        style: expect.objectContaining({ opacity: 0.72, strokeWidth: 2 }),
+        selectable: false,
+        focusable: false,
+        interactionWidth: 10,
+        zIndex: 3,
+        sourceHandle: 'relation-out',
+        targetHandle: 'flow-in',
+        style: expect.objectContaining({ opacity: 0.38, strokeWidth: 1.8, strokeDasharray: '5 7' }),
       }),
     ]);
+  });
+
+  it('projects sequence and branch arrows for conditional story trees', () => {
+    const conditionalGraph: ProjectGraphSnapshot = {
+      ...graph,
+      labels: [
+        ...graph.labels,
+        {
+          id: 'label-local-note',
+          file_id: 'file-day-1',
+          parent_label_id: 'label-start',
+          name: '.local_note',
+          qualified_name: 'start.local_note',
+          scope: 'local',
+          label_start_node_id: 'start-node-local-note',
+          source_span: { start_line: 10, end_line: 10 },
+          visual: { position: { x: 1200, y: 120 }, size: { width: 320, height: 180 } },
+        },
+      ],
+      label_starts: [
+        ...graph.label_starts,
+        {
+          id: 'start-node-local-note',
+          file_id: 'file-day-1',
+          label_id: 'label-local-note',
+          qualified_name: 'start.local_note',
+          content: 'label .local_note:',
+          visual: { position: { x: 24, y: 24 }, size: { width: 240, height: 64 } },
+        },
+      ],
+      nodes: [
+        {
+          id: 'node-intro-action',
+          file_id: 'file-day-1',
+          label_id: 'label-start',
+          parent_node_id: null,
+          type: 'action',
+          content: 'r "RenPy Mouse reaches a fork in the cheese maze."',
+          order: '0000',
+          source_span: { start_line: 1, end_line: 1 },
+          metadata: { default_title: 'r "RenPy Mouse reaches a fork in the cheese maze."' },
+          visual: { position: { x: 96, y: 136 }, size: { width: 320, height: 96 } },
+        },
+        {
+          id: 'node-if-cheese',
+          file_id: 'file-day-1',
+          label_id: 'label-start',
+          parent_node_id: null,
+          type: 'if',
+          content: 'if cheese_compass_ready:',
+          order: '0001',
+          source_span: { start_line: 2, end_line: 2 },
+          metadata: { condition: 'cheese_compass_ready' },
+          visual: { position: { x: 96, y: 256 }, size: { width: 320, height: 96 } },
+        },
+        {
+          id: 'node-if-action',
+          file_id: 'file-day-1',
+          label_id: 'label-start',
+          parent_node_id: 'node-if-cheese',
+          type: 'action',
+          content: 'r "The compass points at cheddar."',
+          order: '0001.0000',
+          source_span: { start_line: 3, end_line: 3 },
+          metadata: { default_title: 'r "The compass points at cheddar."' },
+          visual: { position: { x: 24, y: 48 }, size: { width: 300, height: 88 } },
+        },
+        {
+          id: 'node-else-cheese',
+          file_id: 'file-day-1',
+          label_id: 'label-start',
+          parent_node_id: null,
+          type: 'else',
+          content: 'else:',
+          order: '0002',
+          source_span: { start_line: 4, end_line: 4 },
+          metadata: { condition: null },
+          visual: { position: { x: 96, y: 376 }, size: { width: 320, height: 96 } },
+        },
+        {
+          id: 'node-inner-if',
+          file_id: 'file-day-1',
+          label_id: 'label-start',
+          parent_node_id: 'node-if-cheese',
+          type: 'if',
+          content: 'if cheddar_door_open:',
+          order: '0001.0001',
+          source_span: { start_line: 4, end_line: 4 },
+          metadata: { condition: 'cheddar_door_open' },
+          visual: { position: { x: 24, y: 160 }, size: { width: 320, height: 96 } },
+        },
+        {
+          id: 'node-inner-if-action',
+          file_id: 'file-day-1',
+          label_id: 'label-start',
+          parent_node_id: 'node-inner-if',
+          type: 'action',
+          content: 'r "The inner door opens."',
+          order: '0001.0001.0000',
+          source_span: { start_line: 5, end_line: 5 },
+          metadata: { default_title: 'r "The inner door opens."' },
+          visual: { position: { x: 24, y: 48 }, size: { width: 300, height: 88 } },
+        },
+        {
+          id: 'node-inner-else',
+          file_id: 'file-day-1',
+          label_id: 'label-start',
+          parent_node_id: 'node-if-cheese',
+          type: 'else',
+          content: 'else:',
+          order: '0001.0002',
+          source_span: { start_line: 6, end_line: 6 },
+          metadata: { condition: null },
+          visual: { position: { x: 24, y: 272 }, size: { width: 320, height: 96 } },
+        },
+        {
+          id: 'node-inner-else-action',
+          file_id: 'file-day-1',
+          label_id: 'label-start',
+          parent_node_id: 'node-inner-else',
+          type: 'action',
+          content: 'r "The inner door asks for more crumbs."',
+          order: '0001.0002.0000',
+          source_span: { start_line: 7, end_line: 7 },
+          metadata: { default_title: 'r "The inner door asks for more crumbs."' },
+          visual: { position: { x: 24, y: 48 }, size: { width: 300, height: 88 } },
+        },
+        {
+          id: 'node-else-action',
+          file_id: 'file-day-1',
+          label_id: 'label-start',
+          parent_node_id: 'node-else-cheese',
+          type: 'action',
+          content: 'r "The compass points at a TODO."',
+          order: '0002.0000',
+          source_span: { start_line: 8, end_line: 8 },
+          metadata: { default_title: 'r "The compass points at a TODO."' },
+          visual: { position: { x: 24, y: 48 }, size: { width: 300, height: 88 } },
+        },
+        {
+          id: 'node-after-action',
+          file_id: 'file-day-1',
+          label_id: 'label-start',
+          parent_node_id: null,
+          type: 'action',
+          content: 'r "The maze joins again after the fork."',
+          order: '0003',
+          source_span: { start_line: 9, end_line: 9 },
+          metadata: { default_title: 'r "The maze joins again after the fork."' },
+          visual: { position: { x: 96, y: 496 }, size: { width: 320, height: 96 } },
+        },
+      ],
+      edges: [],
+    };
+
+    const projection = projectGraphToReactFlow(conditionalGraph);
+    const byId = new Map(projection.nodes.map((node) => [node.id, node]));
+    const ifNode = byId.get('node-if-cheese')!;
+    const introAction = byId.get('node-intro-action')!;
+    const startNode = byId.get('start-node-start')!;
+    const ifAction = byId.get('node-if-action')!;
+    const innerIf = byId.get('node-inner-if')!;
+    const innerIfAction = byId.get('node-inner-if-action')!;
+    const innerElse = byId.get('node-inner-else')!;
+    const innerElseAction = byId.get('node-inner-else-action')!;
+    const elseNode = byId.get('node-else-cheese')!;
+    const elseAction = byId.get('node-else-action')!;
+    const afterNode = byId.get('node-after-action')!;
+    const localNoteLabel = byId.get('label-local-note')!;
+    const branchEdges = projectionEdgesByKind(projection, 'branch');
+    const sequenceEdges = projectionEdgesByKind(projection, 'sequence');
+    const edgePairs = (edges: typeof projection.edges) => new Set(edges.map((edge) => `${edge.source}->${edge.target}`));
+    const rejoinEdges = sequenceEdges.filter((edge) => edge.data?.flowRole === 'rejoin');
+
+    expect(edgePairs(sequenceEdges)).toEqual(
+      new Set([
+        'start-node-start->node-intro-action',
+        'node-intro-action->node-if-cheese',
+        'node-if-action->node-inner-if',
+        'node-inner-if-action->node-after-action',
+        'node-inner-else-action->node-after-action',
+        'node-else-action->node-after-action',
+      ]),
+    );
+    expect(edgePairs(branchEdges)).toEqual(
+      new Set([
+        'node-if-cheese->node-if-action',
+        'node-if-cheese->node-else-cheese',
+        'node-inner-if->node-inner-if-action',
+        'node-inner-if->node-inner-else',
+      ]),
+    );
+    expect(branchEdges.find((edge) => edge.source === 'node-if-cheese' && edge.target === 'node-else-cheese')).toMatchObject({
+      sourceHandle: 'flow-out',
+      targetHandle: 'flow-in',
+    });
+    expect(branchEdges.find((edge) => edge.source === 'node-else-cheese' && edge.target === 'node-else-action')).toBeUndefined();
+    expect(branchEdges.find((edge) => edge.source === 'node-inner-else' && edge.target === 'node-inner-else-action')).toBeUndefined();
+    expect(branchEdges.find((edge) => edge.source === 'node-if-cheese' && edge.target === 'node-if-action')).toMatchObject({
+      type: 'nearTargetStep',
+      sourceHandle: 'flow-out',
+      targetHandle: 'flow-in',
+      data: expect.objectContaining({ direction: 'vertical', targetTurnOffset: 24 }),
+    });
+    expect(sequenceEdges.find((edge) => edge.source === 'start-node-start' && edge.target === 'node-intro-action')).toMatchObject({
+      sourceHandle: 'flow-out',
+      targetHandle: 'flow-in',
+    });
+    expect(
+      projection.edges
+        .filter((edge) => edge.data?.derived === true && edge.data?.flowRole !== 'rejoin' && edge.data?.kind !== 'branch')
+        .every((edge) => edge.type === 'step'),
+    ).toBe(true);
+    expect(branchEdges.every((edge) => edge.type === 'nearTargetStep')).toBe(true);
+    expect(rejoinEdges.map((edge) => `${edge.source}->${edge.target}`).sort()).toEqual([
+      'node-else-action->node-after-action',
+      'node-inner-else-action->node-after-action',
+      'node-inner-if-action->node-after-action',
+    ]);
+    expect(rejoinEdges.every((edge) => String(edge.className ?? '').includes('project-edge--rejoin'))).toBe(true);
+    expect(rejoinEdges.every((edge) => edge.type === 'nearTargetStep')).toBe(true);
+    expect(rejoinEdges.every((edge) => edge.data?.targetTurnOffset === 24)).toBe(true);
+    expect(rejoinEdges.every((edge) => Number(edge.style?.opacity ?? 1) < 0.5)).toBe(true);
+
+    expect(ifAction.parentId).toBe('label-start');
+    expect(innerIf.parentId).toBe('label-start');
+    expect(innerIfAction.parentId).toBe('label-start');
+    expect(innerElse.parentId).toBe('label-start');
+    expect(innerElseAction.parentId).toBe('label-start');
+    expect(elseAction.parentId).toBe('label-start');
+    expect(Number(ifNode.height)).toBe(96);
+    expect(Number(elseNode.height)).toBeLessThanOrEqual(44);
+    expect(Number(innerElse.height)).toBeLessThanOrEqual(44);
+    expect(elseNode.data).toMatchObject({ visualRole: 'branchHeader' });
+    expect(innerElse.data).toMatchObject({ visualRole: 'branchHeader' });
+    expect(elseNode.data?.dragGroupIds).toEqual(expect.arrayContaining(['node-else-cheese', 'node-else-action']));
+    expect(elseAction.data?.dragGroupIds).toEqual(expect.arrayContaining(['node-else-cheese', 'node-else-action']));
+    expect(innerElse.data?.dragGroupIds).toEqual(expect.arrayContaining(['node-inner-else', 'node-inner-else-action']));
+    expect(innerElseAction.data?.dragGroupIds).toEqual(expect.arrayContaining(['node-inner-else', 'node-inner-else-action']));
+    expect(startNode.position.y).toBeGreaterThanOrEqual(80);
+    expect(introAction.position.y).toBeGreaterThanOrEqual(startNode.position.y + Number(startNode.height) + 48);
+    expect(ifNode.position.y).toBeGreaterThanOrEqual(introAction.position.y + Number(introAction.height) + 48);
+    const ifCenterX = ifNode.position.x + Number(ifNode.width) / 2;
+    const introCenterX = introAction.position.x + Number(introAction.width) / 2;
+    const startCenterX = startNode.position.x + Number(startNode.width) / 2;
+    expect(Math.abs(ifCenterX - introCenterX)).toBeLessThanOrEqual(2);
+    expect(Math.abs(ifCenterX - startCenterX)).toBeLessThanOrEqual(2);
+    expect(ifAction.position.x + Number(ifAction.width) / 2).toBeGreaterThanOrEqual(ifCenterX + 260);
+    expect(elseNode.position.x + Number(elseNode.width) / 2).toBeLessThanOrEqual(ifCenterX - 260);
+    expect(elseNode.position.y).toBeGreaterThanOrEqual(ifNode.position.y + Number(ifNode.height) + 48);
+    expect(elseAction.position.y).toBe(elseNode.position.y + Number(elseNode.height));
+    expect(Number(elseNode.width)).toBe(Number(elseAction.width));
+    expect(Math.abs(elseAction.position.x + Number(elseAction.width) / 2 - (elseNode.position.x + Number(elseNode.width) / 2))).toBeLessThanOrEqual(2);
+    expect(rectsOverlap(nodeRect(ifNode), nodeRect(elseNode))).toBe(false);
+    expect(ifAction.position.y).toBeGreaterThanOrEqual(ifNode.position.y + Number(ifNode.height) + 48);
+    expect(innerIf.position.y).toBeGreaterThanOrEqual(ifAction.position.y + Number(ifAction.height) + 48);
+    const innerIfCenterX = innerIf.position.x + Number(innerIf.width) / 2;
+    expect(Math.abs(innerIfCenterX - (ifAction.position.x + Number(ifAction.width) / 2))).toBeLessThanOrEqual(2);
+    expect(innerIfAction.position.x + Number(innerIfAction.width) / 2).toBeGreaterThanOrEqual(innerIfCenterX + 260);
+    expect(innerElse.position.x + Number(innerElse.width) / 2).toBeLessThanOrEqual(innerIfCenterX - 260);
+    expect(innerElse.position.y).toBeGreaterThanOrEqual(innerIf.position.y + Number(innerIf.height) + 48);
+    expect(innerElseAction.position.y).toBe(innerElse.position.y + Number(innerElse.height));
+    expect(Number(innerElse.width)).toBe(Number(innerElseAction.width));
+    expect(Math.abs(innerElseAction.position.x + Number(innerElseAction.width) / 2 - (innerElse.position.x + Number(innerElse.width) / 2))).toBeLessThanOrEqual(2);
+    const trueSubtreeBottom = Math.max(
+      ifAction.position.y + Number(ifAction.height),
+      innerIf.position.y + Number(innerIf.height),
+      innerIfAction.position.y + Number(innerIfAction.height),
+      innerElse.position.y + Number(innerElse.height),
+      innerElseAction.position.y + Number(innerElseAction.height),
+    );
+    expect(afterNode.position.y).toBeGreaterThanOrEqual(
+      Math.max(
+        innerIfAction.position.y + Number(innerIfAction.height),
+        innerElseAction.position.y + Number(innerElseAction.height),
+        elseAction.position.y + Number(elseAction.height),
+      ) + 48,
+    );
+    expect(Math.abs(afterNode.position.x + Number(afterNode.width) / 2 - ifCenterX)).toBeLessThanOrEqual(2);
+    const storyFlowBottom = Math.max(
+      ...[startNode, introAction, ifNode, ifAction, innerIf, innerIfAction, innerElse, innerElseAction, elseNode, elseAction, afterNode]
+        .map((node) => node.position.y + Number(node.height)),
+    );
+    expect(localNoteLabel.position.y).toBeGreaterThanOrEqual(storyFlowBottom + 24);
+
+    const manuallyMovedBranchGraph: ProjectGraphSnapshot = {
+      ...conditionalGraph,
+      nodes: conditionalGraph.nodes.map((node) =>
+        node.id === 'node-else-action'
+          ? {
+              ...node,
+              metadata: { ...node.metadata, _manual_position: true },
+              visual: { ...node.visual, position: { x: 64, y: 720 } },
+            }
+          : node,
+      ),
+    };
+    const manualProjection = projectGraphToReactFlow(manuallyMovedBranchGraph);
+    const manualById = new Map(manualProjection.nodes.map((node) => [node.id, node]));
+    const manualIfNode = manualById.get('node-if-cheese')!;
+    const manualElseNode = manualById.get('node-else-cheese')!;
+    const manualElseAction = manualById.get('node-else-action')!;
+    const manualAfterNode = manualById.get('node-after-action')!;
+    const manualLocalNoteLabel = manualById.get('label-local-note')!;
+    const manualIfCenterX = manualIfNode.position.x + Number(manualIfNode.width) / 2;
+    const manualStoryFlowBottom = Math.max(
+      ...manualProjection.nodes
+        .filter((node) => node.parentId === 'label-start' && node.data?.autoBranchLayout === true)
+        .map((node) => node.position.y + Number(node.height)),
+    );
+
+    expect(manualProjection.nodes.filter((node) => node.data?.autoBranchLayout === true).length).toBeGreaterThan(6);
+    expect(manualElseAction.position.y).toBe(manualElseNode.position.y + Number(manualElseNode.height));
+    expect(Number(manualElseNode.width)).toBe(Number(manualElseAction.width));
+    expect(Math.abs(manualElseAction.position.x + Number(manualElseAction.width) / 2 - (manualElseNode.position.x + Number(manualElseNode.width) / 2))).toBeLessThanOrEqual(2);
+    expect(manualElseNode.position.x + Number(manualElseNode.width) / 2).toBeLessThanOrEqual(manualIfCenterX - 260);
+    expect(manualAfterNode.position.y).toBeGreaterThanOrEqual(
+      manualElseAction.position.y + Number(manualElseAction.height) + 48,
+    );
+    expect(manualLocalNoteLabel.position.y).toBeGreaterThanOrEqual(manualStoryFlowBottom + 24);
+  });
+
+  it('builds near-target rejoin paths with a shared target-side turn lane', () => {
+    const firstPath = buildNearTargetStepPath({
+      sourceX: 120,
+      sourceY: 80,
+      targetX: 640,
+      targetY: 180,
+      targetOffset: 72,
+      direction: 'horizontal',
+    });
+    const secondPath = buildNearTargetStepPath({
+      sourceX: 320,
+      sourceY: 300,
+      targetX: 640,
+      targetY: 180,
+      targetOffset: 72,
+      direction: 'horizontal',
+    });
+    const verticalPath = buildNearTargetStepPath({
+      sourceX: 120,
+      sourceY: 80,
+      targetX: 640,
+      targetY: 520,
+      targetOffset: 24,
+      direction: 'vertical',
+    });
+
+    expect(firstPath).toBe('M 120 80 L 568 80 L 568 180 L 640 180');
+    expect(secondPath).toBe('M 320 300 L 568 300 L 568 180 L 640 180');
+    expect(verticalPath).toBe('M 120 80 L 120 496 L 640 496 L 640 520');
   });
 
   it('normalizes overlapping layout and expands parent frames around children', () => {
@@ -394,6 +818,418 @@ describe('projectGraphToReactFlow static projection', () => {
     expect(childFitsParent(startNode!, labelStart!)).toBe(true);
     expect(childFitsParent(dialogueA!, labelStart!)).toBe(true);
     expect(childFitsParent(dialogueB!, labelStart!)).toBe(true);
+  });
+
+  it('compacts pathological imported nested layout without giant parent nodes or sibling overlap', () => {
+    const importedGraph: ProjectGraphSnapshot = {
+      project_id: 'pathological-import-layout',
+      files: [
+        {
+          id: 'file-day-1',
+          path: 'renpy_mouse_day_1.rpy',
+          order: '0000',
+          visual: { position: { x: 0, y: 0 }, size: { width: 1200, height: 800 } },
+        },
+      ],
+      labels: [
+        {
+          id: 'label-start',
+          file_id: 'file-day-1',
+          parent_label_id: null,
+          name: 'start',
+          qualified_name: 'start',
+          scope: 'global',
+          label_start_node_id: 'start-node-start',
+          source_span: { start_line: 1, end_line: 1 },
+          visual: { position: { x: 48, y: 48 }, size: { width: 960, height: 360 } },
+        },
+      ],
+      label_starts: [
+        {
+          id: 'start-node-start',
+          file_id: 'file-day-1',
+          label_id: 'label-start',
+          qualified_name: 'start',
+          content: 'label start:',
+          visual: { position: { x: 32, y: 32 }, size: { width: 280, height: 72 } },
+        },
+      ],
+      nodes: [
+        {
+          id: 'node-dialogue',
+          file_id: 'file-day-1',
+          label_id: 'label-start',
+          parent_node_id: null,
+          type: 'dialogue',
+          content: 'r "RenPy Mouse sees two blocks on the same crumb."',
+          order: '0000',
+          source_span: { start_line: 2, end_line: 2 },
+          metadata: {},
+          visual: { position: { x: 96, y: 136 }, size: { width: 320, height: 88 } },
+        },
+        {
+          id: 'node-menu',
+          file_id: 'file-day-1',
+          label_id: 'label-start',
+          parent_node_id: null,
+          type: 'menu',
+          content: 'menu:',
+          order: '0001',
+          source_span: { start_line: 3, end_line: 3 },
+          metadata: {},
+          visual: { position: { x: 96, y: 136 }, size: { width: 320, height: 88 } },
+        },
+        {
+          id: 'node-menu-prompt',
+          file_id: 'file-day-1',
+          label_id: 'label-start',
+          parent_node_id: 'node-menu',
+          type: 'menu_prompt',
+          content: '"Which cheese tunnel should RenPy Mouse inspect?"',
+          order: '0001.0000',
+          source_span: { start_line: 4, end_line: 4 },
+          metadata: {},
+          visual: { position: { x: 96, y: 248 }, size: { width: 320, height: 88 } },
+        },
+        {
+          id: 'node-choice-a',
+          file_id: 'file-day-1',
+          label_id: 'label-start',
+          parent_node_id: 'node-menu',
+          type: 'menu_choice',
+          content: '"Follow the cheese tunnel":',
+          order: '0001.0001',
+          source_span: { start_line: 5, end_line: 5 },
+          metadata: {},
+          visual: { position: { x: 96, y: 248 }, size: { width: 320, height: 88 } },
+        },
+        {
+          id: 'node-choice-b',
+          file_id: 'file-day-1',
+          label_id: 'label-start',
+          parent_node_id: 'node-menu',
+          type: 'menu_choice',
+          content: '"Audit the crumbs":',
+          order: '0001.0002',
+          source_span: { start_line: 7, end_line: 7 },
+          metadata: {},
+          visual: { position: { x: 96, y: 248 }, size: { width: 320, height: 88 } },
+        },
+        {
+          id: 'node-jump',
+          file_id: 'file-day-1',
+          label_id: 'label-start',
+          parent_node_id: 'node-choice-a',
+          type: 'jump',
+          content: 'jump day_two',
+          order: '0001.0001.0000',
+          source_span: { start_line: 6, end_line: 6 },
+          metadata: { target: 'day_two' },
+          visual: { position: { x: 96, y: 360 }, size: { width: 320, height: 88 } },
+        },
+      ],
+      edges: [],
+      diagnostics: [],
+      source_index: { files: {} },
+    };
+
+    const projection = projectGraphToReactFlow(importedGraph);
+    const byId = new Map(projection.nodes.map((node) => [node.id, node]));
+    const menu = byId.get('node-menu');
+    const prompt = byId.get('node-menu-prompt');
+    const choiceA = byId.get('node-choice-a');
+    const choiceB = byId.get('node-choice-b');
+    const jump = byId.get('node-jump');
+    const branchEdges = projectionEdgesByKind(projection, 'branch');
+    const sequenceEdges = projectionEdgesByKind(projection, 'sequence');
+
+    expect(menu && choiceA && choiceB && jump).toBeTruthy();
+    expect(prompt).toBeUndefined();
+    expect(menu!.data).toMatchObject({
+      scenarioType: 'menu',
+      menuPrompt: '"Which cheese tunnel should RenPy Mouse inspect?"',
+    });
+    expect(rectsOverlap(nodeRect(byId.get('node-dialogue')!), nodeRect(menu!))).toBe(false);
+    expect(rectsOverlap(nodeRect(choiceA!), nodeRect(choiceB!))).toBe(false);
+    expect(choiceA!.parentId).toBe('label-start');
+    expect(choiceB!.parentId).toBe('label-start');
+    expect(jump!.parentId).toBe('label-start');
+    expect(Math.abs(menu!.position.x + Number(menu!.width) / 2 - (byId.get('node-dialogue')!.position.x + Number(byId.get('node-dialogue')!.width) / 2))).toBeLessThanOrEqual(2);
+    expect(choiceA!.position.y).toBeGreaterThanOrEqual(menu!.position.y + Number(menu!.height) + 48);
+    expect(choiceB!.position.y).toBe(choiceA!.position.y);
+    expect(choiceA!.position.x + Number(choiceA!.width) / 2).toBeLessThan(menu!.position.x + Number(menu!.width) / 2);
+    expect(choiceB!.position.x + Number(choiceB!.width) / 2).toBeGreaterThan(menu!.position.x + Number(menu!.width) / 2);
+    expect(jump!.position.y).toBeGreaterThanOrEqual(choiceA!.position.y + Number(choiceA!.height) + 48);
+    expect(branchEdges.map((edge) => `${edge.source}->${edge.target}`).sort()).toEqual([
+      'node-menu->node-choice-a',
+      'node-menu->node-choice-b',
+    ]);
+    expect(branchEdges.every((edge) => edge.type === 'nearTargetStep')).toBe(true);
+    expect(sequenceEdges.map((edge) => `${edge.source}->${edge.target}`)).toEqual([
+      'start-node-start->node-dialogue',
+      'node-dialogue->node-menu',
+      'node-choice-a->node-jump',
+    ]);
+  });
+
+  it('lays out a single-file RenPy story as a readable top-down tree', () => {
+    const singleFileGraph: ProjectGraphSnapshot = {
+      project_id: 'single-file-top-down-smoke',
+      files: [
+        {
+          id: 'file-smoke',
+          path: 'smoke_single_file_layout.rpy',
+          order: '0000',
+          visual: { position: { x: 0, y: 0 }, size: { width: 1200, height: 800 } },
+        },
+      ],
+      labels: [
+        {
+          id: 'label-start',
+          file_id: 'file-smoke',
+          parent_label_id: null,
+          name: 'start',
+          qualified_name: 'start',
+          scope: 'global',
+          label_start_node_id: 'start-node-start',
+          source_span: { start_line: 1, end_line: 1 },
+          visual: { position: { x: 48, y: 48 }, size: { width: 960, height: 360 } },
+        },
+        {
+          id: 'label-cupboard',
+          file_id: 'file-smoke',
+          parent_label_id: 'label-start',
+          name: '.cupboard',
+          qualified_name: 'start.cupboard',
+          scope: 'local',
+          label_start_node_id: 'start-node-cupboard',
+          source_span: { start_line: 13, end_line: 13 },
+          visual: { position: { x: 48, y: 48 }, size: { width: 960, height: 360 } },
+        },
+        {
+          id: 'label-ask-duck',
+          file_id: 'file-smoke',
+          parent_label_id: null,
+          name: 'ask_duck',
+          qualified_name: 'ask_duck',
+          scope: 'global',
+          label_start_node_id: 'start-node-ask-duck',
+          source_span: { start_line: 21, end_line: 21 },
+          visual: { position: { x: 48, y: 48 }, size: { width: 960, height: 360 } },
+        },
+      ],
+      label_starts: [
+        {
+          id: 'start-node-start',
+          file_id: 'file-smoke',
+          label_id: 'label-start',
+          qualified_name: 'start',
+          content: 'label start:',
+          visual: { position: { x: 32, y: 32 }, size: { width: 280, height: 72 } },
+        },
+        {
+          id: 'start-node-cupboard',
+          file_id: 'file-smoke',
+          label_id: 'label-cupboard',
+          qualified_name: 'start.cupboard',
+          content: 'label .cupboard:',
+          visual: { position: { x: 32, y: 32 }, size: { width: 280, height: 72 } },
+        },
+        {
+          id: 'start-node-ask-duck',
+          file_id: 'file-smoke',
+          label_id: 'label-ask-duck',
+          qualified_name: 'ask_duck',
+          content: 'label ask_duck:',
+          visual: { position: { x: 32, y: 32 }, size: { width: 280, height: 72 } },
+        },
+      ],
+      nodes: [
+        {
+          id: 'node-comment',
+          file_id: 'file-smoke',
+          label_id: 'label-start',
+          parent_node_id: null,
+          type: 'comment',
+          content: '# RenPy Mouse starts a tiny map.',
+          order: '0000',
+          source_span: { start_line: 2, end_line: 2 },
+          metadata: {},
+          visual: { position: { x: 96, y: 136 }, size: { width: 320, height: 88 } },
+        },
+        {
+          id: 'node-scene',
+          file_id: 'file-smoke',
+          label_id: 'label-start',
+          parent_node_id: null,
+          type: 'raw_action',
+          content: 'scene kitchen morning',
+          order: '0001',
+          source_span: { start_line: 3, end_line: 3 },
+          metadata: {},
+          visual: { position: { x: 96, y: 248 }, size: { width: 320, height: 88 } },
+        },
+        {
+          id: 'node-dialogue',
+          file_id: 'file-smoke',
+          label_id: 'label-start',
+          parent_node_id: null,
+          type: 'dialogue',
+          content: 'r "I found the first cheese coordinate."',
+          order: '0002',
+          source_span: { start_line: 4, end_line: 4 },
+          metadata: {},
+          visual: { position: { x: 96, y: 360 }, size: { width: 320, height: 88 } },
+        },
+        {
+          id: 'node-menu',
+          file_id: 'file-smoke',
+          label_id: 'label-start',
+          parent_node_id: null,
+          type: 'menu',
+          content: 'menu:',
+          order: '0003',
+          source_span: { start_line: 6, end_line: 6 },
+          metadata: {},
+          visual: { position: { x: 96, y: 472 }, size: { width: 320, height: 88 } },
+        },
+        {
+          id: 'node-prompt',
+          file_id: 'file-smoke',
+          label_id: 'label-start',
+          parent_node_id: 'node-menu',
+          type: 'menu_prompt',
+          content: '"Where should RenPy Mouse go?"',
+          order: '0003.0000',
+          source_span: { start_line: 7, end_line: 7 },
+          metadata: {},
+          visual: { position: { x: 96, y: 248 }, size: { width: 320, height: 88 } },
+        },
+        {
+          id: 'node-choice-cupboard',
+          file_id: 'file-smoke',
+          label_id: 'label-start',
+          parent_node_id: 'node-menu',
+          type: 'menu_choice',
+          content: '"Inspect the cupboard":',
+          order: '0003.0001',
+          source_span: { start_line: 8, end_line: 8 },
+          metadata: {},
+          visual: { position: { x: 96, y: 248 }, size: { width: 320, height: 88 } },
+        },
+        {
+          id: 'node-jump-cupboard',
+          file_id: 'file-smoke',
+          label_id: 'label-start',
+          parent_node_id: 'node-choice-cupboard',
+          type: 'jump',
+          content: 'jump .cupboard',
+          order: '0003.0001.0000',
+          source_span: { start_line: 9, end_line: 9 },
+          metadata: {},
+          visual: { position: { x: 96, y: 360 }, size: { width: 320, height: 88 } },
+        },
+        {
+          id: 'node-choice-duck',
+          file_id: 'file-smoke',
+          label_id: 'label-start',
+          parent_node_id: 'node-menu',
+          type: 'menu_choice',
+          content: '"Ask the duck":',
+          order: '0003.0002',
+          source_span: { start_line: 10, end_line: 10 },
+          metadata: {},
+          visual: { position: { x: 96, y: 248 }, size: { width: 320, height: 88 } },
+        },
+        {
+          id: 'node-jump-duck',
+          file_id: 'file-smoke',
+          label_id: 'label-start',
+          parent_node_id: 'node-choice-duck',
+          type: 'jump',
+          content: 'jump ask_duck',
+          order: '0003.0002.0000',
+          source_span: { start_line: 11, end_line: 11 },
+          metadata: {},
+          visual: { position: { x: 96, y: 360 }, size: { width: 320, height: 88 } },
+        },
+        {
+          id: 'node-cupboard-dialogue',
+          file_id: 'file-smoke',
+          label_id: 'label-cupboard',
+          parent_node_id: null,
+          type: 'dialogue',
+          content: 'r "The cupboard is a nested label, but not a new file."',
+          order: '0000',
+          source_span: { start_line: 14, end_line: 14 },
+          metadata: {},
+          visual: { position: { x: 96, y: 136 }, size: { width: 320, height: 88 } },
+        },
+        {
+          id: 'node-duck-dialogue',
+          file_id: 'file-smoke',
+          label_id: 'label-ask-duck',
+          parent_node_id: null,
+          type: 'dialogue',
+          content: 'r "The duck says the graph should be readable."',
+          order: '0000',
+          source_span: { start_line: 22, end_line: 22 },
+          metadata: {},
+          visual: { position: { x: 96, y: 136 }, size: { width: 320, height: 88 } },
+        },
+      ],
+      edges: [],
+      diagnostics: [],
+      source_index: { files: {} },
+    };
+
+    const projection = projectGraphToReactFlow(singleFileGraph);
+    const byId = new Map(projection.nodes.map((node) => [node.id, node]));
+    const start = byId.get('start-node-start')!;
+    const comment = byId.get('node-comment')!;
+    const scene = byId.get('node-scene')!;
+    const dialogue = byId.get('node-dialogue')!;
+    const menu = byId.get('node-menu')!;
+    const menuPrompt = byId.get('node-prompt');
+    const cupboardChoice = byId.get('node-choice-cupboard')!;
+    const cupboardJump = byId.get('node-jump-cupboard')!;
+    const duckChoice = byId.get('node-choice-duck')!;
+    const duckJump = byId.get('node-jump-duck')!;
+    const localLabel = byId.get('label-cupboard')!;
+    const askDuckLabel = byId.get('label-ask-duck')!;
+    const file = byId.get('file-smoke')!;
+    const startLabel = byId.get('label-start')!;
+
+    expect([comment, scene, dialogue, menu, localLabel].every((node) => node.position.y > start.position.y)).toBe(true);
+    expect([start.position.y, comment.position.y, scene.position.y, dialogue.position.y, menu.position.y, localLabel.position.y]).toEqual(
+      [...[start.position.y, comment.position.y, scene.position.y, dialogue.position.y, menu.position.y, localLabel.position.y]].sort(
+        (left, right) => left - right,
+      ),
+    );
+    expect(childFitsParent(localLabel, startLabel)).toBe(true);
+    expect(rectsOverlap(nodeRect(start), nodeRect(comment))).toBe(false);
+    expect(rectsOverlap(nodeRect(comment), nodeRect(scene))).toBe(false);
+    expect(rectsOverlap(nodeRect(scene), nodeRect(dialogue))).toBe(false);
+    expect(rectsOverlap(nodeRect(dialogue), nodeRect(menu))).toBe(false);
+    expect(rectsOverlap(nodeRect(menu), nodeRect(localLabel))).toBe(false);
+    expect(menuPrompt).toBeUndefined();
+    expect(menu.data).toMatchObject({ menuPrompt: '"Where should RenPy Mouse go?"' });
+    expect(cupboardChoice.parentId).toBe('label-start');
+    expect(cupboardJump.parentId).toBe('label-start');
+    expect(duckChoice.parentId).toBe('label-start');
+    expect(duckJump.parentId).toBe('label-start');
+    expect(cupboardChoice.position.y).toBeGreaterThan(menu.position.y + Number(menu.height));
+    expect(duckChoice.position.y).toBe(cupboardChoice.position.y);
+    expect(cupboardJump.position.y).toBeGreaterThan(cupboardChoice.position.y + Number(cupboardChoice.height));
+    expect(duckJump.position.y).toBeGreaterThan(duckChoice.position.y + Number(duckChoice.height));
+    expect(cupboardChoice.position.x + Number(cupboardChoice.width) / 2).toBeLessThan(menu.position.x + Number(menu.width) / 2);
+    expect(duckChoice.position.x + Number(duckChoice.width) / 2).toBeGreaterThan(menu.position.x + Number(menu.width) / 2);
+    expect(rectsOverlap(nodeRect(startLabel), nodeRect(askDuckLabel))).toBe(false);
+    expect(askDuckLabel.position.y).toBeGreaterThanOrEqual(startLabel.position.y + Number(startLabel.height) + 24);
+    expect(Number(startLabel.width)).toBeLessThanOrEqual(980);
+    expect(Number(startLabel.height)).toBeLessThanOrEqual(1700);
+    expect(Number(file.width)).toBeLessThanOrEqual(1120);
+    expect(Number(file.height)).toBeLessThanOrEqual(2100);
   });
 
   it('projects a complete multi-file MVP 2.0 canvas contract', () => {
@@ -602,7 +1438,8 @@ describe('projectGraphToReactFlow static projection', () => {
     );
 
     expect(projection.nodes).toHaveLength(15);
-    expect(projection.edges).toHaveLength(2);
+    const relationEdges = projection.edges.filter((edge) => edge.data?.kind === 'jump' || edge.data?.kind === 'call');
+    expect(relationEdges).toHaveLength(2);
     expect(projection.nodes.every((node) => node.hidden !== true)).toBe(true);
 
     for (const node of projection.nodes) {
@@ -638,11 +1475,21 @@ describe('projectGraphToReactFlow static projection', () => {
       type: 'labelFrame',
       parentId: 'label-start',
     });
+    const mainLabelChildren = projection.nodes.filter((node) => node.parentId === 'label-start');
+    const storyFlowBottom = Math.max(
+      ...mainLabelChildren
+        .filter((node) => node.data?.autoBranchLayout === true)
+        .map((node) => node.position.y + Number(node.height)),
+    );
+    expect(byId.get('label-shared-nook')!.position.y).toBeGreaterThanOrEqual(storyFlowBottom + 24);
     expect(byId.get('node-choice')).toMatchObject({
       type: 'scenarioNode',
-      parentId: 'node-menu',
+      parentId: 'label-start',
+      data: expect.objectContaining({
+        original: expect.objectContaining({ parent_node_id: 'node-menu' }),
+      }),
     });
-    expect(projection.edges.map((edge) => [edge.id, edge.source, edge.target, edge.className])).toEqual([
+    expect(relationEdges.map((edge) => [edge.id, edge.source, edge.target, edge.className])).toEqual([
       ['edge-call-nook', 'node-call-nook', 'start-node-shared-nook', 'project-edge project-edge--call'],
       ['edge-jump-day-two', 'node-jump-day-two', 'start-node-day-two', 'project-edge project-edge--jump'],
     ]);
@@ -667,7 +1514,7 @@ describe('projectGraphToReactFlow static projection', () => {
     const menuPosition = getAbsoluteNodePosition(projection.nodes, 'node-menu');
     expect(absoluteChoicePosition).not.toBeNull();
     expect(menuPosition).not.toBeNull();
-    expect(absoluteChoicePosition!.x).toBeGreaterThan(menuPosition!.x);
+    expect(Math.abs((absoluteChoicePosition!.x + Number(byId.get('node-choice')!.width) / 2) - (menuPosition!.x + Number(byId.get('node-menu')!.width) / 2))).toBeLessThanOrEqual(2);
     expect(absoluteChoicePosition!.y).toBeGreaterThan(menuPosition!.y);
   });
 

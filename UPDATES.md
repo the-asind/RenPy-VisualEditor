@@ -2,7 +2,482 @@
 
 This file is the short project memory for RenPy Visual Editor 2.0. Keep it current when closing master items, changing decisions, or classifying old code.
 
+## 2026-05-08
+
+### Small Label Frame Header Padding
+
+Fixed a canvas readability regression where small/simple `LabelFrame` nodes placed their `LabelStartNode` inside the frame header zone, visually overlapping the `LABEL` title and the label name.
+
+Files:
+
+1. `frontend/src/utils/projectGraphProjection.ts`
+2. `frontend/src/utils/__tests__/projectGraphProjection.test.ts`
+3. `docs/editor-2.0-architecture.md`
+4. `docs/canvas-layout-usability-audit.md`
+5. `artifacts/small-label-frame-header-padding.png`
+
+Result:
+
+1. Added reserved top padding for all children inside `LabelFrame`.
+2. Non-branch labels now get the same readable separation between the `LabelFrame` header and the first `LabelStartNode` that branch-managed labels already had.
+3. The projection regression test now asserts that `LabelStartNode.position.y` is below the frame header/content boundary.
+4. Browser smoke focused the small `ask_duck` label in project `1546d43e-481b-488c-84d1-5cbc7c3c838d` and confirmed the label title no longer overlaps the start node.
+
+Checks:
+
+1. `npm test -- --run src/utils/__tests__/projectGraphProjection.test.ts` passed with 11 tests.
+2. `npm test -- --run` passed with 36 frontend tests.
+3. `npm run build` passed with the known non-blocking Vite/env.js, Browserslist, and large Loro chunk warnings.
+
+## 2026-05-07
+
+### Nested Local Label Lane Separation
+
+Fixed a browser-visible layout regression where a nested local label frame could remain beside the active parent label branch tree and route its own internal lines through the parent story flow.
+
+Files:
+
+1. `frontend/src/utils/projectGraphProjection.ts`
+2. `frontend/src/utils/__tests__/projectGraphProjection.test.ts`
+3. `docs/editor-2.0-architecture.md`
+4. `docs/canvas-layout-usability-audit.md`
+5. `artifacts/nested-local-label-lane-separation.png`
+
+Result:
+
+1. `normalizeLayout` now applies branch-managed layout before honoring `_manual_position` group skips.
+2. Manual scenario offsets no longer prevent nested `LabelFrame` siblings from being moved below the branch-managed story-flow area.
+3. Regression coverage now checks that a nested local label stays below the parent story flow even when a branch child has `_manual_position`.
+4. Browser smoke reloaded project `1988eb90-56a7-4a5d-9dc5-0ffc39a7c1d6`, focused `start.crumb_trail`, and confirmed the local label frame is separated from the parent branch tree.
+
+Checks:
+
+1. `npm test -- --run src/utils/__tests__/projectGraphProjection.test.ts` passed with 11 tests.
+2. `npm test -- --run` passed with 36 frontend tests.
+3. `npm run build` passed with the known non-blocking Vite/env.js, Browserslist, and large Loro chunk warnings.
+
+### Canvas Body Pan, Relation Visibility, And Branch Drag Stabilization
+
+Files:
+
+1. `frontend/src/components/projectGraph/ProjectGraphCanvas.tsx`
+2. `frontend/src/components/projectGraph/ProjectGraphCanvas.css`
+3. `frontend/src/utils/projectGraphProjection.ts`
+4. `frontend/src/utils/__tests__/projectGraphProjection.test.ts`
+5. `frontend/src/utils/__tests__/projectGraphCollaboration.test.ts`
+6. `docs/editor-2.0-architecture.md`
+
+Result:
+
+1. Node/frame body zones now behave like canvas surface for LMB pan; only `.pg-node__drag-handle` starts object drag.
+2. React Flow native node drag was replaced for this canvas path with a header-only pointer handler, because draggable root nodes keep React Flow `nopan` behavior on their wrapper.
+3. `jump/call` relation edges are more visible: denser dashed stroke, higher opacity, larger stroke width, larger interaction width, and higher z-index.
+4. Attached `else/elif` headers and their branch content now receive shared `dragGroupIds`, so dragging a child block under `else` moves the `else` header with it in the interactive canvas.
+5. `_manual_position` on a scenario node no longer disables branch auto-layout for the whole label. This prevents one moved node from collapsing an `if/else/menu` tree into fallback compaction.
+6. Projection tests now cover attached branch drag groups and the invariant that branch-managed labels keep tree layout even when a child scenario has `_manual_position`.
+7. Browser smoke loaded the multi-file project `1988eb90-56a7-4a5d-9dc5-0ffc39a7c1d6` with 91 React Flow nodes. Screenshot capture was flaky in the in-app browser after reload, so final visual confirmation is partial.
+8. Tests passed: `npm test -- --run`.
+9. Build passed: `npm run build`.
+
+Known follow-up:
+
+1. Branch-managed scenario drag is now stabilized against full-tree collapse, but deeper manual layout semantics still need a dedicated design pass before arbitrary scenario offsets can be considered durable collaboration state.
+2. The in-app browser screenshot path timed out during the final reload; repeat visual smoke manually or when browser automation is stable.
+
+### Conditional Visual Tree Detachment And LTR Branch Pass
+
+Continued the browser-driven layout correction after the user clarified that `if/else` must not be visual nested containers and that the current target is a left-to-right branch graph.
+
+Files:
+
+1. `frontend/src/utils/projectGraphProjection.ts`
+2. `frontend/src/utils/__tests__/projectGraphProjection.test.ts`
+3. `docs/editor-2.0-architecture.md`
+4. `docs/canvas-layout-usability-audit.md`
+5. `artifacts/nested-if-left-to-right-branches-smoke.png`
+
+Result:
+
+1. Conditional descendants keep their domain `parent_node_id` for CRDT/export, but React Flow projects them as sibling nodes inside the owning `LabelFrame`.
+2. `if/elif/else` cards no longer become oversized visual containers.
+3. Derived `sequence` and `branch` edges are built from the domain tree, not from React Flow visual parentage.
+4. Conditional-heavy labels now lay out left-to-right: linear flow moves right, branch lanes split right/down, and branch terminals rejoin into the next linear block on the right.
+5. `else/elif` lanes start near the conditional branch split instead of waiting below the entire true subtree.
+6. LTR layout is shifted down when tall action nodes would otherwise create negative local coordinates and trigger fallback vertical compaction.
+
+Checks:
+
+1. Added failing projection expectations first for conditional visual detachment, left-to-right branch lanes, derived branch/sequence edges, and rejoin position.
+2. Browser smoke re-imported `renpy_mouse_nested_if_blocks.rpy` into project `1988eb90-56a7-4a5d-9dc5-0ffc39a7c1d6`, then used search-focus to inspect `if cheese_compass_ready` and the post-branch action.
+3. `npm test -- --run src/utils/__tests__/projectGraphProjection.test.ts` passed with 10 tests.
+4. `npm test -- --run` passed with 35 frontend tests.
+5. `npm run build` passed with the known non-blocking Vite/env.js, Browserslist, and large Loro chunk warnings.
+
+### Conditional Edge Spacing And Rejoin Line Pass
+
+Continued the same browser-driven branch layout work after screenshots showed that line routing and indentation still read as random wiring.
+
+Files:
+
+1. `frontend/src/utils/projectGraphProjection.ts`
+2. `frontend/src/utils/__tests__/projectGraphProjection.test.ts`
+3. `frontend/src/components/projectGraph/ProjectGraphCanvas.css`
+4. `artifacts/nested-if-edge-spacing-pass.png`
+
+Result:
+
+1. Derived flow edges now use React Flow `step` routing instead of `smoothstep`, so branch/sequence lines are orthogonal and easier to follow.
+2. Branch lanes now reserve vertical space based on the actual branch subtree bottom, not only the branch header height.
+3. Column and row gaps were increased for conditional-heavy labels so nested branch cards do not visually crowd each other.
+4. Rejoin edges are marked with `data.flowRole = "rejoin"` and rendered as a weaker gray layer, separate from forward sequence and orange branch lines.
+5. Projection tests now assert edge roles, edge type, rejoin styling, and branch spacing around nested conditional subtrees.
+
+Checks:
+
+1. Added failing projection expectations first for `step` derived edges, rejoin role/style, and true-subtree spacing before the `else` lane.
+2. Browser smoke checked `if crumb_count > 3` and the post-branch action on project `1988eb90-56a7-4a5d-9dc5-0ffc39a7c1d6`.
+3. `npm test -- --run src/utils/__tests__/projectGraphProjection.test.ts` passed with 10 tests.
+4. `npm test -- --run` passed with 35 frontend tests.
+5. `npm run build` passed with the known non-blocking Vite/env.js, Browserslist, and large Loro chunk warnings.
+
+### Near-target Rejoin Routing Pass
+
+Continued the rejoin-line cleanup after the user clarified that lines should not turn in the middle of the path. Multiple lines converging into one target should share a stable target-side turn lane.
+
+Files:
+
+1. `frontend/src/components/projectGraph/ProjectGraphCanvas.tsx`
+2. `frontend/src/utils/projectGraphProjection.ts`
+3. `frontend/src/utils/__tests__/projectGraphProjection.test.ts`
+4. `docs/editor-2.0-architecture.md`
+5. `docs/canvas-layout-usability-audit.md`
+6. `artifacts/nested-if-near-target-rejoin-routing.png`
+
+Result:
+
+1. Added a custom React Flow edge type `nearTargetStep`.
+2. Rejoin edges now use `nearTargetStep`, while normal forward and branch edges keep built-in `step` routing.
+3. `nearTargetStep` computes the turn lane as `targetX - targetTurnOffset` for left-to-right flow, so separate incoming rejoin lines to the same target turn at the same x coordinate.
+4. Projection marks rejoin edges with `data.targetTurnOffset = 72`.
+5. Added a pure path test proving two different sources to the same target share the same target-side turn lane.
+
+Checks:
+
+1. Added failing projection/path expectations first for `nearTargetStep` and shared target-side turn lane.
+2. Browser smoke logged into the local project, re-imported `renpy_mouse_nested_if_blocks.rpy`, focused `After the maze`, and saved `artifacts/nested-if-near-target-rejoin-routing.png`.
+3. `npm test -- --run src/utils/__tests__/projectGraphProjection.test.ts` passed with 11 tests.
+4. `npm test -- --run` passed with 36 frontend tests.
+5. `npm run build` passed with the known non-blocking Vite/env.js, Browserslist, and large Loro chunk warnings.
+
+### Top-down Conditional Narrative Layout Pass
+
+Changed the conditional-heavy ProjectGraph projection from left-to-right narrative flow to top-down narrative flow after the user pointed out that LTR wastes horizontal screen space.
+
+Files:
+
+1. `frontend/src/utils/projectGraphProjection.ts`
+2. `frontend/src/utils/__tests__/projectGraphProjection.test.ts`
+3. `frontend/src/components/projectGraph/ProjectGraphCanvas.tsx`
+4. `docs/editor-2.0-architecture.md`
+5. `docs/canvas-layout-usability-audit.md`
+6. `artifacts/nested-if-top-down-branch-layout.png`
+
+Result:
+
+1. Conditional-heavy labels now place `LabelStartNode`, action blocks, and `if` blocks on a vertical center axis.
+2. The first scenario block is connected from the `LabelStartNode` through top/bottom handles.
+3. `if` true content is placed to the right of the `if` center; `else/elif` branch heads are placed to the left.
+4. Nested `if/else` keeps the same local rule relative to its own `if` center.
+5. Rejoin custom edges now support vertical near-target routing, using a shared turn lane above the target node.
+6. Start nodes in conditional-heavy labels are moved down to a safer top padding so they do not overlap label titles.
+
+Checks:
+
+1. Added failing projection expectations first for top-down ordering, start-to-first edge handles, true-right/else-left placement, and vertical near-target path generation.
+2. Browser smoke reloaded project `1988eb90-56a7-4a5d-9dc5-0ffc39a7c1d6` and verified `nested_if_maze` visually.
+3. `npm test -- --run src/utils/__tests__/projectGraphProjection.test.ts` passed with 11 tests.
+4. `npm test -- --run` passed with 36 frontend tests.
+5. `npm run build` passed with the known non-blocking Vite/env.js, Browserslist, and large Loro chunk warnings.
+
+### Else/Elif Branch Header Pass
+
+Adjusted visual semantics for `else/elif` after the user noted that a full standalone `ELSE` card feels too heavy, even though the domain node remains necessary.
+
+Files:
+
+1. `frontend/src/utils/projectGraphProjection.ts`
+2. `frontend/src/utils/__tests__/projectGraphProjection.test.ts`
+3. `frontend/src/components/projectGraph/ProjectGraphCanvas.tsx`
+4. `frontend/src/components/projectGraph/ProjectGraphCanvas.css`
+5. `docs/editor-2.0-architecture.md`
+6. `docs/canvas-layout-usability-audit.md`
+7. `artifacts/nested-if-else-branch-headers.png`
+
+Result:
+
+1. `else/elif` still exist as ProjectGraph scenario nodes for stable IDs, CRDT state, editing, and export.
+2. React Flow projection marks `else/elif` with `data.visualRole = "branchHeader"`.
+3. Branch headers use compact visual height and CSS that shows only the branch label.
+4. The first child block under `else/elif` is placed close to the header, making it read like a header attached to the branch content.
+5. All local flow and relation target handles now enter through top `flow-in`; `jump/call` may still start from a side relation handle, but their target entry is top-only.
+
+Checks:
+
+1. Added projection expectations that `else/elif` heights are compact, marked `branchHeader`, and sit close to their first child.
+2. Added relation edge expectations that `jump/call` target entries use `flow-in`.
+3. Browser smoke focused `if backup_duck_ready` and saved `artifacts/nested-if-else-branch-headers.png`.
+4. `npm test -- --run src/utils/__tests__/projectGraphProjection.test.ts` passed with 11 tests.
+5. `npm test -- --run` passed with 36 frontend tests.
+6. `npm run build` passed with the known non-blocking Vite/env.js, Browserslist, and large Loro chunk warnings.
+
+### Attached Else Headers And Target-Side Branch Routing Pass
+
+Continued the same browser-driven canvas correction after screenshots showed three concrete defects: lines still crossed near other nodes, `ELSE` headers still felt separated from their content, and `jump` relation edges did not clearly point to the target label start.
+
+Files:
+
+1. `frontend/src/utils/projectGraphProjection.ts`
+2. `frontend/src/utils/__tests__/projectGraphProjection.test.ts`
+3. `frontend/src/components/projectGraph/ProjectGraphCanvas.tsx`
+4. `frontend/src/components/projectGraph/ProjectGraphCanvas.css`
+5. `docs/editor-2.0-architecture.md`
+6. `docs/canvas-layout-usability-audit.md`
+7. `artifacts/nested-if-attached-else-routing-after-css.png`
+8. `artifacts/nested-if-jump-target-frame-after-css.png`
+
+Result:
+
+1. Branch headers now attach directly to the first branch content node: no visual gap, matched width, and no derived `else -> child` arrow.
+2. Branch edges now use the same custom `nearTargetStep` router as rejoin edges, so branch lines turn close to the target instead of in the middle of the path.
+3. The shared target-side turn offset was reduced from `72` to `24`, making branch/rejoin convergence happen closer to the target edge.
+4. `jump/call` relation edges remain secondary hints, but are now visible enough to follow across label frames: arrow marker, wider interaction lane, higher z-index, and stronger dashed stroke.
+5. Domain containment and export semantics did not change: `else/elif` remain `ScenarioNode` entries, and `jump/call` still target `LabelStartNode`.
+
+Checks:
+
+1. Added failing projection expectations first for attached branch header width/position, removed `else -> child` edge, branch `nearTargetStep` routing, tighter target turn offset, and visible jump/call relation style.
+2. Browser smoke reloaded project `1988eb90-56a7-4a5d-9dc5-0ffc39a7c1d6`, focused `backup_duck_ready`, then focused `jump nested_if_exit`.
+3. `npm test -- --run src/utils/__tests__/projectGraphProjection.test.ts` passed with 11 tests.
+4. `npm test -- --run` passed with 36 frontend tests.
+5. `npm run build` passed with the known non-blocking Vite/env.js, Browserslist, and large Loro chunk warnings.
+
+### Menu Branch Tree And Drag Header Pass
+
+Continued the canvas usability pass after the user asked to make `menu` blocks follow the same branch-tree visual language as `if/else` and to restrict drag operations to explicit node/frame headers.
+
+Official docs checked:
+
+1. React Flow drag handle docs: `https://reactflow.dev/examples/nodes/drag-handle`
+2. React Flow handles/custom nodes guidance already referenced in the previous projection passes.
+
+Files:
+
+1. `frontend/src/utils/projectGraphProjection.ts`
+2. `frontend/src/utils/projectGraphCrdt.ts`
+3. `frontend/src/utils/__tests__/projectGraphProjection.test.ts`
+4. `frontend/src/components/projectGraph/ProjectGraphCanvas.tsx`
+5. `frontend/src/components/projectGraph/ProjectGraphCanvas.css`
+6. `docs/editor-2.0-architecture.md`
+7. `docs/canvas-layout-usability-audit.md`
+8. `artifacts/menu-branch-layout-and-node-headers.png`
+9. `artifacts/menu-drag-handle-smoke.png`
+
+Result:
+
+1. `menu_prompt` is no longer projected as a separate visible canvas node; it is displayed inside the owning `menu` node.
+2. `menu_choice` nodes are projected as branch lanes inside the owning `LabelFrame`, not as nested React Flow children inside `menu`.
+3. `menu -> menu_choice` edges use the same near-target branch routing as conditional alternatives.
+4. Statements inside a `menu_choice`, such as `jump`, render as normal branch content below that choice.
+5. All projected nodes now carry `dragHandle = ".pg-node__drag-handle"`.
+6. File frames, label frames, label starts, and scenario nodes now render a visible header separated by a thin accent line.
+7. React Flow node changes are applied locally during drag, while `onNodeDragStop` still persists the final position to CRDT.
+8. Scenario drag operations mark `_manual_position = true`, and projection/normalization now preserve labels containing manual scenario positions instead of auto-layouting them again.
+
+Checks:
+
+1. Added failing projection expectations first for hidden `menu_prompt`, prompt text on `menu`, detached `menu_choice` visual parentage, side-by-side menu branch lanes, and node drag handle selectors.
+2. Existing collaboration test caught the manual-position regression; fixed it by preserving manual-position labels through projection and normalization.
+3. Browser smoke imported `artifacts/smoke_single_file_layout.rpy` into project `1988eb90-56a7-4a5d-9dc5-0ffc39a7c1d6`.
+4. Browser smoke confirmed body-drag did not move a `menu` node, while header-drag moved it and saved the position.
+5. `npm test -- --run src/utils/__tests__/projectGraphProjection.test.ts` passed with 11 tests.
+6. `npm test -- --run` passed with 36 frontend tests.
+7. `npm run build` passed with the known non-blocking Vite/env.js, Browserslist, and large Loro chunk warnings.
+
 ## 2026-05-02
+
+### Action Blocks And Nested If Smoke
+
+Closed the browser-driven parser/layout correction for the user's nested conditional and post-line-noise concern.
+
+Files:
+
+1. `backend/tests/fixtures/renpy_mouse/renpy_mouse_nested_if_blocks.rpy`
+2. `backend/tests/test_project_graph_action_blocks.py`
+3. `backend/app/services/project_graph/importer.py`
+4. `backend/app/services/project_graph/exporter.py`
+5. `backend/tests/test_project_graph_actions.py`
+6. `backend/tests/test_project_graph_conditionals.py`
+7. `backend/tests/test_project_graph_sprint_1_2_blackbox.py`
+8. `backend/tests/test_project_graph_import_route.py`
+9. `backend/tests/test_project_graph_diagnostics.py`
+10. `backend/tests/test_mouse_renpy_fixtures.py`
+11. `frontend/src/utils/projectGraphProjection.ts`
+12. `frontend/src/utils/__tests__/projectGraphProjection.test.ts`
+13. `frontend/src/components/projectGraph/ProjectGraphCanvas.tsx`
+14. `frontend/src/components/projectGraph/ProjectGraphCanvas.css`
+15. `docs/editor-2.0-architecture.md`
+16. `docs/canvas-layout-usability-audit.md`
+17. `artifacts/nested-if-action-blocks-smoke.png`
+
+Result:
+
+1. Added a dedicated RenPy Mouse fixture with nested `if/else` inside `if/else`.
+2. Import now scans statements recursively and preserves nested conditional hierarchy instead of flattening branch blocks.
+3. Linear non-control story chunks import as one `action` node until `menu`, `if/elif/else`, `jump`, `call`, `return`, nested label, or unsafe raw block.
+4. Comments, dialogue/narration, and presentation/action statements like `scene` and `show` are preserved inside the related action block instead of becoming one canvas node per line.
+5. Action block metadata stores `default_title` from the first non-empty line; the canvas editor can set a user title in metadata without changing exported `.rpy`.
+6. Export renders multiline action blocks back to normalized `.rpy` text with correct indentation and without editor metadata.
+7. Browser smoke on project `1988eb90-56a7-4a5d-9dc5-0ffc39a7c1d6` after importing `renpy_mouse_nested_if_blocks.rpy` showed the first six story lines as one `ACTION` block, followed by the nested conditional tree.
+
+Checks:
+
+1. `python -m pytest backend/tests/test_project_graph_action_blocks.py -q` passed with 3 tests.
+2. `python -m pytest backend/tests/test_project_graph_actions.py backend/tests/test_project_graph_conditionals.py backend/tests/test_project_graph_sprint_1_2_blackbox.py backend/tests/test_project_graph_exporter.py backend/tests/test_project_graph_import_route.py -q` passed with 19 tests.
+3. `python -m pytest backend/tests -q` passed with 150 tests.
+4. `npm test -- --run` passed with 34 frontend tests.
+5. `npm run build` passed with the known non-blocking Vite/env.js, Browserslist, and large Loro chunk warnings.
+
+### Sequence And Branch Arrows Pass
+
+Continued the browser-driven canvas readability work after the user clarified that `if/else` must read as tree branches with arrows, not only as nested structures.
+
+Files:
+
+1. `frontend/src/utils/projectGraphProjection.ts`
+2. `frontend/src/utils/__tests__/projectGraphProjection.test.ts`
+3. `frontend/src/components/projectGraph/ProjectGraphCanvas.tsx`
+4. `frontend/src/components/projectGraph/ProjectGraphCanvas.css`
+5. `docs/editor-2.0-architecture.md`
+6. `docs/canvas-layout-usability-audit.md`
+7. `artifacts/nested-if-branch-arrows-smoke.png`
+
+Result:
+
+1. Projection now derives `sequence` arrows for top-down story reading without writing them into CRDT state.
+2. Projection now derives `branch` arrows from incoming flow to `if/elif/else` alternatives and from branch nodes to their first child blocks.
+3. Consecutive `if/elif/else` siblings are arranged as horizontal branch lanes on one row.
+4. Node handles are split into top/bottom flow handles and left/right relation handles so sequence/branch arrows are visually distinct from `jump/call` hints.
+5. Long rejoin arrows were intentionally excluded from this pass after browser smoke showed they crossed content and made the graph noisier.
+6. Minimap is smaller and more transparent so it does not cover the right-side branch area as aggressively.
+
+Checks:
+
+1. Added failing projection tests first for sequence arrows, branch arrows, and side-by-side `if/else` lanes.
+2. `npm test -- --run src/utils/__tests__/projectGraphProjection.test.ts` passed with 10 tests.
+3. Browser smoke on project `1988eb90-56a7-4a5d-9dc5-0ffc39a7c1d6` after importing `renpy_mouse_nested_if_blocks.rpy` produced `artifacts/nested-if-branch-arrows-smoke.png`.
+4. `npm test -- --run` passed with 35 frontend tests.
+5. `npm run build` passed with the known non-blocking Vite/env.js, Browserslist, and large Loro chunk warnings.
+6. `python -m pytest backend/tests/test_project_graph_action_blocks.py backend/tests/test_project_graph_import_route.py -q` passed with 8 backend tests.
+
+### Canvas Layout Usability Audit
+
+Created `docs/canvas-layout-usability-audit.md` after a real browser single-file smoke test showed that the current MVP 2.0 canvas is technically rendering but not yet usable as a readable top-down story tree.
+
+Result:
+
+1. Captured the smoke screenshot at `artifacts/single-file-layout-smoke.png`.
+2. Recorded the main layout failures: `LabelStartNode` is not the first visual anchor, nested labels mix with parent flow, frames are too large, source/runtime flow is not readable top-down, jump/call edges create visual noise, branch blocks do not read as branches, overlay panels can compete with the graph, and initial fit makes text too small.
+3. Added closure checks for each problem: black-box layout invariants, browser screenshot checks, compact frame bounds, readable top-down order, branch readability, secondary jump/call relation styling, and preservation of collaboration/manual drag behavior.
+4. This audit is the working artifact for the next focused layout usability fix.
+
+### Canvas Layout Usability First Pass
+
+Implemented the first focused layout improvement pass from `docs/canvas-layout-usability-audit.md`.
+
+Files:
+
+1. `backend/app/services/project_graph/importer.py`
+2. `backend/tests/test_project_graph_importer.py`
+3. `frontend/src/utils/projectGraphProjection.ts`
+4. `frontend/src/utils/__tests__/projectGraphProjection.test.ts`
+5. `frontend/src/components/projectGraph/ProjectGraphCanvas.tsx`
+6. `docs/canvas-layout-usability-audit.md`
+7. `artifacts/single-file-layout-smoke-after.png`
+
+Result:
+
+1. New imports receive compact source-ordered scenario node coordinates instead of broad repeated default positions.
+2. Existing bad snapshots get frontend projection fallback compaction when siblings are clearly stacked from import.
+3. `LabelStartNode` is the first visual anchor inside a label frame.
+4. Frame bounds are recalculated from real child bounds plus padding, so imported default frame sizes no longer dominate.
+5. Menu/choice nested nodes stay inside branch parent bounds without sibling overlap in the tested smoke graph.
+6. Manual CRDT drag positions are preserved: auto-compaction no longer treats any arbitrary overlap as an import defect.
+7. Initial canvas viewport focuses the first readable `LabelStartNode` instead of shrinking the full tall graph into unreadable fitView.
+8. Browser smoke screenshot updated at `artifacts/single-file-layout-smoke-after.png`.
+
+Checks:
+
+1. `npm test -- --run src/utils/__tests__/projectGraphProjection.test.ts` passed with 8 tests.
+2. `python -m pytest backend/tests/test_project_graph_importer.py backend/tests/test_project_graph_import_route.py -q` passed with 9 tests.
+3. `npm test -- --run` passed with 33 tests.
+4. `npm run build` passed with the known non-blocking Vite/env.js, Browserslist, and large Loro chunk warnings.
+
+### Canvas Layout Usability Second Pass
+
+Continued the layout usability fix after browser review still showed visual overlap/noise in the lower nested-label area.
+
+Files:
+
+1. `frontend/src/utils/projectGraphProjection.ts`
+2. `frontend/src/utils/__tests__/projectGraphProjection.test.ts`
+3. `frontend/src/components/projectGraph/ProjectGraphCanvas.css`
+4. `docs/canvas-layout-usability-audit.md`
+5. `artifacts/single-file-layout-smoke-after-2.png`
+6. `artifacts/single-file-layout-smoke-lower-after-2.png`
+
+Result:
+
+1. Layout normalization now runs multiple arrange/expand passes so file and label sibling positions are recalculated after parent frames reach their final child-derived size.
+2. Groups identified as imported stacked layout keep using compact layout across later passes; this fixes global label overlap after a large preceding label expands.
+3. Added regression assertions that `ask_duck` does not overlap the expanded `start` label and that the single-file smoke's top-level nodes do not overlap each other.
+4. Relation `jump/call` edges no longer render text labels; visual noise is reduced through lower opacity, thinner strokes, and no arrow marker on `jump`.
+5. File and label frame backgrounds are lighter so containment remains visible without dominating scenario nodes.
+6. Browser hot checks were performed on the running app after re-importing `artifacts/smoke_single_file_layout.rpy` into project `1988eb90-56a7-4a5d-9dc5-0ffc39a7c1d6`.
+
+Checks:
+
+1. `npm test -- --run src/utils/__tests__/projectGraphProjection.test.ts src/utils/__tests__/projectGraphCollaboration.test.ts` passed with 20 tests.
+2. `npm test -- --run` passed with 33 frontend tests.
+3. `python -m pytest backend/tests/test_project_graph_importer.py backend/tests/test_project_graph_import_route.py -q` passed with 9 tests.
+4. `npm run build` passed with the known non-blocking Vite/env.js, Browserslist, and large Loro chunk warnings.
+
+### Canvas Layout Usability Third Pass
+
+Continued the browser-driven layout cleanup after the canvas was geometrically better but still visually noisy.
+
+Files:
+
+1. `frontend/src/utils/projectGraphProjection.ts`
+2. `frontend/src/utils/__tests__/projectGraphProjection.test.ts`
+3. `frontend/src/components/projectGraph/ProjectGraphCanvas.tsx`
+4. `frontend/src/components/projectGraph/ProjectGraphCanvas.css`
+5. `docs/canvas-layout-usability-audit.md`
+6. `artifacts/single-file-layout-smoke-after-3.png`
+
+Result:
+
+1. Added a failing black-box projection expectation first: relation `jump/call` edges must remain present but be non-interactive, faded, thin background hints.
+2. Relation edges now use `selectable=false`, `focusable=false`, `interactionWidth=1`, lower opacity, thinner strokes, and softer dash patterns.
+3. CSS relation-edge strokes are quieter, so runtime links no longer visually compete with containment frames and scenario text.
+4. Search result navigation now clears the query after focusing a node, preventing the results panel from staying over the graph.
+5. The toolbar has a bounded height and local scrolling for result-heavy searches.
+6. Browser hot check confirmed the single-file smoke project reloads into a cleaner top-down view and focusing `start.cupboard` no longer leaves search results covering the local-label tree.
+
+Checks:
+
+1. `npm test -- --run src/utils/__tests__/projectGraphProjection.test.ts` passed with 8 tests.
+2. `npm test -- --run` passed with 33 frontend tests.
+3. `npm run build` passed with the known non-blocking Vite/env.js, Browserslist, and large Loro chunk warnings.
 
 ### Deployment Packaging Fix
 

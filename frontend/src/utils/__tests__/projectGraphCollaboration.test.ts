@@ -251,7 +251,11 @@ describe('ProjectGraphCollaborationSession', () => {
   });
 
   it('projects CRDT content and drag changes into the React Flow canvas model', () => {
-    const session = new ProjectGraphCollaborationSession(createProjectGraphCrdtDoc(graph, { peerId: '1' }));
+    const linearGraph: ProjectGraphSnapshot = {
+      ...graph,
+      nodes: graph.nodes.filter((node) => !node.id.startsWith('node-menu')),
+    };
+    const session = new ProjectGraphCollaborationSession(createProjectGraphCrdtDoc(linearGraph, { peerId: '1' }));
 
     session.editScenarioContent('node-intro', 'r "Projection reads the edited CRDT line."');
     session.moveEntity('node-intro', { x: 180, y: 220 });

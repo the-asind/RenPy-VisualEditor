@@ -76,7 +76,7 @@ def test_unsupported_while_block_is_preserved_as_raw_block_with_warning():
 def test_safe_raw_action_nodes_do_not_create_diagnostics():
     graph = resolve_diagnostics_graph()
     diagnostic_node_ids = {diagnostic.node_id for diagnostic in graph.diagnostics}
-    safe_nodes = [node for node in graph.nodes if node.type in {"raw_action", "dialogue", "comment"}]
+    safe_nodes = [node for node in graph.nodes if node.type == "action"]
 
     assert safe_nodes
     assert all(node.id not in diagnostic_node_ids for node in safe_nodes)

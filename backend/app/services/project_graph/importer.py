@@ -1,4 +1,5 @@
 from pathlib import Path
+from dataclasses import replace
 from typing import Iterable
 from uuid import uuid4
 
@@ -77,29 +78,16 @@ class ProjectGraphImporter:
             }
 
             labels, starts = self._scan_labels(file_id=file_id, content=content)
-            menu_nodes, consumed_menu_lines = self._scan_menu_nodes(
+            statement_nodes = self._scan_statement_nodes(
                 file_id=file_id,
                 content=content,
                 labels=labels,
             )
-            conditional_nodes, consumed_conditional_lines = self._scan_conditional_nodes(
-                file_id=file_id,
-                content=content,
-                labels=labels,
-                consumed_lines=consumed_menu_lines,
-            )
-            action_nodes = self._scan_action_and_raw_nodes(
-                file_id=file_id,
-                content=content,
-                labels=labels,
-                consumed_lines=consumed_menu_lines | consumed_conditional_lines,
-            )
+            file_scenario_nodes = self._normalize_node_visuals(statement_nodes)
 
             label_frames.extend(labels)
             label_starts.extend(starts)
-            scenario_nodes.extend(action_nodes)
-            scenario_nodes.extend(conditional_nodes)
-            scenario_nodes.extend(menu_nodes)
+            scenario_nodes.extend(file_scenario_nodes)
 
         return ProjectGraph(
             project_id=project_id,
@@ -195,6 +183,339 @@ class ProjectGraphImporter:
                 global_by_name[label_name] = label
 
         return labels, starts
+
+    def _scan_statement_nodes(
+        self,
+        file_id: str,
+        content: str,
+        labels: list[LabelFrame],
+    ) -> list[ScenarioNode]:
+        lines = content.splitlines()
+        labels_by_start = self._labels_by_start(labels)
+        label_start_lines = sorted(labels_by_start)
+        nodes: list[ScenarioNode] = []
+        node_order = [0]
+
+        for label in sorted(labels, key=lambda item: item.source_span["start_line"] if item.source_span else 999999):
+            if label.source_span is None:
+                continue
+
+            label_line = label.source_span["start_line"]
+            next_label_line = next((line for line in label_start_lines if line > label_line), len(lines))
+            label_indent = self._indent_level(lines[label_line]) if label_line < len(lines) else 0
+            self._parse_statement_block(
+                file_id=file_id,
+                label=label,
+                lines=lines,
+                index=label_line + 1,
+                end_index=next_label_line,
+                parent_indent=label_indent,
+                parent_node_id=None,
+                nodes=nodes,
+                node_order=node_order,
+            )
+
+        return nodes
+
+    def _parse_statement_block(
+        self,
+        file_id: str,
+        label: LabelFrame,
+        lines: list[str],
+        index: int,
+        end_index: int,
+        parent_indent: int,
+        parent_node_id: str | None,
+        nodes: list[ScenarioNode],
+        node_order: list[int],
+    ) -> int:
+        while index < end_index:
+            line = lines[index]
+            stripped = line.strip()
+
+            if not stripped:
+                index += 1
+                continue
+
+            line_indent = self._indent_level(line)
+            if line_indent <= parent_indent or self._extract_label_name(stripped) is not None:
+                break
+
+            branch_type = self._conditional_node_type(stripped)
+            if branch_type is not None:
+                branch_id = str(uuid4())
+                nodes.append(
+                    self._make_node(
+                        file_id=file_id,
+                        label_id=label.id,
+                        parent_node_id=parent_node_id,
+                        node_type=branch_type,
+                        content=stripped,
+                        order=node_order[0],
+                        line_number=index,
+                        metadata={"condition": self._conditional_condition(stripped)},
+                        node_id=branch_id,
+                    )
+                )
+                node_order[0] += 1
+                index = self._parse_statement_block(
+                    file_id=file_id,
+                    label=label,
+                    lines=lines,
+                    index=index + 1,
+                    end_index=end_index,
+                    parent_indent=line_indent,
+                    parent_node_id=branch_id,
+                    nodes=nodes,
+                    node_order=node_order,
+                )
+                continue
+
+            if self._is_menu_line(stripped):
+                index = self._parse_menu_block(
+                    file_id=file_id,
+                    label=label,
+                    lines=lines,
+                    index=index,
+                    end_index=end_index,
+                    parent_node_id=parent_node_id,
+                    nodes=nodes,
+                    node_order=node_order,
+                )
+                continue
+
+            raw_block_type = self._raw_block_type(stripped)
+            if raw_block_type is not None:
+                block_lines, block_end = self._collect_raw_block(lines, index, end_index, line_indent)
+                nodes.append(
+                    self._make_node(
+                        file_id=file_id,
+                        label_id=label.id,
+                        parent_node_id=parent_node_id,
+                        node_type="raw_block",
+                        content="\n".join(block_lines).rstrip(),
+                        order=node_order[0],
+                        line_number=index,
+                        metadata={"raw_block_type": raw_block_type},
+                        source_end_line=block_end - 1,
+                    )
+                )
+                node_order[0] += 1
+                index = block_end
+                continue
+
+            statement_type = self._statement_node_type(stripped)
+            if statement_type in {"jump", "call", "return"}:
+                nodes.append(
+                    self._make_node(
+                        file_id=file_id,
+                        label_id=label.id,
+                        parent_node_id=parent_node_id,
+                        node_type=statement_type,
+                        content=stripped,
+                        order=node_order[0],
+                        line_number=index,
+                        metadata={},
+                    )
+                )
+                node_order[0] += 1
+                index += 1
+                continue
+
+            block_lines, block_start, block_end = self._collect_action_block(
+                lines=lines,
+                index=index,
+                end_index=end_index,
+                parent_indent=parent_indent,
+            )
+            if block_lines:
+                default_title = next((item for item in block_lines if item.strip()), block_lines[0])
+                nodes.append(
+                    self._make_node(
+                        file_id=file_id,
+                        label_id=label.id,
+                        parent_node_id=parent_node_id,
+                        node_type="action",
+                        content="\n".join(block_lines).rstrip(),
+                        order=node_order[0],
+                        line_number=block_start,
+                        metadata={"default_title": default_title},
+                        source_end_line=block_end - 1,
+                    )
+                )
+                node_order[0] += 1
+            index = block_end
+
+        return index
+
+    def _parse_menu_block(
+        self,
+        file_id: str,
+        label: LabelFrame,
+        lines: list[str],
+        index: int,
+        end_index: int,
+        parent_node_id: str | None,
+        nodes: list[ScenarioNode],
+        node_order: list[int],
+    ) -> int:
+        menu_line = lines[index]
+        menu_indent = self._indent_level(menu_line)
+        menu_id = str(uuid4())
+        nodes.append(
+            self._make_node(
+                file_id=file_id,
+                label_id=label.id,
+                parent_node_id=parent_node_id,
+                node_type="menu",
+                content=menu_line.strip(),
+                order=node_order[0],
+                line_number=index,
+                metadata={},
+                node_id=menu_id,
+            )
+        )
+        node_order[0] += 1
+        index += 1
+
+        while index < end_index:
+            line = lines[index]
+            child = line.strip()
+            child_indent = self._indent_level(line)
+
+            if not child:
+                index += 1
+                continue
+
+            if child_indent <= menu_indent or self._extract_label_name(child) is not None:
+                break
+
+            if self._is_menu_prompt_line(child):
+                nodes.append(
+                    self._make_node(
+                        file_id=file_id,
+                        label_id=label.id,
+                        parent_node_id=menu_id,
+                        node_type="menu_prompt",
+                        content=child,
+                        order=node_order[0],
+                        line_number=index,
+                        metadata={"prompt_text": child.strip('"')},
+                    )
+                )
+                node_order[0] += 1
+                index += 1
+                continue
+
+            if self._is_menu_choice_line(child):
+                choice_id = str(uuid4())
+                nodes.append(
+                    self._make_node(
+                        file_id=file_id,
+                        label_id=label.id,
+                        parent_node_id=menu_id,
+                        node_type="menu_choice",
+                        content=child,
+                        order=node_order[0],
+                        line_number=index,
+                        metadata=self._parse_choice_metadata(child),
+                        node_id=choice_id,
+                    )
+                )
+                node_order[0] += 1
+                index = self._parse_statement_block(
+                    file_id=file_id,
+                    label=label,
+                    lines=lines,
+                    index=index + 1,
+                    end_index=end_index,
+                    parent_indent=child_indent,
+                    parent_node_id=choice_id,
+                    nodes=nodes,
+                    node_order=node_order,
+                )
+                continue
+
+            block_lines, block_start, block_end = self._collect_action_block(
+                lines=lines,
+                index=index,
+                end_index=end_index,
+                parent_indent=menu_indent,
+            )
+            if block_lines:
+                default_title = next((item for item in block_lines if item.strip()), block_lines[0])
+                nodes.append(
+                    self._make_node(
+                        file_id=file_id,
+                        label_id=label.id,
+                        parent_node_id=menu_id,
+                        node_type="action",
+                        content="\n".join(block_lines).rstrip(),
+                        order=node_order[0],
+                        line_number=block_start,
+                        metadata={"default_title": default_title},
+                        source_end_line=block_end - 1,
+                    )
+                )
+                node_order[0] += 1
+            index = block_end
+
+        return index
+
+    def _collect_action_block(
+        self,
+        lines: list[str],
+        index: int,
+        end_index: int,
+        parent_indent: int,
+    ) -> tuple[list[str], int, int]:
+        block_start = index
+        block_lines: list[str] = []
+
+        while index < end_index:
+            line = lines[index]
+            stripped = line.strip()
+
+            if not stripped:
+                if block_lines:
+                    block_lines.append("")
+                index += 1
+                continue
+
+            line_indent = self._indent_level(line)
+            if line_indent <= parent_indent or self._extract_label_name(stripped) is not None:
+                break
+
+            if self._is_control_statement(stripped):
+                break
+
+            block_lines.append(stripped)
+            index += 1
+
+        while block_lines and not block_lines[-1].strip():
+            block_lines.pop()
+
+        return block_lines, block_start, index
+
+    def _collect_raw_block(
+        self,
+        lines: list[str],
+        index: int,
+        end_index: int,
+        block_indent: int,
+    ) -> tuple[list[str], int]:
+        block_lines = [lines[index].strip()]
+        index += 1
+
+        while index < end_index:
+            child = lines[index]
+            child_stripped = child.strip()
+            if child_stripped and self._indent_level(child) <= block_indent:
+                break
+            block_lines.append(child.rstrip())
+            index += 1
+
+        return block_lines, index
 
     def _scan_menu_nodes(
         self,
@@ -525,7 +846,15 @@ class ProjectGraphImporter:
         line_number: int,
         metadata: dict[str, object],
         node_id: str | None = None,
+        source_end_line: int | None = None,
     ) -> ScenarioNode:
+        line_count = max(1, len(content.splitlines()))
+        node_height = self.DEFAULT_NODE_HEIGHT
+        if node_type == "action":
+            node_height = min(180.0, max(104.0, 56.0 + line_count * 18.0))
+        elif node_type == "raw_block":
+            node_height = min(220.0, max(104.0, 56.0 + line_count * 18.0))
+
         return ScenarioNode(
             id=node_id or str(uuid4()),
             file_id=file_id,
@@ -534,13 +863,47 @@ class ProjectGraphImporter:
             type=node_type,
             content=content,
             order=f"{order:04d}",
-            source_span={"start_line": line_number, "end_line": line_number},
+            source_span={"start_line": line_number, "end_line": source_end_line if source_end_line is not None else line_number},
             metadata=metadata,
             visual=FrameVisual(
                 position=FramePosition(x=96.0, y=136.0 + order * 112.0),
-                size=FrameSize(width=self.DEFAULT_NODE_WIDTH, height=self.DEFAULT_NODE_HEIGHT),
+                size=FrameSize(width=self.DEFAULT_NODE_WIDTH, height=node_height),
             ),
         )
+
+    def _normalize_node_visuals(self, nodes: list[ScenarioNode]) -> list[ScenarioNode]:
+        node_ids = {node.id for node in nodes}
+        nodes_by_parent: dict[str, list[ScenarioNode]] = {}
+        normalized_by_id: dict[str, ScenarioNode] = {}
+
+        for node in nodes:
+            parent_key = node.parent_node_id if node.parent_node_id in node_ids else node.label_id
+            nodes_by_parent.setdefault(parent_key, []).append(node)
+
+        for parent_key, siblings in nodes_by_parent.items():
+            parent_is_scenario = parent_key in node_ids
+            start_x = 24.0 if parent_is_scenario else 96.0
+            start_y = 64.0 if parent_is_scenario else 136.0
+            cursor_y = start_y
+
+            for sibling in sorted(siblings, key=self._node_source_order):
+                normalized_by_id[sibling.id] = replace(
+                    sibling,
+                    visual=FrameVisual(
+                        position=FramePosition(x=start_x, y=cursor_y),
+                        size=sibling.visual.size,
+                    ),
+                )
+                cursor_y += sibling.visual.size.height + 24.0
+
+        return [normalized_by_id.get(node.id, node) for node in nodes]
+
+    @staticmethod
+    def _node_source_order(node: ScenarioNode) -> tuple[int, str]:
+        source_line = 999999
+        if node.source_span is not None:
+            source_line = int(node.source_span["start_line"])
+        return source_line, node.order
 
     @staticmethod
     def _extract_label_name(stripped_line: str) -> str | None:
@@ -639,6 +1002,14 @@ class ProjectGraphImporter:
         if statement.startswith("while "):
             return "while"
         return None
+
+    def _is_control_statement(self, statement: str) -> bool:
+        return (
+            self._conditional_node_type(statement) is not None
+            or self._is_menu_line(statement)
+            or self._statement_node_type(statement) in {"jump", "call", "return"}
+            or self._raw_block_type(statement) is not None
+        )
 
     @staticmethod
     def _is_dialogue_line(statement: str) -> bool:

@@ -62,8 +62,25 @@
   border-radius: 8px;
 }
 
+.project-graph-canvas .react-flow__node.project-graph-rf-node {
+  pointer-events: none !important;
+}
+
+.project-graph-canvas .react-flow__node.project-graph-rf-node .pg-node__drag-handle {
+  pointer-events: auto !important;
+}
+
+.project-graph-canvas__minimap {
+  width: 132px;
+  height: 96px;
+  opacity: 0.42;
+}
+
 .pg-node {
   box-sizing: border-box;
+  --pg-accent: rgba(31, 41, 55, 0.24);
+  display: flex;
+  flex-direction: column;
   width: 100%;
   height: 100%;
   overflow: hidden;
@@ -75,44 +92,113 @@
 }
 
 .pg-node--file {
+  --pg-accent: rgba(37, 99, 235, 0.42);
   border: 2px solid rgba(37, 99, 235, 0.32);
-  background: rgba(219, 234, 254, 0.28);
-  padding: 14px 16px;
+  background: rgba(239, 246, 255, 0.36);
 }
 
 .pg-node--label-frame {
-  border: 2px solid rgba(20, 184, 166, 0.42);
-  background: rgba(240, 253, 250, 0.48);
-  padding: 12px 14px;
+  --pg-accent: rgba(20, 184, 166, 0.46);
+  border: 2px solid rgba(20, 184, 166, 0.3);
+  background: rgba(240, 253, 250, 0.28);
 }
 
 .pg-node--label-start {
+  --pg-accent: rgba(15, 118, 110, 0.58);
   border-color: rgba(15, 118, 110, 0.58);
   background: #ecfeff;
-  padding: 10px 12px;
 }
 
 .pg-node--scenario {
+  --pg-accent: rgba(100, 116, 139, 0.36);
   border-color: rgba(100, 116, 139, 0.36);
   background: #ffffff;
-  padding: 10px 12px;
 }
 
 .pg-node--scenario[data-scenario-type="menu"],
 .pg-node--scenario[data-scenario-type="menu_choice"] {
+  --pg-accent: rgba(190, 24, 93, 0.46);
   border-color: rgba(124, 58, 237, 0.42);
   background: #f5f3ff;
+}
+
+.pg-node--scenario[data-scenario-type="menu"] {
+  border-color: rgba(190, 24, 93, 0.46);
+  background: #fdf2f8;
+}
+
+.pg-node--scenario[data-scenario-type="menu_choice"] {
+  --pg-accent: rgba(217, 119, 6, 0.58);
+  border-color: rgba(217, 119, 6, 0.48);
+  background: #fff7ed;
 }
 
 .pg-node--scenario[data-scenario-type="if"],
 .pg-node--scenario[data-scenario-type="elif"],
 .pg-node--scenario[data-scenario-type="else"] {
+  --pg-accent: rgba(217, 119, 6, 0.58);
   border-color: rgba(217, 119, 6, 0.42);
   background: #fffbeb;
 }
 
+.pg-node--scenario[data-visual-role="branchHeader"] {
+  display: flex;
+  align-items: center;
+  border-color: rgba(217, 119, 6, 0.5);
+  border-bottom-width: 0;
+  border-radius: 8px 8px 0 0;
+  background: #fff7ed;
+  padding: 0;
+}
+
+.pg-node__drag-handle {
+  box-sizing: border-box;
+  flex: 0 0 auto;
+  min-height: 29px;
+  border-bottom: 2px solid var(--pg-accent);
+  padding: 7px 12px 6px;
+  cursor: grab;
+  user-select: none;
+}
+
+.pg-node__drag-handle:active {
+  cursor: grabbing;
+}
+
+.pg-node--file .pg-node__drag-handle,
+.pg-node--label-frame .pg-node__drag-handle {
+  padding: 10px 14px 8px;
+}
+
+.pg-node__body {
+  min-height: 0;
+  padding: 9px 12px 10px;
+}
+
+.pg-node--file .pg-node__body,
+.pg-node--label-frame .pg-node__body {
+  padding: 0;
+}
+
+.pg-node--scenario[data-visual-role="branchHeader"] .pg-node__eyebrow {
+  margin: 0;
+  color: #9a3412;
+}
+
+.pg-node--scenario[data-visual-role="branchHeader"] .pg-node__drag-handle {
+  display: flex;
+  min-height: 100%;
+  align-items: center;
+  border-bottom: 0;
+  padding: 0 12px;
+}
+
+.pg-node--scenario[data-visual-role="branchHeader"] .pg-node__body {
+  display: none;
+}
+
 .pg-node__eyebrow {
-  margin-bottom: 4px;
+  margin-bottom: 0;
   color: #64748b;
   font-size: 11px;
   font-weight: 700;
@@ -130,6 +216,11 @@
   white-space: nowrap;
 }
 
+.pg-node__title--scenario {
+  margin-bottom: 5px;
+  font-size: 13px;
+}
+
 .pg-node__content {
   display: -webkit-box;
   overflow: hidden;
@@ -140,12 +231,41 @@
   -webkit-line-clamp: 3;
 }
 
+.pg-node__handle {
+  width: 9px;
+  height: 9px;
+  border: 2px solid #ffffff;
+  background: #2563eb;
+}
+
+.pg-node__handle--flow {
+  background: #0ea5e9;
+}
+
+.pg-node__handle--relation {
+  background: #94a3b8;
+}
+
+.project-edge--sequence .react-flow__edge-path {
+  stroke: rgba(37, 99, 235, 0.72);
+}
+
+.project-edge--branch .react-flow__edge-path {
+  stroke: rgba(217, 119, 6, 0.78);
+}
+
+.project-edge--rejoin .react-flow__edge-path {
+  stroke: rgba(100, 116, 139, 0.5);
+}
+
 .project-edge--jump .react-flow__edge-path {
-  stroke: rgba(37, 99, 235, 0.58);
+  stroke: rgba(37, 99, 235, 0.92);
+  pointer-events: none;
 }
 
 .project-edge--call .react-flow__edge-path {
-  stroke: rgba(124, 58, 237, 0.72);
+  stroke: rgba(124, 58, 237, 0.92);
+  pointer-events: none;
 }
 
 .project-graph-canvas__toolbar,
@@ -167,7 +287,9 @@
 .project-graph-canvas__toolbar {
   top: 16px;
   left: 16px;
+  max-height: min(340px, calc(100% - 32px));
   padding: 10px;
+  overflow: auto;
 }
 
 .project-graph-canvas__problems {

@@ -14,6 +14,7 @@ reactflow-DOCS/
 node_modules/
 test-results/
 playwright-report/
+artifacts/
 *.log
 backend/uploads/
 debug_temp*

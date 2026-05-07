@@ -49,19 +49,19 @@ def test_statements_inside_if_elif_else_are_child_nodes():
         (child.parent_node_id, child.type, child.content)
         for child in branch_children
     } == {
-        (branches["if"].id, "dialogue", 'r "This is either a feast or a cycle."'),
-        (branches["elif"].id, "dialogue", 'r "One crumb is enough for a prototype."'),
-        (branches["else"].id, "dialogue", 'r "No crumbs, no graph."'),
+        (branches["if"].id, "action", 'r "This is either a feast or a cycle."'),
+        (branches["elif"].id, "action", 'r "One crumb is enough for a prototype."'),
+        (branches["else"].id, "action", 'r "No crumbs, no graph."'),
     }
 
 
-def test_comments_inside_labels_import_as_comment_nodes():
+def test_comments_inside_labels_are_preserved_inside_action_blocks():
     graph = import_mouse_graph()
-    comments = {node.content for node in nodes_by_type(graph, "comment")}
+    action_blocks = {node.content for node in nodes_by_type(graph, "action")}
 
-    assert "# RenPy wakes up under the keyboard." in comments
-    assert "# The duck says nothing, which RenPy treats as approval." in comments
-    assert "# Presentation and timing statements should stay action/raw nodes." in comments
+    assert any("# RenPy wakes up under the keyboard." in block for block in action_blocks)
+    assert any("# The duck says nothing, which RenPy treats as approval." in block for block in action_blocks)
+    assert any("# Presentation and timing statements should stay action/raw nodes." in block for block in action_blocks)
 
 
 def test_conditionals_and_comments_survive_snapshot_roundtrip():
@@ -71,12 +71,12 @@ def test_conditionals_and_comments_survive_snapshot_roundtrip():
     original = [
         (node.id, node.type, node.content, node.parent_node_id, node.metadata)
         for node in graph.nodes
-        if node.type in {"if", "elif", "else", "comment"}
+        if node.type in {"if", "elif", "else", "action"}
     ]
     roundtripped = [
         (node.id, node.type, node.content, node.parent_node_id, node.metadata)
         for node in restored.nodes
-        if node.type in {"if", "elif", "else", "comment"}
+        if node.type in {"if", "elif", "else", "action"}
     ]
 
     assert roundtripped == original
