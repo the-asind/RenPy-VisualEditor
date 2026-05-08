@@ -851,3 +851,29 @@ Layout improvement можно закрыть только если выполн�
 ### Остаток
 
 1. This pass preserves positions and live frame bounds, but it does not introduce collision avoidance during arbitrary manual drag. A separate explicit relayout command is still the better product answer for user-created layout knots.
+
+## 22. Body Click Selection With Header-Only Drag
+
+Статус: закрывает interaction mismatch, где object drag корректно был ограничен шапкой, но single click по body ноды не выбирал/не открывал ноду.
+
+### Наблюдение
+
+1. Header drag и single click являются разными жестами.
+2. Перетаскивание ноды/фрейма должно начинаться только из header.
+3. Drag по body/content должен продолжать панорамировать canvas.
+4. Single click по body/content должен выбирать ту же ноду, что click по header.
+
+### Изменение
+
+1. Body/content зоны не получили pointer-events, чтобы не сломать pane pan.
+2. `onPaneClick` делает hit-test по координате клика в canvas space.
+3. Hit-test выбирает deepest visible node под курсором, поэтому click по scenario внутри label выбирает scenario, а не parent frame.
+4. Click вне nodes очищает selection.
+
+### Проверка Закрытия
+
+1. Projection/helper test: click point inside scenario body selects scenario.
+2. Projection/helper test: click point inside `LabelStartNode` body selects label start.
+3. Projection/helper test: click point inside empty label frame area selects label frame.
+4. Projection/helper test: click point outside canvas nodes returns no selection.
+5. Full frontend tests and production build pass.

@@ -3,6 +3,7 @@ import {
   buildNestedDragPreviewNodes,
   buildNearTargetStepPath,
   expandAncestorFramesForMovedNodes,
+  findProjectGraphNodeAtCanvasPoint,
   projectGraphNodeTypes,
 } from '../../components/projectGraph/ProjectGraphCanvas';
 import {
@@ -211,6 +212,21 @@ describe('projectGraphToReactFlow static projection', () => {
     expect(returnedLabel.width).toBe(520);
     expect(returnedAction.position).toEqual({ x: 96, y: 220 });
     expect(returnedActionAbsolute).toEqual(baselineActionAbsolute);
+  });
+
+  it('hit-tests body clicks to the deepest visible node while body drag remains pane-owned', () => {
+    const nodes = [
+      makeCanvasNode('file', 'projectFrame', { x: 0, y: 0 }, { width: 900, height: 640 }),
+      makeCanvasNode('label', 'labelFrame', { x: 48, y: 48 }, { width: 520, height: 360 }, 'file'),
+      makeCanvasNode('start', 'labelStart', { x: 32, y: 72 }, { width: 260, height: 72 }, 'label'),
+      makeCanvasNode('action', 'scenarioNode', { x: 96, y: 220 }, { width: 320, height: 88 }, 'label'),
+    ];
+
+    expect(findProjectGraphNodeAtCanvasPoint(nodes, { x: 48 + 96 + 12, y: 48 + 220 + 40 })?.id).toBe('action');
+    expect(findProjectGraphNodeAtCanvasPoint(nodes, { x: 48 + 32 + 12, y: 48 + 72 + 30 })?.id).toBe('start');
+    expect(findProjectGraphNodeAtCanvasPoint(nodes, { x: 48 + 500, y: 48 + 340 })?.id).toBe('label');
+    expect(findProjectGraphNodeAtCanvasPoint(nodes, { x: 890, y: 620 })?.id).toBe('file');
+    expect(findProjectGraphNodeAtCanvasPoint(nodes, { x: 960, y: 720 })).toBeNull();
   });
 
   it('rebases parent frames when a dragged child pushes the left or top wall', () => {

@@ -4,6 +4,31 @@ This file is the short project memory for RenPy Visual Editor 2.0. Keep it curre
 
 ## 2026-05-08
 
+### Body Click Selection With Header-Only Drag
+
+Fixed a canvas interaction mismatch where nodes and frames could be dragged only from their header, which is correct, but single-click selection/opening also worked only from the header.
+
+Files:
+
+1. `frontend/src/components/projectGraph/ProjectGraphCanvas.tsx`
+2. `frontend/src/utils/__tests__/projectGraphProjection.test.ts`
+3. `docs/editor-2.0-architecture.md`
+4. `docs/canvas-layout-usability-audit.md`
+
+Result:
+
+1. Body/content zones keep `pointer-events: none`, so LMB drag over a node body still pans the canvas.
+2. Pane click handling now hit-tests the click point against projected node bounds and selects the deepest visible node under the cursor.
+3. Header drag remains the only object-drag entry point.
+4. Single click on a node body now selects/opens the same node as single click on its header.
+
+Checks:
+
+1. Added projection hit-test coverage for scenario body, label start body, label frame body, file frame body, and outside-canvas clicks.
+2. `npm test -- --run src/utils/__tests__/projectGraphProjection.test.ts` passed with 16 tests.
+3. `npm test -- --run` passed with 42 frontend tests.
+4. `npm run build` passed with the known non-blocking Vite/env.js, Browserslist, and large Loro chunk warnings.
+
 ### Live Parent Frame Expansion During Header Drag
 
 Fixed a canvas drag usability gap where nested nodes and nested `LabelFrame`s could be dragged toward a parent frame edge without the parent frame expanding in real time.

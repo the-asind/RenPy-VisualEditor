@@ -1,4 +1,13 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
+} from 'react';
 import {
   Background,
   BaseEdge,
@@ -101,6 +110,36 @@ const nodeDepth = (node: Node, byId: Map<string, Node>): number => {
 
 const isExpandableFrameNode = (node: Node | undefined): node is Node =>
   node?.type === 'projectFrame' || node?.type === 'labelFrame';
+
+export const findProjectGraphNodeAtCanvasPoint = (nodes: Node[], point: GraphPoint): Node | null => {
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const candidates = nodes
+    .map((node, index) => {
+      const position = getAbsoluteNodePosition(nodes, node.id);
+      const width = numericSize(node.width, numericSize(node.style?.width, 0));
+      const height = numericSize(node.height, numericSize(node.style?.height, 0));
+
+      if (
+        !position ||
+        point.x < position.x ||
+        point.x > position.x + width ||
+        point.y < position.y ||
+        point.y > position.y + height
+      ) {
+        return null;
+      }
+
+      return {
+        index,
+        node,
+        depth: nodeDepth(node, byId),
+      };
+    })
+    .filter((candidate): candidate is { index: number; node: Node; depth: number } => candidate !== null)
+    .sort((left, right) => right.depth - left.depth || right.index - left.index);
+
+  return candidates[0]?.node ?? null;
+};
 
 export const expandAncestorFramesForMovedNodes = (nodes: Node[], movedNodeIds: Set<string>): Node[] => {
   if (movedNodeIds.size === 0) {
@@ -593,6 +632,19 @@ const ProjectGraphCanvasInner = ({
     );
   };
 
+  const handlePaneClick = useCallback(
+    (event: ReactMouseEvent<Element>) => {
+      const point = reactFlowInstance?.screenToFlowPosition({
+        x: event.clientX,
+        y: event.clientY,
+      });
+      const hitNode = point ? findProjectGraphNodeAtCanvasPoint(interactiveNodesRef.current, point) : null;
+
+      setSelectedNodeId(hitNode?.id ?? null);
+    },
+    [reactFlowInstance],
+  );
+
   return (
     <div className={className ? `project-graph-canvas ${className}` : 'project-graph-canvas'}>
       <div className="project-graph-canvas__toolbar">
@@ -723,7 +775,7 @@ const ProjectGraphCanvasInner = ({
         onNodesChange={handleNodesChange}
         onNodeClick={(_, node) => setSelectedNodeId(node.id)}
         onNodeDragStop={(_, node: Node) => onEntityPositionChange?.(node.id, node.position)}
-        onPaneClick={() => setSelectedNodeId(null)}
+        onPaneClick={handlePaneClick}
       >
         <Background gap={32} size={1} />
         <MiniMap
