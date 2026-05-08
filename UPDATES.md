@@ -4,6 +4,68 @@ This file is the short project memory for RenPy Visual Editor 2.0. Keep it curre
 
 ## 2026-05-08
 
+### Raw-like Ren'Py Blocks Are Aggregated Into Action Nodes
+
+Removed new-import `raw_block` canvas nodes for non-branching Ren'Py blocks.
+
+Files:
+
+1. `AGENTS.md`
+2. `backend/app/services/project_graph/importer.py`
+3. `backend/app/services/project_graph/exporter.py`
+4. `backend/app/services/project_graph/resolver.py`
+5. `backend/tests/test_project_graph_actions.py`
+6. `backend/tests/test_project_graph_diagnostics.py`
+7. `backend/tests/test_project_graph_sprint_1_2_blackbox.py`
+8. `backend/tests/test_project_graph_import_route.py`
+9. `docs/editor-2.0-architecture.md`
+10. `docs/parser-coverage-matrix.md`
+
+Result:
+
+1. `show ...:`, `python:`, ATL-like blocks, and similar raw-like non-branching Ren'Py blocks are preserved as text inside the surrounding `action` node.
+2. Adjacent `action -> raw-like block -> action` source text now imports as one continuous `action` block until a real graph-control statement such as `menu`, `if/elif/else`, `jump`, `call`, `return`, or a label boundary.
+3. Relative indentation inside action content is preserved, so exported `show ...:` / `python:` child lines stay valid Ren'Py.
+4. Legacy `raw_block` snapshot/export compatibility remains, but new imports no longer create visible `RAW_BLOCK` canvas nodes.
+5. Unsupported `while` blocks are also stored inside `action` text and receive a non-blocking `unsupported_control_block` warning instead of `unsupported_raw_block`.
+
+Checks:
+
+1. Added black-box coverage for a single imported block containing action lines, a raw-like `show ...:` block, and more action lines.
+2. Updated full mouse corpus expectations to require zero new `raw_block` nodes.
+3. `python -m pytest backend/tests/test_project_graph_actions.py -q` passed with 6 tests.
+4. `python -m pytest backend/tests/test_project_graph_action_blocks.py backend/tests/test_project_graph_exporter.py backend/tests/test_project_graph_diagnostics.py backend/tests/test_project_graph_sprint_1_2_blackbox.py backend/tests/test_project_graph_import_route.py -q` passed with 19 tests.
+5. `python -m pytest backend/tests -q` passed with 151 tests.
+6. `npm test -- --run` passed with 43 frontend tests.
+7. `npm run build` passed with the known non-blocking Vite/env.js, Browserslist, and large Loro chunk warnings.
+
+### Relation-aware Label Frame Layout Heuristic
+
+Added the first minimal 2D frame-placement heuristic for imported/columnar label frames connected by `jump/call` relation edges.
+
+Files:
+
+1. `frontend/src/utils/projectGraphProjection.ts`
+2. `frontend/src/utils/__tests__/projectGraphProjection.test.ts`
+3. `docs/editor-2.0-architecture.md`
+4. `docs/canvas-layout-usability-audit.md`
+
+Result:
+
+1. Projection now builds a lightweight label-to-label relation graph from resolved `jump/call source node -> target LabelStartNode` edges.
+2. If sibling `LabelFrame`s under the same parent are still mostly one vertical column, relation targets are placed to the right of their source frame.
+3. A simple collision resolver moves target frames down only when needed, preserving non-overlap.
+4. Already spread 2D frame layouts are left alone, which keeps the heuristic closer to "initial import cleanup" instead of constant global auto-layout.
+5. This pass does not change lexical containment: nested labels remain inside their parent frame, and relation edges still target `LabelStartNode`s only.
+
+Checks:
+
+1. Updated the single-file mouse layout regression to include resolved `jump .cupboard` and `jump ask_duck` relation edges.
+2. The test now proves same-parent `ask_duck` is placed to the right of `start` instead of below it, while frame overlap remains false.
+3. `npm test -- --run src/utils/__tests__/projectGraphProjection.test.ts` passed with 17 tests.
+4. `npm test -- --run` passed with 43 frontend tests.
+5. `npm run build` passed with the known non-blocking Vite/env.js, Browserslist, and large Loro chunk warnings.
+
 ### Simple Label Column Centering
 
 Fixed a canvas readability regression where small/simple labels without branch nodes could place `LabelStartNode` left of the first story block, producing an unnecessary crooked step edge between `START` and the next node.

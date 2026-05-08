@@ -35,7 +35,7 @@ There must be no collapse/fold behavior on the MVP 2.0 canvas.
 6. `jump` and `call` target the destination `LabelStartNode`.
 7. Node IDs must remain stable during collaborative editing. Import may generate UUIDs; after import those IDs must be persisted and reused.
 8. Parser unknowns inside valid Ren'Py structure must not become graph errors by default.
-9. Non-branching Ren'Py statements and blocks become action/raw nodes when they do not affect narrative structure.
+9. Non-branching Ren'Py statements and blocks become `action` text inside aggregated action nodes when they do not affect narrative structure. New imports must not create visible raw-block canvas nodes for presentation, ATL, Python, or similar non-branching blocks.
 10. Comments must be preserved and visible when editing the related block.
 11. Editor metadata must never be exported into `.rpy`.
 12. Prefer stable normalized export over preserving original formatting.
@@ -79,7 +79,7 @@ Do not close an `MVP Action` with only implementation notes or manual reasoning.
 
 Parser and roundtrip fixtures must tell one continuous, funny story about a mouse named RenPy. Reuse these fixtures across parser, resolver, export, layout, and collaboration tests so that coverage grows around the same project corpus.
 
-The fixture corpus should cover global labels, local labels, nested labels, menus with prompt text, menu choice conditions, if/elif/else, jump, call, return, comments, raw statements, raw blocks, multi-file flow, duplicate labels, unresolved references, and dynamic references.
+The fixture corpus should cover global labels, local labels, nested labels, menus with prompt text, menu choice conditions, if/elif/else, jump, call, return, comments, aggregated action text for presentation/ATL/Python blocks, multi-file flow, duplicate labels, unresolved references, and dynamic references.
 
 ## Cleanup Rule
 

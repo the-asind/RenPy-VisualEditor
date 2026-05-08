@@ -4,7 +4,7 @@
 
 Статус: Sprint 0 / Master Item 0.3.
 
-Цель: зафиксировать, какие Ren'Py statements становятся first-class ProjectGraph nodes в MVP 2.0, какие сохраняются как action/raw, какие целиком сохраняются как raw block, и какие могут блокировать export/import safety.
+Цель: зафиксировать, какие Ren'Py statements становятся first-class ProjectGraph nodes в MVP 2.0, какие сохраняются как агрегированный `action` text, какие legacy raw nodes поддерживаются только для старых snapshots, и какие могут блокировать export/import safety.
 
 ## Official Sources Checked
 
@@ -36,9 +36,9 @@ Important official-doc implications:
 
 `action`: safe non-branching statement shown as a normal scenario/action node.
 
-`raw_action`: safe statement kept as exact text-ish content because MVP does not need special semantics.
+`raw_action`: legacy-compatible safe statement type. New imports should prefer aggregated `action`.
 
-`raw_block`: block preserved as one node because parsing inside it as graph structure would be unsafe or unnecessary for MVP.
+`raw_block`: legacy-compatible snapshot type. New imports should not create visible `raw_block` canvas nodes; raw-like Ren'Py blocks are preserved as text inside `action`.
 
 `blocking`: syntax/structure issue that prevents safe import/export or destroys containment certainty.
 
@@ -74,37 +74,37 @@ Important official-doc implications:
 | `return` / `return expr` | first-class | `ScenarioNode(type="return")` | Return with and without expr | Important call-stack control. |
 | comment line | first-class editable context | `ScenarioNode(type="comment")` or attached comments | Comment inside label/menu/if | Ren'Py ignores it, UI preserves it. |
 
-## MVP Action / Raw Matrix
+## MVP Action Text Matrix
 
 | Statement / Construct | MVP class | ProjectGraph output | Fixture requirement | Notes |
 | --- | --- | --- | --- | --- |
-| `scene ...` | action/raw_action | `ScenarioNode(type="action" or "raw_action")` | Scene line | Presentation statement; no graph branch. |
-| `scene ...:` ATL block | raw_block | one action/raw block | Scene with block | Preserve block; do not graph ATL internals. |
-| `show ...` | action/raw_action | action/raw node | `show renpy happy at left with dissolve` | Must never become graph problem by itself. |
-| `show ...:` ATL block | raw_block | one action/raw block | Show block | Preserve block. |
-| `show layer ...` | action/raw_action or raw_block | action/raw node | Optional fixture | Presentation. |
-| `camera ...` | action/raw_action or raw_block | action/raw node | Optional fixture | Presentation. |
-| `hide ...` | action/raw_action | action/raw node | Hide line | Presentation. |
-| `with expr` | action/raw_action | action/raw node | With transition line | Presentation. |
-| `image ... = ...` | raw_action | action/raw node or file-level raw node | Image definition | Not a narrative branch. |
-| `image ...:` ATL block | raw_block | raw block | Image ATL fixture | Preserve safely. |
-| `define ...` | raw_action | file-level or label-adjacent raw action | Define character/default var | Important source content, not graph branch. |
-| `default ...` | raw_action | file-level or label-adjacent raw action | Default variable | Preserve. |
-| `$ python` | raw_action | action/raw node | One-line python | Preserve text. |
-| `python:` | raw_block | raw block | Python block | Do not parse inner Python as Ren'Py graph. |
-| `python hide:` / `python early:` | raw_block | raw block | Python modifier fixture | Preserve modifiers. |
-| `pass` | action/raw_action | action/raw node | Pass inside branch | Safe no-op; may be generated/exported. |
-| `while expr:` | raw_block for MVP | raw block with warning | While fixture | It is control flow, but looping graph semantics are post-MVP. |
-| `IF` / `ELIF` / `ELSE` compile-time conditional | raw_block or post-MVP | raw block with warning | Optional fixture | Different semantics from runtime `if`; avoid pretending it is normal branch. |
+| `scene ...` | action | aggregated `ScenarioNode(type="action")` | Scene line | Presentation statement; no graph branch. |
+| `scene ...:` ATL block | action | same action block with relative child indentation | Scene with block | Preserve block text; do not graph ATL internals. |
+| `show ...` | action | aggregated action node | `show renpy happy at left with dissolve` | Must never become graph problem by itself. |
+| `show ...:` ATL block | action | same action block with relative child indentation | Show block | Preserve block text. |
+| `show layer ...` | action | aggregated action node | Optional fixture | Presentation. |
+| `camera ...` | action | aggregated action node | Optional fixture | Presentation. |
+| `hide ...` | action | aggregated action node | Hide line | Presentation. |
+| `with expr` | action | aggregated action node | With transition line | Presentation. |
+| `image ... = ...` | action | file prelude or aggregated action text | Image definition | Not a narrative branch. |
+| `image ...:` ATL block | action | same action block with relative child indentation | Image ATL fixture | Preserve safely. |
+| `define ...` | action/source prelude | file prelude or aggregated action text | Define character/default var | Important source content, not graph branch. |
+| `default ...` | action/source prelude | file prelude or aggregated action text | Default variable | Preserve. |
+| `$ python` | action | aggregated action node | One-line python | Preserve text. |
+| `python:` | action | same action block with relative child indentation | Python block | Do not parse inner Python as Ren'Py graph. |
+| `python hide:` / `python early:` | action | same action block with relative child indentation | Python modifier fixture | Preserve modifiers. |
+| `pass` | action | aggregated action node | Pass inside branch | Safe no-op; may be generated/exported. |
+| `while expr:` | action with warning | same action block + `unsupported_control_block` warning | While fixture | It is control flow, but looping graph semantics are post-MVP. |
+| `IF` / `ELIF` / `ELSE` compile-time conditional | action/post-MVP with warning | same action block where safe | Optional fixture | Different semantics from runtime `if`; avoid pretending it is normal branch. |
 
 ## Post-MVP / Preserve Matrix
 
 | Statement / Construct | MVP class | Reason |
 | --- | --- | --- |
-| `transform` | raw_block/post-MVP | ATL/presentation definition. |
-| `screen` language | raw_block/post-MVP | Separate language; not MVP graph structure. |
-| `init` / `init python` | raw_block/post-MVP | Initialization semantics; preserve safely. |
-| `translate` blocks | raw_block/post-MVP | Localization workflow; preserve but do not graph in MVP. |
+| `transform` | action/post-MVP | ATL/presentation definition. |
+| `screen` language | action/post-MVP | Separate language; preserve as text without graph semantics where safe. |
+| `init` / `init python` | action/post-MVP | Initialization semantics; preserve safely. |
+| `translate` blocks | action/post-MVP | Localization workflow; preserve but do not graph in MVP. |
 | `style` statements | raw_action/post-MVP | UI style definitions. |
 | `play` / `queue` / `stop` audio | action/raw_action | Presentation/audio, no story branch. |
 | `voice` | action/raw_action | Audio/narration support. |
@@ -112,7 +112,7 @@ Important official-doc implications:
 | `pause` | action/raw_action | Runtime pacing; no branch. |
 | `nvl` | raw_action/post-MVP | Mode/UI behavior. |
 | `show screen` / `call screen` / `hide screen` | raw_action/post-MVP | Screen interactions can affect control indirectly; preserve and warn if needed. |
-| creator-defined statements | raw_action/raw_block | Unknown statement should preserve text and warn, not fail by default. |
+| creator-defined statements | action text | Unknown statement should preserve text and warn, not fail by default. |
 
 ## Blocking Diagnostics
 
@@ -123,17 +123,17 @@ Blocking cases:
 1. Indentation that makes block containment impossible to determine.
 2. Logical line continuation that cannot be reconstructed into a stable statement.
 3. Menu choice line followed by a block but missing required colon.
-4. `menu:` without any valid choices if exact preservation as raw block fails.
+4. `menu:` without any valid choices if exact preservation as action text fails.
 5. Label declaration whose name cannot be parsed enough to preserve and resolve.
-6. A parent block where partial parsing would lose statements; fallback must convert the whole parent block to `raw_block`. If fallback also fails, block.
+6. A parent block where partial parsing would lose statements; fallback must preserve the whole parent block as `action` text. If fallback also fails, block.
 7. Duplicate IDs inside imported ProjectGraph payload after IDs already exist.
 
 Non-blocking diagnostics:
 
 1. Unresolved `jump`/`call` target.
 2. Dynamic `jump expression` / `call expression`.
-3. Safe unknown statement preserved as raw/action.
-4. Presentation/action block preserved as raw block.
+3. Safe unknown statement preserved as action text.
+4. Presentation/action block preserved inside an aggregated action node.
 5. Duplicate global label: warning/high severity for resolver, but import can preserve both frames with diagnostic unless export target would be ambiguous.
 
 ## Fixture Corpus Requirements
@@ -167,22 +167,22 @@ Required coverage in the story:
 17. Return with and without expression.
 18. Comments inside editable blocks.
 19. Presentation/action statements: scene/show/hide/with/audio.
-20. Raw blocks: python, ATL-style show/image block.
-21. Diagnostics: duplicate label, unresolved target, suspicious indentation or unsafe raw parent fallback.
+20. Raw-like text inside action blocks: python, ATL-style show/image block.
+21. Diagnostics: duplicate label, unresolved target, suspicious indentation or unsupported control block preserved inside action text.
 
 ## Sprint 1 Test Order
 
 1. Create fixture corpus first.
 2. Write ProjectGraph import tests for files/labels/LabelStartNode.
 3. Write tests for menu prompt and choices.
-4. Write tests for action/raw preservation.
+4. Write tests for aggregated action text preservation.
 5. Write resolver tests for jump/call after basic import exists.
 6. Write export roundtrip tests after import/resolver shape stabilizes.
 
 ## Decisions
 
 1. Parser MVP focuses on graph-relevant narrative/control-flow structure, not exhaustive typed AST parity with Ren'Py.
-2. Presentation and implementation statements are preserved as action/raw nodes unless they create graph branches.
+2. Presentation and implementation statements are preserved as aggregated action text unless they create graph branches.
 3. Dynamic references remain visible as unresolved/dynamic relations with warnings.
 4. Unknown safe statements must not become graph errors.
 5. Official Ren'Py parser remains the source of truth for syntax categories; this matrix is the MVP editor interpretation layer.

@@ -903,3 +903,36 @@ Layout improvement можно закрыть только если выполн�
 3. Projection test: старые `_manual_position` offsets в simple label не ломают вертикальную story column.
 4. Existing conditional tree test допускает `straight` для уже выровненных forward sequence edges, но сохраняет `nearTargetStep` для branch/rejoin.
 5. `npm test -- --run src/utils/__tests__/projectGraphProjection.test.ts` - passed, 17 tests.
+
+## 24. Relation-aware Label Frame Placement Heuristic
+
+Статус: первый MVP pass для проблемы, где sibling label frames после импорта стоят одной вертикальной колонкой, хотя `jump/call` связи делают 2D-размещение значительно читабельнее.
+
+### Наблюдение
+
+1. В single-file smoke `start`, `start.cupboard` и `ask_duck` были расположены вертикально.
+2. При этом `jump ask_duck` из меню визуально тянул длинную пунктирную relation line вниз, хотя человеку естественнее видеть `ask_duck` справа от `start`.
+3. Глобально оптимальное размещение всех frames по связям является отдельной задачей graph/rectangle layout, но для MVP можно улучшить импортный случай простой эвристикой.
+
+### Изменение
+
+1. Projection строит label-to-label relation graph из resolved `jump/call` edges.
+2. Если sibling `LabelFrame`s под одним parent стоят почти одной колонкой, target frame связи ставится вправо от source frame.
+3. Collision resolver сохраняет непересечение: если справа уже занят слот, target сдвигается ниже.
+4. Если frames уже разнесены в 2D, pass пропускает группу, чтобы не перетирать пользовательскую раскладку.
+5. Containment не меняется: локальные/nested labels остаются внутри своих lexical parent frames.
+
+### Проверка Закрытия
+
+1. Projection test: resolved `jump ask_duck` кладёт same-parent `ask_duck` справа от `start`, а не под ним.
+2. Projection test: `start` и `ask_duck` frames не пересекаются после relation-aware placement.
+3. Regression still checks nested `.cupboard` remains inside parent `start` frame.
+4. `npm test -- --run src/utils/__tests__/projectGraphProjection.test.ts` - passed, 17 tests.
+5. `npm test -- --run` - passed, 43 tests.
+6. `npm run build` - passed.
+
+### Ограничения
+
+1. Это эвристика, не полный layout solver.
+2. Cross-parent relation вроде `start -> start.cupboard` пока не переносит nested frame наружу и не меняет containment.
+3. Для большого проекта понадобится следующий pass: weighted relation graph, pin/manual-position model for frames, better edge lanes, and explicit "Auto arrange project" command.

@@ -46,20 +46,59 @@ def test_action_blocks_keep_dialogue_searchable_and_editable_in_context():
     assert any('r "Stable export tastes better than exact whitespace."' in block for block in action_blocks)
 
 
-def test_python_and_atl_blocks_import_as_raw_block_nodes():
+def test_python_and_atl_blocks_import_as_action_text():
     graph = import_mouse_graph()
-    raw_blocks = {node.content for node in graph.nodes if node.type == "raw_block"}
+    action_blocks = {node.content for node in graph.nodes if node.type == "action"}
 
-    assert any(block.startswith("show renpy happy:") and "linear 0.2 yoffset -10" in block for block in raw_blocks)
-    assert any(block.startswith("python:") and "raw python block survives the graph" in block for block in raw_blocks)
+    assert not any(node.type == "raw_block" for node in graph.nodes)
+    assert any("show renpy happy:" in block and "    linear 0.2 yoffset -10" in block for block in action_blocks)
+    assert any("python:" in block and "    renpy_note = \"raw python block survives the graph\"" in block for block in action_blocks)
 
 
-def test_raw_action_and_raw_block_nodes_are_non_blocking():
+def test_action_text_blocks_are_non_blocking():
     graph = import_mouse_graph()
 
     assert graph.diagnostics == []
     assert any(node.type == "action" for node in graph.nodes)
-    assert any(node.type == "raw_block" for node in graph.nodes)
+    assert not any(node.type == "raw_block" for node in graph.nodes)
+
+
+def test_adjacent_linear_raw_and_action_statements_merge_into_one_action_block(tmp_path):
+    source = tmp_path / "renpy_mouse_raw_scene.rpy"
+    source.write_text(
+        "\n".join(
+            [
+                "label start:",
+                "    scene black",
+                "    \"audio/love_music.mp3\" fadein 4.5 volume 0.4",
+                "    show yuli happy:",
+                "        xalign 0.7",
+                "        yalign 0.5",
+                "        zoom 0.77",
+                "    show firstDays foreground cafe",
+                "    r \"RenPy Mouse keeps the whole presentation beat in one block.\"",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    graph = ProjectGraphImporter().import_files(project_id="mouse-raw-scene", files=[source])
+    top_level_nodes = [node for node in graph.nodes if node.parent_node_id is None]
+
+    assert [node.type for node in top_level_nodes] == ["action"]
+    assert top_level_nodes[0].content == "\n".join(
+        [
+            "scene black",
+            "\"audio/love_music.mp3\" fadein 4.5 volume 0.4",
+            "show yuli happy:",
+            "    xalign 0.7",
+            "    yalign 0.5",
+            "    zoom 0.77",
+            "show firstDays foreground cafe",
+            "r \"RenPy Mouse keeps the whole presentation beat in one block.\"",
+        ]
+    )
 
 
 def test_action_and_raw_nodes_survive_snapshot_roundtrip():

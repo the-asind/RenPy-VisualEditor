@@ -101,7 +101,7 @@ class ProjectGraphExporter:
             if not line.strip():
                 lines.append("")
             else:
-                lines.append(f"{indent}{line.strip()}")
+                lines.append(f"{indent}{line.rstrip()}")
         return lines
 
     def _render_raw_block(self, content: str, indent: str) -> list[str]:

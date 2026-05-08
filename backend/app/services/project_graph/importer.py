@@ -284,26 +284,6 @@ class ProjectGraphImporter:
                 )
                 continue
 
-            raw_block_type = self._raw_block_type(stripped)
-            if raw_block_type is not None:
-                block_lines, block_end = self._collect_raw_block(lines, index, end_index, line_indent)
-                nodes.append(
-                    self._make_node(
-                        file_id=file_id,
-                        label_id=label.id,
-                        parent_node_id=parent_node_id,
-                        node_type="raw_block",
-                        content="\n".join(block_lines).rstrip(),
-                        order=node_order[0],
-                        line_number=index,
-                        metadata={"raw_block_type": raw_block_type},
-                        source_end_line=block_end - 1,
-                    )
-                )
-                node_order[0] += 1
-                index = block_end
-                continue
-
             statement_type = self._statement_node_type(stripped)
             if statement_type in {"jump", "call", "return"}:
                 nodes.append(
@@ -471,6 +451,7 @@ class ProjectGraphImporter:
     ) -> tuple[list[str], int, int]:
         block_start = index
         block_lines: list[str] = []
+        block_indent: int | None = None
 
         while index < end_index:
             line = lines[index]
@@ -486,10 +467,16 @@ class ProjectGraphImporter:
             if line_indent <= parent_indent or self._extract_label_name(stripped) is not None:
                 break
 
-            if self._is_control_statement(stripped):
+            if block_indent is None:
+                block_indent = line_indent
+
+            if line_indent <= block_indent and self._is_control_statement(stripped):
                 break
 
-            block_lines.append(stripped)
+            if line_indent >= block_indent:
+                block_lines.append(line[block_indent:].rstrip())
+            else:
+                block_lines.append(stripped)
             index += 1
 
         while block_lines and not block_lines[-1].strip():
@@ -1008,7 +995,6 @@ class ProjectGraphImporter:
             self._conditional_node_type(statement) is not None
             or self._is_menu_line(statement)
             or self._statement_node_type(statement) in {"jump", "call", "return"}
-            or self._raw_block_type(statement) is not None
         )
 
     @staticmethod

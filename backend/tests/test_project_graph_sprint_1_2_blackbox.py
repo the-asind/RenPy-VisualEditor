@@ -129,7 +129,7 @@ def test_sprint_1_and_2_full_project_graph_blackbox_contract():
     assert node_counts["if"] == 1
     assert node_counts["elif"] == 1
     assert node_counts["else"] == 1
-    assert node_counts["raw_block"] == 3
+    assert node_counts["raw_block"] == 0
     assert node_counts["comment"] == 0
     assert node_counts["jump"] == 9
     assert node_counts["call"] == 3
@@ -140,9 +140,9 @@ def test_sprint_1_and_2_full_project_graph_blackbox_contract():
     assert any("# RenPy wakes up under the keyboard." in block for block in action_blocks)
     assert any("scene kitchen morning" in block for block in action_blocks)
     assert any("play music \"tiny_footsteps.ogg\" fadein 1.0" in block for block in action_blocks)
-    assert any(node.content.startswith("show renpy happy:") for node in nodes_by_type(graph, "raw_block"))
-    assert any(node.content.startswith("python:") for node in nodes_by_type(graph, "raw_block"))
-    assert any(node.content.startswith("while ") for node in nodes_by_type(graph, "raw_block"))
+    assert any("show renpy happy:" in block and "    linear 0.2 yoffset -10" in block for block in action_blocks)
+    assert any("python:" in block and "    renpy_note = \"raw python block survives the graph\"" in block for block in action_blocks)
+    assert any("while crumb_count < 3:" in block and "Loop crumbs are preserved as a raw block for MVP." in block for block in action_blocks)
 
     conditioned_choice = next(
         node for node in nodes_by_type(graph, "menu_choice")
@@ -184,7 +184,7 @@ def test_sprint_1_and_2_full_project_graph_blackbox_contract():
         "duplicate_global_label": 1,
         "dynamic_target": 2,
         "unresolved_target": 1,
-        "unsupported_raw_block": 1,
+        "unsupported_control_block": 1,
     }
     assert all(diagnostic.blocking is False for diagnostic in graph.diagnostics)
     assert diagnostics["duplicate_global_label"][0].metadata["qualified_name"] == "duplicate_cheese"
@@ -193,7 +193,7 @@ def test_sprint_1_and_2_full_project_graph_blackbox_contract():
         "jump expression suspicious_target",
         "call expression next_snack_label pass (crumb_count)",
     }
-    assert diagnostics["unsupported_raw_block"][0].metadata["raw_block_type"] == "while"
+    assert diagnostics["unsupported_control_block"][0].metadata["control_block_type"] == "while"
 
     restored = ProjectGraphSnapshotCodec.load(ProjectGraphSnapshotCodec.dump(graph))
     assert snapshot_contract(restored) == snapshot_contract(graph)

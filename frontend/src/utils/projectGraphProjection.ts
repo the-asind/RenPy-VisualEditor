@@ -142,6 +142,8 @@ const TOP_DOWN_BRANCH_HEADER_GAP = 0;
 const TOP_DOWN_BRANCH_COLUMN_GAP = 420;
 const TOP_DOWN_REJOIN_TURN_OFFSET = 24;
 const BRANCH_HEADER_HEIGHT = 40;
+const RELATION_LABEL_FRAME_COLUMN_GAP = 64;
+const RELATION_LABEL_FRAME_ROW_GAP = 48;
 const COMPACT_FRAME_MIN_SIZE: Record<string, GraphSize> = {
   projectFrame: { width: 560, height: 260 },
   labelFrame: { width: 520, height: 180 },
@@ -161,6 +163,12 @@ const overlaps = (a: LayoutNode, b: LayoutNode): boolean =>
   a.position.x + a.width > b.position.x &&
   a.position.y < b.position.y + b.height &&
   a.position.y + a.height > b.position.y;
+
+const overlapsWithGap = (a: LayoutNode, b: LayoutNode, gap: number): boolean =>
+  a.position.x < b.position.x + b.width + gap &&
+  a.position.x + a.width + gap > b.position.x &&
+  a.position.y < b.position.y + b.height + gap &&
+  a.position.y + a.height + gap > b.position.y;
 
 const scenarioKind = (node: LayoutNode): string =>
   node.type === 'scenarioNode' && typeof node.data?.scenarioType === 'string' ? node.data.scenarioType : '';
@@ -536,6 +544,124 @@ const expandParentsToFitChildren = (nodes: LayoutNode[], compactParentIds: Set<s
     if (!node.parentId || !byId.has(node.parentId)) {
       expand(node);
     }
+  }
+};
+
+const isMostlySingleColumn = (siblings: LayoutNode[]): boolean => {
+  if (siblings.length < 2) {
+    return false;
+  }
+
+  const centers = siblings.map(nodeCenterX);
+  const spread = Math.max(...centers) - Math.min(...centers);
+  const maxWidth = Math.max(...siblings.map((sibling) => sibling.width));
+  return spread <= Math.max(96, maxWidth * 0.35);
+};
+
+const applyRelationAwareLabelFrameLayout = (nodes: LayoutNode[], graph: ProjectGraphSnapshot): void => {
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const sourceLabelIdByScenarioId = new Map(graph.nodes.map((scenario) => [scenario.id, scenario.label_id]));
+  const labelIdByStartId = new Map(graph.label_starts.map((start) => [start.id, start.label_id]));
+  const relationTargetsBySourceLabel = new Map<string, Set<string>>();
+
+  for (const edge of graph.edges) {
+    const sourceLabelId = sourceLabelIdByScenarioId.get(edge.source_node_id);
+    const targetLabelId = edge.target_node_id ? labelIdByStartId.get(edge.target_node_id) : undefined;
+
+    if (!sourceLabelId || !targetLabelId || sourceLabelId === targetLabelId) {
+      continue;
+    }
+
+    const targets = relationTargetsBySourceLabel.get(sourceLabelId) ?? new Set<string>();
+    targets.add(targetLabelId);
+    relationTargetsBySourceLabel.set(sourceLabelId, targets);
+  }
+
+  if (relationTargetsBySourceLabel.size === 0) {
+    return;
+  }
+
+  const touchedParentIds = new Set<string>();
+  const childrenByParent = buildChildrenByParent(nodes);
+
+  for (const [parentId, siblings] of childrenByParent.entries()) {
+    const labelSiblings = siblings.filter((sibling) => sibling.type === 'labelFrame');
+    if (labelSiblings.length < 2 || !isMostlySingleColumn(labelSiblings)) {
+      continue;
+    }
+
+    const siblingIds = new Set(labelSiblings.map((sibling) => sibling.id));
+    const hasLocalRelation = labelSiblings.some((sibling) =>
+      [...(relationTargetsBySourceLabel.get(sibling.id) ?? [])].some((targetId) => siblingIds.has(targetId)),
+    );
+    if (!hasLocalRelation) {
+      continue;
+    }
+
+    const ordered = [...labelSiblings].sort(compareLayoutSiblings(byId.get(parentId)));
+    const placedIds = new Set<string>();
+    const placedNodes: LayoutNode[] = [];
+    const startX = Math.min(...ordered.map((sibling) => sibling.position.x));
+    const startY = Math.min(...ordered.map((sibling) => sibling.position.y));
+
+    const placeWithoutOverlap = (node: LayoutNode, x: number, y: number): void => {
+      node.position.x = x;
+      node.position.y = y;
+      while (placedNodes.some((placed) => overlapsWithGap(node, placed, RELATION_LABEL_FRAME_ROW_GAP))) {
+        node.position.y =
+          Math.max(
+            node.position.y + RELATION_LABEL_FRAME_ROW_GAP,
+            ...placedNodes
+              .filter((placed) => overlapsWithGap(node, placed, RELATION_LABEL_FRAME_ROW_GAP))
+              .map((placed) => placed.position.y + placed.height + RELATION_LABEL_FRAME_ROW_GAP),
+          );
+      }
+      placedIds.add(node.id);
+      placedNodes.push(node);
+    };
+
+    placeWithoutOverlap(ordered[0], startX, startY);
+    const queue = [ordered[0]];
+    for (let queueIndex = 0; queueIndex < queue.length; queueIndex += 1) {
+      const source = queue[queueIndex];
+      const targets = [...(relationTargetsBySourceLabel.get(source.id) ?? [])]
+        .map((targetId) => byId.get(targetId))
+        .filter((node): node is LayoutNode => !!node && siblingIds.has(node.id) && !placedIds.has(node.id))
+        .sort(compareLayoutSiblings(byId.get(parentId)));
+
+      for (const [targetIndex, target] of targets.entries()) {
+        placeWithoutOverlap(
+          target,
+          source.position.x + source.width + RELATION_LABEL_FRAME_COLUMN_GAP,
+          source.position.y + targetIndex * (target.height + RELATION_LABEL_FRAME_ROW_GAP),
+        );
+        queue.push(target);
+      }
+    }
+
+    let cursorY =
+      Math.max(
+        startY,
+        ...placedNodes.map((node) => node.position.y + node.height + RELATION_LABEL_FRAME_ROW_GAP),
+      );
+    for (const sibling of ordered) {
+      if (placedIds.has(sibling.id)) {
+        continue;
+      }
+      placeWithoutOverlap(sibling, startX, cursorY);
+      cursorY = sibling.position.y + sibling.height + RELATION_LABEL_FRAME_ROW_GAP;
+    }
+
+    if (parentId !== '__root__') {
+      const parent = byId.get(parentId);
+      if (parent) {
+        addParentAndAncestors(parent.id, byId, touchedParentIds);
+      }
+    }
+  }
+
+  if (touchedParentIds.size > 0) {
+    expandParentsToFitChildren(nodes, touchedParentIds);
   }
 };
 
@@ -1388,8 +1514,10 @@ export const projectGraphToReactFlow = (graph: ProjectGraphSnapshot): ProjectGra
   }
 
   applyConditionalStoryLayout(nodes, graph);
-  const normalizedNodes = normalizeLayout(nodes).map((node) => withFixedSize(node));
-  const derivedEdges = deriveFlowEdges(normalizedNodes, graph);
+  const normalizedNodes = normalizeLayout(nodes);
+  applyRelationAwareLabelFrameLayout(normalizedNodes, graph);
+  const projectedNodes = normalizedNodes.map((node) => withFixedSize(node));
+  const derivedEdges = deriveFlowEdges(projectedNodes, graph);
   const relationEdges: Edge[] = graph.edges.map((edge) => ({
     id: edge.id,
     source: edge.source_node_id,
@@ -1418,5 +1546,5 @@ export const projectGraphToReactFlow = (graph: ProjectGraphSnapshot): ProjectGra
     },
   }));
 
-  return { nodes: normalizedNodes, edges: [...derivedEdges, ...relationEdges] };
+  return { nodes: projectedNodes, edges: [...derivedEdges, ...relationEdges] };
 };

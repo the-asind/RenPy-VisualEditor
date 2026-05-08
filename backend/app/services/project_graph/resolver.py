@@ -83,7 +83,7 @@ class ProjectGraphResolver:
                 )
             )
 
-        diagnostics.extend(self._raw_block_diagnostics(graph.nodes))
+        diagnostics.extend(self._unsupported_control_block_diagnostics(graph.nodes))
         return replace(graph, edges=edges, diagnostics=diagnostics)
 
     def _duplicate_global_label_diagnostics(self, labels: list[LabelFrame]) -> list[GraphDiagnostic]:
@@ -115,25 +115,38 @@ class ProjectGraphResolver:
             )
         return diagnostics
 
-    def _raw_block_diagnostics(self, nodes: list[ScenarioNode]) -> list[GraphDiagnostic]:
+    def _unsupported_control_block_diagnostics(self, nodes: list[ScenarioNode]) -> list[GraphDiagnostic]:
         diagnostics: list[GraphDiagnostic] = []
         for node in nodes:
-            if node.type != "raw_block" or node.metadata.get("raw_block_type") != "while":
+            control_block_type: str | None = None
+            if node.type == "raw_block" and node.metadata.get("raw_block_type") == "while":
+                control_block_type = "while"
+            elif node.type == "action":
+                control_block_type = self._unsupported_control_block_type_in_action(node.content)
+
+            if control_block_type is None:
                 continue
 
             diagnostics.append(
                 self._diagnostic(
-                    code="unsupported_raw_block",
+                    code="unsupported_control_block",
                     severity="warning",
-                    message="Unsupported control-flow block is preserved as raw text for MVP.",
+                    message="Unsupported control-flow block is preserved inside an action block for MVP.",
                     file_id=node.file_id,
                     label_id=node.label_id,
                     node_id=node.id,
                     source_span=node.source_span,
-                    metadata={"raw_block_type": node.metadata.get("raw_block_type")},
+                    metadata={"control_block_type": control_block_type},
                 )
             )
         return diagnostics
+
+    @staticmethod
+    def _unsupported_control_block_type_in_action(content: str) -> str | None:
+        for line in content.splitlines():
+            if line.startswith("while "):
+                return "while"
+        return None
 
     def _diagnostic(
         self,

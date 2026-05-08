@@ -190,9 +190,9 @@ def test_project_graph_import_route_preserves_non_blocking_diagnostics(client, p
     assert len(diagnostics_by_code["duplicate_global_label"]) == 1
     assert len(diagnostics_by_code["unresolved_target"]) == 1
     assert len(diagnostics_by_code["dynamic_target"]) == 2
-    assert len(diagnostics_by_code["unsupported_raw_block"]) == 1
+    assert len(diagnostics_by_code["unsupported_control_block"]) == 1
     assert all(diagnostic["node_id"] for diagnostic in diagnostics_by_code["dynamic_target"])
-    assert all(diagnostic["node_id"] for diagnostic in diagnostics_by_code["unsupported_raw_block"])
+    assert all(diagnostic["node_id"] for diagnostic in diagnostics_by_code["unsupported_control_block"])
     assert not any(diagnostic["code"] in {"scene", "show", "play", "python"} for diagnostic in diagnostics)
 
 

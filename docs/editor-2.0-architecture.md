@@ -78,7 +78,7 @@ MVP 2.0 должен заменить модель `один файл = один
 
 `LabelStartNode` - видимая мастер-нода начала label внутри `LabelFrame`. Именно к ней ведут `jump` и `call`.
 
-`ScenarioNode` - нода содержимого: action-блок, меню, условие, переход, raw block и другие сценарные элементы.
+`ScenarioNode` - нода содержимого: action-блок, меню, условие, переход и другие сценарные элементы. `raw_block` может встречаться только как legacy snapshot compatibility, но новый импорт не должен создавать видимую raw-block canvas-ноду.
 
 `ActionBlock` - `ScenarioNode(type="action")`, который хранит непрерывный линейный кусок `.rpy` до ближайшего управляющего statement. В него входят dialogue/narration, comments, `scene/show/with/audio` и похожие statements, если они не создают ветвление или переход. Заголовок по умолчанию берется из первой непустой строки и может быть переименован пользователем через editor metadata.
 
@@ -215,7 +215,7 @@ type ScenarioNode = {
     | "comment"
     | "action"
     | "raw_action"
-    | "raw_block";
+    | "raw_block"; // legacy snapshots only; new imports prefer action
   content: string;
   order: string;
   sourceSpan: SourceSpan | null;
@@ -272,16 +272,16 @@ MVP parser должен быть качественным уже в первой
 4. `scene`, `show`, `hide`, `with`, audio, image/effect blocks, comments, dialogue/narration и похожие statements входят в `action` block, если они не создают ветку графа.
 5. Заголовок `action` block по умолчанию равен первой непустой строке блока; пользовательское название хранится только в metadata редактора и не экспортируется в `.rpy`.
 6. Строка вроде `show eileen happy at left with dissolve` никогда не является проблемой построения графа сама по себе.
-7. Если parser не понимает statement, но может безопасно сохранить его как текст, он создает raw/action node и предупреждение максимум informational/warning уровня.
+7. Если parser не понимает statement, но может безопасно сохранить его как текст, он включает его в `action` node и предупреждение максимум informational/warning уровня.
 8. Blocking diagnostic нужен только когда нельзя безопасно сохранить/экспортировать структуру или становится неоднозначной вложенность.
-9. Если сложный parent block невозможно разобрать безопасно, весь parent block сохраняется как `raw_block` с предупреждением.
+9. Если сложный parent block невозможно разобрать безопасно, весь parent block сохраняется текстом внутри `action` node с предупреждением. `raw_block` не создаётся новым импортом.
 
 Практическое правило canvas:
 
 1. Нода на холсте должна соответствовать авторскому смысловому блоку, а не физической строке файла.
-2. До `menu`, `if/elif/else`, `jump`, `call`, `return`, nested label или unsafe raw block parser накапливает текст в текущий `action` block.
+2. До `menu`, `if/elif/else`, `jump`, `call`, `return` или nested label parser накапливает текст в текущий `action` block.
 3. После управляющего statement следующий линейный участок становится новым `action` block.
-4. `dialogue`, `comment` и `raw_action` остаются допустимыми типами IR для совместимости старых snapshots/tests, но новый импорт должен предпочитать агрегированный `action` block.
+4. `dialogue`, `comment`, `raw_action` и `raw_block` остаются допустимыми типами IR для совместимости старых snapshots/tests, но новый импорт должен предпочитать агрегированный `action` block.
 
 MVP first-class subset:
 
@@ -301,7 +301,7 @@ MVP first-class subset:
 14. `call`.
 15. `return`.
 16. Action block.
-17. Raw block.
+17. Legacy raw block compatibility only; new import stores raw-like text inside action blocks.
 
 Тестовые fixtures должны быть общими для parser/resolver/export/layout. Они рассказывают историю про мышонка Ренпи и покрывают все инварианты применения `.rpy`, которые входят в MVP.
 
@@ -361,6 +361,7 @@ React Flow получает только проекцию `ProjectGraph`.
 26. Header-only drag должен вести себя как React Flow `expandParent` для вложенных frames/nodes: если пользователь тянет child к границе parent frame, parent frame в реальном времени расширяется в сторону движения. При движении влево/вверх parent coordinate system ребейзится так, чтобы остальные children не прыгали в absolute canvas space. Drag preview каждого кадра строится от pointer-down baseline + current pointer delta, а не от предыдущего preview state. Preview-size parent frame является производным от текущих child bounds + padding на каждом drag tick, а не накопительным размером предыдущего кадра: стенка не должна убегать вместе с held node, и frame должен сжиматься обратно при возвращении child внутрь.
 27. Single click и drag являются разными действиями. Body/content зоны остаются pan-поверхностью для drag, но single click по body/content должен выбирать/открывать ту же node/frame, что и single click по header. Реализация может делать это через pane-level hit-test, не включая object drag вне header.
 28. Простые labels без `if`/`menu` branch-layout должны строиться как центрированная вертикальная колонка: `LabelStartNode` стоит строго над первым scenario block по общей X-оси, чтобы первая `sequence` стрелка была прямой и не делала обходную ступеньку. Для старых сохранённых simple labels projection может нормализовать X-offsets линейных scenario nodes даже при `_manual_position`, потому что stale ручной drift не должен ломать базовую читаемость `START -> action -> jump/return`.
+29. Initial/import-like sibling `LabelFrame` layout может использовать resolved `jump/call` relation graph как эвристику 2D-размещения: если несколько sibling frames всё ещё стоят почти одной колонкой, target label frame связи кладётся вправо от source label frame с простым collision avoidance. Это не является глобальным математическим solver и не должно перепаковывать уже разнесённый пользователем 2D layout.
 
 Layout MVP:
 
@@ -542,7 +543,7 @@ Atomic actions:
 
 #### Master Item 0.3: Parser Coverage Matrix
 
-Black-box expectation: есть matrix Ren'Py statements с решением `first-class`, `action/raw`, `raw_block`, `blocking`.
+Black-box expectation: есть matrix Ren'Py statements с решением `first-class`, `action text`, `legacy raw compatibility`, `blocking`.
 
 Atomic actions:
 
@@ -634,16 +635,16 @@ Atomic actions:
 4. Реализовать menu parser mapping.
 5. Проверить tests.
 
-#### Master Item 1.6: Action And Raw Preservation
+#### Master Item 1.6: Aggregated Action Text Preservation
 
-Black-box expectation: `show`, `scene`, effects, python/action lines and unknown safe blocks становятся action/raw nodes и экспортируются без потери текста.
+Black-box expectation: `show`, `scene`, effects, python/action lines and unknown safe blocks становятся aggregated `action` text и экспортируются без потери текста.
 
 Atomic actions:
 
-1. Добавить action/raw examples в mouse fixture.
+1. Добавить aggregated action examples в mouse fixture.
 2. Написать parser test.
 3. Написать export preservation test stub or expectation.
-4. Реализовать action/raw mapper.
+4. Реализовать action text mapper.
 5. Проверить tests.
 
 #### Master Item 1.7: If/Elif/Else And Comments
@@ -655,7 +656,7 @@ Atomic actions:
 1. Reuse mouse fixture `if`/`elif`/`else` chain and label comments.
 2. Write black-box parser tests for branch nodes and branch child statements.
 3. Write black-box parser tests for comment nodes.
-4. Implement conditional/comment mapping without duplicating consumed lines in action/raw scan.
+4. Implement conditional/comment mapping without duplicating consumed lines in action text scan.
 5. Verify Sprint 1 tests.
 
 ### Sprint 2. Resolver And Diagnostics
@@ -696,14 +697,14 @@ Atomic actions:
 
 #### Master Item 2.3: Diagnostics MVP
 
-Black-box expectation: duplicate labels, unresolved targets and dynamic targets попадают в diagnostics/log, но безопасные raw/action nodes не блокируют graph.
+Black-box expectation: duplicate labels, unresolved targets and dynamic targets попадают в diagnostics/log, но безопасные action text nodes не блокируют graph.
 
 Atomic actions:
 
 1. Написать duplicate label test.
 2. Написать unresolved target test.
 3. Написать dynamic target test.
-4. Написать safe raw/action non-error test.
+4. Написать safe action text non-error test.
 5. Реализовать diagnostic builder.
 6. Проверить tests.
 
@@ -715,7 +716,7 @@ Definition of Done:
 
 - Import -> export -> import сохраняет семантику MVP subset.
 - Multi-file destinations сохраняются.
-- Raw/action content не теряется.
+- Action text content не теряется.
 - Editor metadata не попадает в `.rpy`.
 
 #### Master Item 3.1: Single-file Roundtrip
@@ -956,7 +957,7 @@ Black-box expectation: after import, non-blocking diagnostics are visible in Pro
 
 Action tests:
 
-1. Import diagnostic fixture with duplicate label, unresolved target, dynamic target, and unsupported raw block.
+1. Import diagnostic fixture with duplicate label, unresolved target, dynamic target, and unsupported control block preserved inside action text.
 2. Assert non-blocking diagnostics appear in Problems panel with searchable/focusable node references where available.
 3. Assert safe `scene/show/with/audio/python/raw` preservation does not create blocking errors.
 
@@ -1072,7 +1073,7 @@ Definition of Done:
 
 #### MVP Action 10.1: Typed Scenario Node Editor
 
-Black-box expectation: user can edit dialogue, comment, jump, call, return, raw_action, raw_block, menu prompt, and menu choice content through one clear editor surface.
+Black-box expectation: user can edit action text, jump, call, return, menu prompt, and menu choice content through one clear editor surface. Legacy raw nodes, if loaded from old snapshots, should be treated as action-like text.
 
 Action tests:
 
@@ -1236,8 +1237,8 @@ Integration tests:
 3. Edges only between nodes.
 4. `LabelFrame` is a frame/container, not runtime endpoint.
 5. ID determinism across independent imports is not MVP requirement. Stable persisted IDs after import are required.
-6. Parser MVP must be high quality: safe unknown/action statements become action/raw nodes, not graph errors.
-7. Presentation/effect statements that do not create narrative branches are action/raw nodes.
+6. Parser MVP must be high quality: safe unknown/action statements become aggregated action text, not graph errors.
+7. Presentation/effect statements that do not create narrative branches are aggregated action text.
 8. Test fixtures must tell a story about a mouse named RenPy and cover MVP invariants.
 9. Old MVP 1.0 README roadmap replaced with pointers to MVP 2.0 artifacts.
 10. Broad code deletion requires inventory first.

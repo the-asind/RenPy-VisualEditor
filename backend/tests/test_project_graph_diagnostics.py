@@ -61,22 +61,22 @@ def test_dynamic_jump_creates_non_blocking_diagnostic_without_edge():
     assert source.id not in {edge.source_node_id for edge in graph.edges}
 
 
-def test_unsupported_while_block_is_preserved_as_raw_block_with_warning():
+def test_unsupported_while_block_is_preserved_inside_action_with_warning():
     graph = resolve_diagnostics_graph()
-    raw_block = next(node for node in graph.nodes if node.type == "raw_block" and node.content.startswith("while "))
-    diagnostic = diagnostics_by_code(graph)["unsupported_raw_block"]
+    action = next(node for node in graph.nodes if node.type == "action" and "while crumb_count < 3:" in node.content)
+    diagnostic = diagnostics_by_code(graph)["unsupported_control_block"]
 
-    assert "Loop crumbs are preserved as a raw block for MVP." in raw_block.content
+    assert "Loop crumbs are preserved as a raw block for MVP." in action.content
     assert diagnostic.severity == "warning"
     assert diagnostic.blocking is False
-    assert diagnostic.node_id == raw_block.id
-    assert diagnostic.metadata["raw_block_type"] == "while"
+    assert diagnostic.node_id == action.id
+    assert diagnostic.metadata["control_block_type"] == "while"
 
 
 def test_safe_raw_action_nodes_do_not_create_diagnostics():
     graph = resolve_diagnostics_graph()
     diagnostic_node_ids = {diagnostic.node_id for diagnostic in graph.diagnostics}
-    safe_nodes = [node for node in graph.nodes if node.type == "action"]
+    safe_nodes = [node for node in graph.nodes if node.type == "action" and "while " not in node.content]
 
     assert safe_nodes
     assert all(node.id not in diagnostic_node_ids for node in safe_nodes)

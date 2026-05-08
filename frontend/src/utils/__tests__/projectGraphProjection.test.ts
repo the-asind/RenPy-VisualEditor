@@ -1384,7 +1384,22 @@ describe('projectGraphToReactFlow static projection', () => {
           visual: { position: { x: 96, y: 136 }, size: { width: 320, height: 88 } },
         },
       ],
-      edges: [],
+      edges: [
+        {
+          id: 'edge-jump-cupboard',
+          source_node_id: 'node-jump-cupboard',
+          target_node_id: 'start-node-cupboard',
+          kind: 'jump',
+          metadata: { target: '.cupboard' },
+        },
+        {
+          id: 'edge-jump-duck',
+          source_node_id: 'node-jump-duck',
+          target_node_id: 'start-node-ask-duck',
+          kind: 'jump',
+          metadata: { target: 'ask_duck' },
+        },
+      ],
       diagnostics: [],
       source_index: { files: {} },
     };
@@ -1431,10 +1446,11 @@ describe('projectGraphToReactFlow static projection', () => {
     expect(cupboardChoice.position.x + Number(cupboardChoice.width) / 2).toBeLessThan(menu.position.x + Number(menu.width) / 2);
     expect(duckChoice.position.x + Number(duckChoice.width) / 2).toBeGreaterThan(menu.position.x + Number(menu.width) / 2);
     expect(rectsOverlap(nodeRect(startLabel), nodeRect(askDuckLabel))).toBe(false);
-    expect(askDuckLabel.position.y).toBeGreaterThanOrEqual(startLabel.position.y + Number(startLabel.height) + 24);
+    expect(askDuckLabel.position.x).toBeGreaterThanOrEqual(startLabel.position.x + Number(startLabel.width) + 48);
+    expect(Math.abs(askDuckLabel.position.y - startLabel.position.y)).toBeLessThanOrEqual(2);
     expect(Number(startLabel.width)).toBeLessThanOrEqual(980);
     expect(Number(startLabel.height)).toBeLessThanOrEqual(1700);
-    expect(Number(file.width)).toBeLessThanOrEqual(1120);
+    expect(Number(file.width)).toBeLessThanOrEqual(1700);
     expect(Number(file.height)).toBeLessThanOrEqual(2100);
   });
 
