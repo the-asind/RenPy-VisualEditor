@@ -836,6 +836,7 @@ Layout improvement можно закрыть только если выполн�
 3. Если child уходит за left/top padding, parent frame ребейзится, а его direct children получают обратный local shift.
 4. Pointer-up сохраняет все измененные positions grouped CRDT operation.
 5. Сценарные siblings, сдвинутые только из-за rebase, не получают `_manual_position`; manual semantics получает только реально dragged group.
+6. Follow-up correction: preview bounds are recalculated from current child bounds on every drag tick. A previously expanded parent frame can shrink back when the held child moves inward, and right/bottom expansion does not add any extra movement to the held child.
 
 ### Проверка Закрытия
 
@@ -843,6 +844,7 @@ Layout improvement можно закрыть только если выполн�
 2. Projection test: dragged nested frame near left/top edge moves parent wall while another child keeps the same absolute canvas position.
 3. Collaboration test: grouped drag persistence preserves all changed positions and marks only dragged scenario nodes as manual.
 4. Full frontend tests and production build pass.
+5. Regression test: stale oversized parent frame shrinks from current children without moving the dragged child away from its pointer-controlled local position.
 
 ### Остаток
 

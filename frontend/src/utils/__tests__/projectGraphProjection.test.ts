@@ -123,11 +123,32 @@ describe('projectGraphToReactFlow static projection', () => {
     const expanded = expandAncestorFramesForMovedNodes(nodes, new Set(['local-label']));
     const file = expanded.find((node) => node.id === 'file')!;
     const label = expanded.find((node) => node.id === 'label')!;
+    const localLabel = expanded.find((node) => node.id === 'local-label')!;
 
+    expect(localLabel.position).toEqual({ x: 360, y: 260 });
     expect(label.width).toBeGreaterThanOrEqual(360 + 240 + 32);
     expect(label.height).toBeGreaterThanOrEqual(260 + 180 + 32);
     expect(file.width).toBeGreaterThanOrEqual(label.position.x + Number(label.width) + 32);
     expect(file.height).toBeGreaterThanOrEqual(label.position.y + Number(label.height) + 32);
+  });
+
+  it('derives live parent frame size from current children instead of retaining stale drag expansion', () => {
+    const nodes = [
+      makeCanvasNode('file', 'projectFrame', { x: 0, y: 0 }, { width: 1200, height: 760 }),
+      makeCanvasNode('label', 'labelFrame', { x: 48, y: 48 }, { width: 1040, height: 620 }, 'file'),
+      makeCanvasNode('start', 'labelStart', { x: 32, y: 72 }, { width: 260, height: 72 }, 'label'),
+      makeCanvasNode('action', 'scenarioNode', { x: 96, y: 220 }, { width: 320, height: 88 }, 'label'),
+    ];
+
+    const expanded = expandAncestorFramesForMovedNodes(nodes, new Set(['action']));
+    const label = expanded.find((node) => node.id === 'label')!;
+    const action = expanded.find((node) => node.id === 'action')!;
+
+    expect(action.position).toEqual({ x: 96, y: 220 });
+    expect(label.width).toBeLessThan(1040);
+    expect(label.height).toBeLessThan(620);
+    expect(label.width).toBeGreaterThanOrEqual(action.position.x + Number(action.width) + 32);
+    expect(label.height).toBeGreaterThanOrEqual(action.position.y + Number(action.height) + 32);
   });
 
   it('rebases parent frames when a dragged child pushes the left or top wall', () => {

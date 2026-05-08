@@ -358,7 +358,7 @@ React Flow получает только проекцию `ProjectGraph`.
 23. Attached branch headers (`else/elif`) и первый блок их ветки должны иметь общую drag-группу: если пользователь тянет child block под `else`, шапка `else` движется вместе с ним.
 24. Вложенные `LabelFrame` внутри branch-managed label располагаются после активного story-flow area родительского label. Local/nested label frame не должен оставаться сбоку от branch tree так, чтобы его внутренние линии пересекали меню, if/else или rejoin родительской истории.
 25. `LabelFrame` header является зарезервированной зоной. Первый child любого label, включая `LabelStartNode` в простых small labels, должен начинаться ниже header zone и не перекрывать `LABEL` title/name.
-26. Header-only drag должен вести себя как React Flow `expandParent` для вложенных frames/nodes: если пользователь тянет child к границе parent frame, parent frame в реальном времени расширяется в сторону движения. При движении влево/вверх parent coordinate system ребейзится так, чтобы остальные children не прыгали в absolute canvas space.
+26. Header-only drag должен вести себя как React Flow `expandParent` для вложенных frames/nodes: если пользователь тянет child к границе parent frame, parent frame в реальном времени расширяется в сторону движения. При движении влево/вверх parent coordinate system ребейзится так, чтобы остальные children не прыгали в absolute canvas space. Preview-size parent frame является производным от текущих child bounds + padding на каждом drag tick, а не накопительным размером предыдущего кадра: стенка не должна убегать вместе с held node, и frame должен сжиматься обратно при возвращении child внутрь.
 
 Layout MVP:
 

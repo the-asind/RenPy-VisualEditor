@@ -43,6 +43,10 @@ const DRAG_FRAME_X_PADDING = 32;
 const DRAG_FILE_FRAME_TOP_PADDING = 48;
 const DRAG_LABEL_FRAME_TOP_PADDING = 72;
 const DRAG_DEFAULT_TOP_PADDING = 32;
+const DRAG_FRAME_MIN_SIZE_BY_TYPE: Record<string, { width: number; height: number }> = {
+  projectFrame: { width: 560, height: 260 },
+  labelFrame: { width: 520, height: 180 },
+};
 
 const cloneNodeForDrag = (node: Node): Node => ({
   ...node,
@@ -74,6 +78,12 @@ const dragPaddingForParent = (parent: Node): { left: number; top: number; right:
   right: DRAG_FRAME_X_PADDING,
   bottom: DRAG_FRAME_X_PADDING,
 });
+
+const dragFrameMinSize = (parent: Node): { width: number; height: number } =>
+  DRAG_FRAME_MIN_SIZE_BY_TYPE[parent.type ?? ''] ?? {
+    width: numericSize(parent.width, numericSize(parent.style?.width, 0)),
+    height: numericSize(parent.height, numericSize(parent.style?.height, 0)),
+  };
 
 const nodeDepth = (node: Node, byId: Map<string, Node>): number => {
   let depth = 0;
@@ -140,8 +150,7 @@ export const expandAncestorFramesForMovedNodes = (nodes: Node[], movedNodeIds: S
     const minChildY = Math.min(...children.map((child) => child.position.y));
     const shiftRight = Math.max(0, padding.left - minChildX);
     const shiftDown = Math.max(0, padding.top - minChildY);
-    const currentWidth = numericSize(parent.width, numericSize(parent.style?.width, 0));
-    const currentHeight = numericSize(parent.height, numericSize(parent.style?.height, 0));
+    const minSize = dragFrameMinSize(parent);
 
     if (shiftRight > 0) {
       parent.position.x -= shiftRight;
@@ -158,11 +167,11 @@ export const expandAncestorFramesForMovedNodes = (nodes: Node[], movedNodeIds: S
     }
 
     const requiredWidth = Math.max(
-      currentWidth + shiftRight,
+      minSize.width,
       ...children.map((child) => child.position.x + numericSize(child.width, 0) + padding.right),
     );
     const requiredHeight = Math.max(
-      currentHeight + shiftDown,
+      minSize.height,
       ...children.map((child) => child.position.y + numericSize(child.height, 0) + padding.bottom),
     );
 

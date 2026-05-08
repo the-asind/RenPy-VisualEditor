@@ -8,6 +8,8 @@ This file is the short project memory for RenPy Visual Editor 2.0. Keep it curre
 
 Fixed a canvas drag usability gap where nested nodes and nested `LabelFrame`s could be dragged toward a parent frame edge without the parent frame expanding in real time.
 
+Follow-up correction: live expansion must be reversible while dragging. Parent preview size is derived from current child bounds plus padding on every drag tick, not accumulated from the previous preview size. This prevents the frame wall from running away together with the held node and prevents stale oversized frames after moving the node back inward.
+
 Files:
 
 1. `frontend/src/components/projectGraph/ProjectGraphCanvas.tsx`
@@ -26,14 +28,16 @@ Result:
 3. Dragging left/up rebases the parent frame position and shifts its direct children by the opposite local offset, so existing siblings keep their absolute canvas location while the wall moves.
 4. Pointer-up persists all changed positions as one grouped CRDT operation.
 5. Only directly dragged nodes/frames are marked manual. Siblings moved by coordinate rebase keep their positions without receiving scenario `_manual_position`, so branch-managed layout is not accidentally disabled.
+6. Parent frame preview bounds now shrink back when the dragged child moves back inward, while the dragged child keeps the pointer-controlled position and does not receive extra expansion drift.
 
 Checks:
 
 1. Added projection tests for right/bottom expansion and left/top rebase with stable absolute sibling positions.
 2. Added collaboration test for grouped position persistence without marking every rebased scenario as manual.
-3. `npm test -- --run src/utils/__tests__/projectGraphProjection.test.ts src/utils/__tests__/projectGraphCollaboration.test.ts` passed with 26 tests.
-4. `npm test -- --run` passed with 39 frontend tests.
+3. `npm test -- --run src/utils/__tests__/projectGraphProjection.test.ts src/utils/__tests__/projectGraphCollaboration.test.ts` passed with 26 tests before the follow-up correction.
+4. `npm test -- --run` passed with 40 frontend tests after the follow-up correction.
 5. `npm run build` passed with the known non-blocking Vite/env.js, Browserslist, and large Loro chunk warnings.
+6. Added regression coverage for stale expanded frame bounds shrinking back from current children without moving the dragged node away from its pointer-controlled position.
 
 ### Small Label Frame Header Padding
 
