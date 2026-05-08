@@ -20,6 +20,12 @@ type ProjectGraphEntityKind = 'file' | 'label' | 'labelStart' | 'scenario';
 
 export type ProjectGraphCrdtDoc = LoroDoc;
 
+export interface ProjectGraphEntityPositionChange {
+  entityId: string;
+  position: GraphPoint;
+  manual?: boolean;
+}
+
 type ProjectGraphTreeJsonNode = {
   id: TreeID;
   parent: TreeID | null;
@@ -266,17 +272,27 @@ export const replaceProjectGraphDiagnostics = (
   doc.commit({ origin: 'project-graph-diagnostics', message: 'Replace ProjectGraph diagnostics' });
 };
 
-export const moveProjectGraphEntity = (doc: LoroDoc, entityId: string, position: GraphPoint): void => {
-  const node = getEntityNode(doc, entityId);
-  node.data.set('position_x', position.x);
-  node.data.set('position_y', position.y);
-  if (node.data.get('kind') === 'scenario') {
-    node.data.set('metadata', {
-      ...recordOrEmpty(node.data.get('metadata')),
-      _manual_position: true,
-    });
+export const moveProjectGraphEntities = (doc: LoroDoc, changes: ProjectGraphEntityPositionChange[]): void => {
+  if (changes.length === 0) {
+    return;
   }
-  doc.commit({ origin: 'project-graph-position', message: `Move ${entityId}` });
+
+  for (const change of changes) {
+    const node = getEntityNode(doc, change.entityId);
+    node.data.set('position_x', change.position.x);
+    node.data.set('position_y', change.position.y);
+    if (change.manual && node.data.get('kind') === 'scenario') {
+      node.data.set('metadata', {
+        ...recordOrEmpty(node.data.get('metadata')),
+        _manual_position: true,
+      });
+    }
+  }
+  doc.commit({ origin: 'project-graph-position', message: `Move ${changes.length} ProjectGraph entities` });
+};
+
+export const moveProjectGraphEntity = (doc: LoroDoc, entityId: string, position: GraphPoint): void => {
+  moveProjectGraphEntities(doc, [{ entityId, position, manual: true }]);
 };
 
 const updateScenarioDescendantScope = (node: LoroTreeNode, fileId: string, labelId: string): void => {

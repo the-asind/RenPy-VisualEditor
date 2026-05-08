@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildNearTargetStepPath,
+  expandAncestorFramesForMovedNodes,
   projectGraphNodeTypes,
 } from '../../components/projectGraph/ProjectGraphCanvas';
 import {
@@ -40,6 +41,23 @@ const projectionEdgesByKind = (projection: ReturnType<typeof projectGraphToReact
   projection.edges.filter((edge) => edge.data?.kind === kind);
 
 const labelFrameContentTop = 72;
+
+const makeCanvasNode = (
+  id: string,
+  type: string,
+  position: { x: number; y: number },
+  size: { width: number; height: number },
+  parentId?: string,
+) => ({
+  id,
+  type,
+  position,
+  parentId,
+  width: size.width,
+  height: size.height,
+  data: {},
+  style: size,
+});
 
 const graph: ProjectGraphSnapshot = {
   project_id: 'projection-project',
@@ -94,6 +112,47 @@ const graph: ProjectGraphSnapshot = {
 };
 
 describe('projectGraphToReactFlow static projection', () => {
+  it('expands ancestor frames in the direction of a dragged nested item', () => {
+    const nodes = [
+      makeCanvasNode('file', 'projectFrame', { x: 0, y: 0 }, { width: 600, height: 420 }),
+      makeCanvasNode('label', 'labelFrame', { x: 48, y: 48 }, { width: 420, height: 300 }, 'file'),
+      makeCanvasNode('start', 'labelStart', { x: 32, y: 72 }, { width: 260, height: 72 }, 'label'),
+      makeCanvasNode('local-label', 'labelFrame', { x: 360, y: 260 }, { width: 240, height: 180 }, 'label'),
+    ];
+
+    const expanded = expandAncestorFramesForMovedNodes(nodes, new Set(['local-label']));
+    const file = expanded.find((node) => node.id === 'file')!;
+    const label = expanded.find((node) => node.id === 'label')!;
+
+    expect(label.width).toBeGreaterThanOrEqual(360 + 240 + 32);
+    expect(label.height).toBeGreaterThanOrEqual(260 + 180 + 32);
+    expect(file.width).toBeGreaterThanOrEqual(label.position.x + Number(label.width) + 32);
+    expect(file.height).toBeGreaterThanOrEqual(label.position.y + Number(label.height) + 32);
+  });
+
+  it('rebases parent frames when a dragged child pushes the left or top wall', () => {
+    const nodes = [
+      makeCanvasNode('file', 'projectFrame', { x: 0, y: 0 }, { width: 800, height: 600 }),
+      makeCanvasNode('label', 'labelFrame', { x: 120, y: 120 }, { width: 520, height: 380 }, 'file'),
+      makeCanvasNode('start', 'labelStart', { x: 64, y: 96 }, { width: 260, height: 72 }, 'label'),
+      makeCanvasNode('local-label', 'labelFrame', { x: -80, y: 24 }, { width: 240, height: 180 }, 'label'),
+    ];
+    const startBefore = { x: 120 + 64, y: 120 + 96 };
+
+    const expanded = expandAncestorFramesForMovedNodes(nodes, new Set(['local-label']));
+    const file = expanded.find((node) => node.id === 'file')!;
+    const label = expanded.find((node) => node.id === 'label')!;
+    const start = expanded.find((node) => node.id === 'start')!;
+    const localLabel = expanded.find((node) => node.id === 'local-label')!;
+
+    expect(label.position.x).toBeLessThan(120);
+    expect(label.position.y).toBeLessThan(120);
+    expect(localLabel.position.x).toBe(32);
+    expect(localLabel.position.y).toBe(labelFrameContentTop);
+    expect(file.position.x + label.position.x + start.position.x).toBe(startBefore.x);
+    expect(file.position.y + label.position.y + start.position.y).toBe(startBefore.y);
+  });
+
   it('projects file frames, label frames, label starts, and scenario nodes', () => {
     const projection = projectGraphToReactFlow(graph);
 

@@ -4,6 +4,37 @@ This file is the short project memory for RenPy Visual Editor 2.0. Keep it curre
 
 ## 2026-05-08
 
+### Live Parent Frame Expansion During Header Drag
+
+Fixed a canvas drag usability gap where nested nodes and nested `LabelFrame`s could be dragged toward a parent frame edge without the parent frame expanding in real time.
+
+Files:
+
+1. `frontend/src/components/projectGraph/ProjectGraphCanvas.tsx`
+2. `frontend/src/components/EditorPage.tsx`
+3. `frontend/src/utils/projectGraphCrdt.ts`
+4. `frontend/src/utils/projectGraphCollaboration.ts`
+5. `frontend/src/utils/__tests__/projectGraphProjection.test.ts`
+6. `frontend/src/utils/__tests__/projectGraphCollaboration.test.ts`
+7. `docs/editor-2.0-architecture.md`
+8. `docs/canvas-layout-usability-audit.md`
+
+Result:
+
+1. Header-only drag now expands ancestor `FileFrame`/`LabelFrame` bounds while the pointer moves, matching the expected React Flow parent-child `expandParent` behavior in the custom drag layer.
+2. Dragging right/down increases parent width/height.
+3. Dragging left/up rebases the parent frame position and shifts its direct children by the opposite local offset, so existing siblings keep their absolute canvas location while the wall moves.
+4. Pointer-up persists all changed positions as one grouped CRDT operation.
+5. Only directly dragged nodes/frames are marked manual. Siblings moved by coordinate rebase keep their positions without receiving scenario `_manual_position`, so branch-managed layout is not accidentally disabled.
+
+Checks:
+
+1. Added projection tests for right/bottom expansion and left/top rebase with stable absolute sibling positions.
+2. Added collaboration test for grouped position persistence without marking every rebased scenario as manual.
+3. `npm test -- --run src/utils/__tests__/projectGraphProjection.test.ts src/utils/__tests__/projectGraphCollaboration.test.ts` passed with 26 tests.
+4. `npm test -- --run` passed with 39 frontend tests.
+5. `npm run build` passed with the known non-blocking Vite/env.js, Browserslist, and large Loro chunk warnings.
+
 ### Small Label Frame Header Padding
 
 Fixed a canvas readability regression where small/simple `LabelFrame` nodes placed their `LabelStartNode` inside the frame header zone, visually overlapping the `LABEL` title and the label name.

@@ -16,7 +16,7 @@ import {
   type ProjectGraphSocketHandle,
 } from '../utils/projectGraphCollaboration';
 import type { GraphPoint, ProjectGraphSnapshot } from '../utils/projectGraphProjection';
-import { ProjectGraphCanvas } from './projectGraph/ProjectGraphCanvas';
+import { ProjectGraphCanvas, type ProjectGraphEntityPositionChange } from './projectGraph/ProjectGraphCanvas';
 
 export const getEditorProjectId = (search: string): string | null => {
   const projectId = new URLSearchParams(search).get('project');
@@ -119,6 +119,10 @@ const EditorPage = () => {
 
   const handleEntityPositionChange = useCallback((entityId: string, position: GraphPoint) => {
     sessionRef.current?.moveEntity(entityId, position);
+  }, []);
+
+  const handleEntityPositionsChange = useCallback((changes: ProjectGraphEntityPositionChange[]) => {
+    sessionRef.current?.moveEntities(changes);
   }, []);
 
   const handleExportProjectGraph = useCallback(() => {
@@ -224,6 +228,7 @@ const EditorPage = () => {
         graph={graph}
         saveStatus={saveStatus === 'idle' ? null : saveStatus === 'saving' ? 'Saving...' : saveStatus === 'saved' ? 'Saved' : 'Save failed'}
         onEntityPositionChange={handleEntityPositionChange}
+        onEntityPositionsChange={handleEntityPositionsChange}
         onExportProjectGraph={handleExportProjectGraph}
         onScenarioContentChange={handleScenarioContentChange}
         onScenarioMetadataChange={handleScenarioMetadataChange}

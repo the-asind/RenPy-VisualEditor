@@ -358,6 +358,7 @@ React Flow получает только проекцию `ProjectGraph`.
 23. Attached branch headers (`else/elif`) и первый блок их ветки должны иметь общую drag-группу: если пользователь тянет child block под `else`, шапка `else` движется вместе с ним.
 24. Вложенные `LabelFrame` внутри branch-managed label располагаются после активного story-flow area родительского label. Local/nested label frame не должен оставаться сбоку от branch tree так, чтобы его внутренние линии пересекали меню, if/else или rejoin родительской истории.
 25. `LabelFrame` header является зарезервированной зоной. Первый child любого label, включая `LabelStartNode` в простых small labels, должен начинаться ниже header zone и не перекрывать `LABEL` title/name.
+26. Header-only drag должен вести себя как React Flow `expandParent` для вложенных frames/nodes: если пользователь тянет child к границе parent frame, parent frame в реальном времени расширяется в сторону движения. При движении влево/вверх parent coordinate system ребейзится так, чтобы остальные children не прыгали в absolute canvas space.
 
 Layout MVP:
 
@@ -376,7 +377,8 @@ Layout MVP:
 13. `menu_choice` lanes используют тот же top-down branch principle: `menu` по центру, choices расходятся по горизонтальным lanes, choice content идет вниз от конкретного choice.
 14. В branch-managed label порядок normalize такой: сначала применить auto branch layout и отделить nested label frames ниже story-flow, затем учитывать manual-position guard для простых не-branch groups. `_manual_position` не должен отменять structural readability родительского branch tree.
 15. Normalize должен сохранять минимальный top padding для children внутри `LabelFrame`, даже если label не содержит `if/menu` и не проходит branch auto-layout.
-16. Перед implementation проверить официальные React Flow docs по sub-flows/layouting/custom edges/handles/drag handles. Если Dagre конфликтует с nested frames и внешними edges, перейти к ELK или гибридному layout.
+16. Во время grouped drag можно сохранять несколько position changes одним CRDT operation. Только реально захваченные nodes/frames получают manual drag semantics; siblings, сдвинутые из-за parent rebase, сохраняют position без `_manual_position`, чтобы не разрушать branch auto-layout.
+17. Перед implementation проверить официальные React Flow docs по sub-flows/layouting/custom edges/handles/drag handles. Если Dagre конфликтует с nested frames и внешними edges, перейти к ELK или гибридному layout.
 
 ## 11. Loro CRDT Strategy
 

@@ -817,3 +817,33 @@ Layout improvement можно закрыть только если выполн�
 Остаточные проблемы:
 
 1. Header sizes are still hard-coded in projection/CSS. If visual density changes, extract these layout constants into a shared measured design token instead of duplicating assumptions.
+
+## 21. Live Parent Frame Expansion During Drag
+
+Статус: закрывает UX-проблему, где вложенную ноду или локальный `LabelFrame` можно было тянуть к краю parent frame, но сам parent визуально не освобождал место до следующего projection pass.
+
+### Наблюдение
+
+1. Пользователь ожидает поведение как у вложенных canvas objects: если child ведут к стенке parent frame, стенка должна отодвигаться сразу.
+2. Для движения вправо/вниз достаточно увеличить bounds parent frame.
+3. Для движения влево/вверх нужно сдвинуть origin parent frame и компенсировать local positions children, иначе остальные children визуально прыгнут.
+4. Native React Flow `expandParent` не используется напрямую, потому что текущий canvas использует custom header-only drag, чтобы body ноды оставался pan-поверхностью.
+
+### Изменение
+
+1. Добавлен custom equivalent of React Flow `expandParent` в header-drag layer.
+2. Во время pointermove пересчитываются ancestor `FileFrame`/`LabelFrame` bounds для dragged group.
+3. Если child уходит за left/top padding, parent frame ребейзится, а его direct children получают обратный local shift.
+4. Pointer-up сохраняет все измененные positions grouped CRDT operation.
+5. Сценарные siblings, сдвинутые только из-за rebase, не получают `_manual_position`; manual semantics получает только реально dragged group.
+
+### Проверка Закрытия
+
+1. Projection test: dragged nested frame near right/bottom edge expands parent and outer ancestor frame.
+2. Projection test: dragged nested frame near left/top edge moves parent wall while another child keeps the same absolute canvas position.
+3. Collaboration test: grouped drag persistence preserves all changed positions and marks only dragged scenario nodes as manual.
+4. Full frontend tests and production build pass.
+
+### Остаток
+
+1. This pass preserves positions and live frame bounds, but it does not introduce collision avoidance during arbitrary manual drag. A separate explicit relayout command is still the better product answer for user-created layout knots.

@@ -39,6 +39,145 @@ const getDragGroupIds = (node: Node): string[] =>
     ? (node.data.dragGroupIds as string[])
     : [node.id];
 
+const DRAG_FRAME_X_PADDING = 32;
+const DRAG_FILE_FRAME_TOP_PADDING = 48;
+const DRAG_LABEL_FRAME_TOP_PADDING = 72;
+const DRAG_DEFAULT_TOP_PADDING = 32;
+
+const cloneNodeForDrag = (node: Node): Node => ({
+  ...node,
+  position: { ...node.position },
+  style: node.style ? { ...node.style } : node.style,
+});
+
+const numericSize = (value: unknown, fallback: number): number =>
+  typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+
+const setNodeVisualSize = (node: Node, width: number, height: number): void => {
+  node.width = width;
+  node.height = height;
+  node.style = {
+    ...(node.style ?? {}),
+    width,
+    height,
+  };
+};
+
+const dragPaddingForParent = (parent: Node): { left: number; top: number; right: number; bottom: number } => ({
+  left: parent.type === 'projectFrame' ? 48 : DRAG_FRAME_X_PADDING,
+  top:
+    parent.type === 'labelFrame'
+      ? DRAG_LABEL_FRAME_TOP_PADDING
+      : parent.type === 'projectFrame'
+        ? DRAG_FILE_FRAME_TOP_PADDING
+        : DRAG_DEFAULT_TOP_PADDING,
+  right: DRAG_FRAME_X_PADDING,
+  bottom: DRAG_FRAME_X_PADDING,
+});
+
+const nodeDepth = (node: Node, byId: Map<string, Node>): number => {
+  let depth = 0;
+  let current = node.parentId ? byId.get(node.parentId) : undefined;
+  const visited = new Set<string>();
+
+  while (current && !visited.has(current.id)) {
+    visited.add(current.id);
+    depth += 1;
+    current = current.parentId ? byId.get(current.parentId) : undefined;
+  }
+
+  return depth;
+};
+
+const isExpandableFrameNode = (node: Node | undefined): node is Node =>
+  node?.type === 'projectFrame' || node?.type === 'labelFrame';
+
+export const expandAncestorFramesForMovedNodes = (nodes: Node[], movedNodeIds: Set<string>): Node[] => {
+  if (movedNodeIds.size === 0) {
+    return nodes;
+  }
+
+  const nextNodes = nodes.map(cloneNodeForDrag);
+  const byId = new Map(nextNodes.map((node) => [node.id, node]));
+  const childrenByParent = new Map<string, Node[]>();
+
+  for (const node of nextNodes) {
+    if (!node.parentId) {
+      continue;
+    }
+    const children = childrenByParent.get(node.parentId) ?? [];
+    children.push(node);
+    childrenByParent.set(node.parentId, children);
+  }
+
+  const parentIds = new Set<string>();
+  for (const movedNodeId of movedNodeIds) {
+    let current = byId.get(movedNodeId);
+    const visited = new Set<string>();
+    while (current?.parentId && !visited.has(current.id)) {
+      visited.add(current.id);
+      const parent = byId.get(current.parentId);
+      if (isExpandableFrameNode(parent)) {
+        parentIds.add(parent.id);
+      }
+      current = parent;
+    }
+  }
+
+  const parents = [...parentIds]
+    .map((parentId) => byId.get(parentId))
+    .filter(isExpandableFrameNode)
+    .sort((left, right) => nodeDepth(right, byId) - nodeDepth(left, byId));
+
+  for (const parent of parents) {
+    const children = childrenByParent.get(parent.id) ?? [];
+    if (children.length === 0) {
+      continue;
+    }
+
+    const padding = dragPaddingForParent(parent);
+    const minChildX = Math.min(...children.map((child) => child.position.x));
+    const minChildY = Math.min(...children.map((child) => child.position.y));
+    const shiftRight = Math.max(0, padding.left - minChildX);
+    const shiftDown = Math.max(0, padding.top - minChildY);
+    const currentWidth = numericSize(parent.width, numericSize(parent.style?.width, 0));
+    const currentHeight = numericSize(parent.height, numericSize(parent.style?.height, 0));
+
+    if (shiftRight > 0) {
+      parent.position.x -= shiftRight;
+      for (const child of children) {
+        child.position.x += shiftRight;
+      }
+    }
+
+    if (shiftDown > 0) {
+      parent.position.y -= shiftDown;
+      for (const child of children) {
+        child.position.y += shiftDown;
+      }
+    }
+
+    const requiredWidth = Math.max(
+      currentWidth + shiftRight,
+      ...children.map((child) => child.position.x + numericSize(child.width, 0) + padding.right),
+    );
+    const requiredHeight = Math.max(
+      currentHeight + shiftDown,
+      ...children.map((child) => child.position.y + numericSize(child.height, 0) + padding.bottom),
+    );
+
+    setNodeVisualSize(parent, requiredWidth, requiredHeight);
+  }
+
+  return nextNodes;
+};
+
+export interface ProjectGraphEntityPositionChange {
+  entityId: string;
+  position: GraphPoint;
+  manual: boolean;
+}
+
 const ProjectFrameNode = memo(({ data }: NodeProps) => (
   <div className="pg-node pg-node--file">
     <div className="pg-node__drag-handle" onPointerDown={getHeaderPointerDownHandler(data)}>
@@ -196,6 +335,7 @@ export interface ProjectGraphCanvasProps {
   saveStatus?: string | null;
   onExportProjectGraph?: () => void;
   onEntityPositionChange?: (entityId: string, position: GraphPoint) => void;
+  onEntityPositionsChange?: (changes: ProjectGraphEntityPositionChange[]) => void;
   onScenarioContentChange?: (nodeId: string, content: string) => void;
   onScenarioMetadataChange?: (nodeId: string, metadataPatch: Record<string, unknown>) => void;
 }
@@ -228,6 +368,7 @@ const ProjectGraphCanvasInner = ({
   saveStatus,
   onExportProjectGraph,
   onEntityPositionChange,
+  onEntityPositionsChange,
   onScenarioContentChange,
   onScenarioMetadataChange,
 }: ProjectGraphCanvasProps) => {
@@ -259,6 +400,9 @@ const ProjectGraphCanvasInner = ({
           .filter((node) => dragGroupIds.has(node.id))
           .map((node) => [node.id, node.position]),
       );
+      const initialAllPositionsById = new Map(
+        interactiveNodesRef.current.map((node) => [node.id, { ...node.position }]),
+      );
 
       event.preventDefault();
       event.stopPropagation();
@@ -268,6 +412,7 @@ const ProjectGraphCanvasInner = ({
       const startPosition = initialNode.position;
       const zoom = reactFlowInstance?.getZoom() ?? 1;
       let latestPosition = startPosition;
+      let latestChangedPositions: ProjectGraphEntityPositionChange[] = [];
 
       setSelectedNodeId(nodeId);
 
@@ -280,14 +425,31 @@ const ProjectGraphCanvasInner = ({
           x: startPosition.x + delta.x,
           y: startPosition.y + delta.y,
         };
-        setInteractiveNodes((currentNodes) =>
-          currentNodes.map((node) => {
+        setInteractiveNodes((currentNodes) => {
+          const movedNodes = currentNodes.map((node) => {
             const initialPosition = initialPositionsById.get(node.id);
             return initialPosition
               ? { ...node, position: { x: initialPosition.x + delta.x, y: initialPosition.y + delta.y } }
               : node;
-          }),
-        );
+          });
+          const expandedNodes = expandAncestorFramesForMovedNodes(movedNodes, dragGroupIds);
+          const expandedDraggedNode = expandedNodes.find((node) => node.id === nodeId);
+          latestPosition = expandedDraggedNode?.position ?? latestPosition;
+          latestChangedPositions = expandedNodes
+            .filter((node) => {
+              const initialPosition = initialAllPositionsById.get(node.id);
+              return (
+                initialPosition &&
+                (initialPosition.x !== node.position.x || initialPosition.y !== node.position.y)
+              );
+            })
+            .map((node) => ({
+              entityId: node.id,
+              position: { ...node.position },
+              manual: dragGroupIds.has(node.id),
+            }));
+          return expandedNodes;
+        });
       };
 
       const handlePointerMove = (pointerEvent: PointerEvent) => {
@@ -300,6 +462,16 @@ const ProjectGraphCanvasInner = ({
         window.removeEventListener('pointermove', handlePointerMove);
         window.removeEventListener('pointerup', handlePointerUp);
         window.removeEventListener('pointercancel', handlePointerUp);
+        if (latestChangedPositions.length > 0) {
+          if (onEntityPositionsChange) {
+            onEntityPositionsChange(latestChangedPositions);
+          } else {
+            for (const change of latestChangedPositions) {
+              onEntityPositionChange?.(change.entityId, change.position);
+            }
+          }
+          return;
+        }
         onEntityPositionChange?.(nodeId, latestPosition);
       };
 
@@ -307,7 +479,7 @@ const ProjectGraphCanvasInner = ({
       window.addEventListener('pointerup', handlePointerUp);
       window.addEventListener('pointercancel', handlePointerUp);
     },
-    [onEntityPositionChange, reactFlowInstance],
+    [onEntityPositionChange, onEntityPositionsChange, reactFlowInstance],
   );
   const projectedNodes = useMemo(
     () =>

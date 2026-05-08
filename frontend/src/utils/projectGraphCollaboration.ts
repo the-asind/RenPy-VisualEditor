@@ -3,11 +3,13 @@ import {
   exportProjectGraphCrdtUpdate,
   getProjectGraphCrdtVersion,
   importProjectGraphCrdtUpdate,
+  moveProjectGraphEntities,
   moveProjectGraphEntity,
   projectGraphFromCrdtDoc,
   replaceProjectGraphDiagnostics,
   updateScenarioNodeContent,
   updateScenarioNodeMetadata,
+  type ProjectGraphEntityPositionChange,
   type ProjectGraphCrdtDoc,
 } from './projectGraphCrdt';
 import type { GraphDiagnosticSnapshot, GraphPoint, ProjectGraphSnapshot } from './projectGraphProjection';
@@ -58,6 +60,16 @@ export class ProjectGraphCollaborationSession {
   moveEntity(entityId: string, position: GraphPoint): void {
     const from = this.version;
     moveProjectGraphEntity(this.doc, entityId, position);
+    this.publishLocalChange(from);
+  }
+
+  moveEntities(changes: ProjectGraphEntityPositionChange[]): void {
+    if (changes.length === 0) {
+      return;
+    }
+
+    const from = this.version;
+    moveProjectGraphEntities(this.doc, changes);
     this.publishLocalChange(from);
   }
 

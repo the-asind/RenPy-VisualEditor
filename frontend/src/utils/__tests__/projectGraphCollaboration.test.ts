@@ -273,6 +273,22 @@ describe('ProjectGraphCollaborationSession', () => {
     });
   });
 
+  it('persists grouped drag rebases without marking every rebased scenario as manually laid out', () => {
+    const session = new ProjectGraphCollaborationSession(createProjectGraphCrdtDoc(graph, { peerId: '1' }));
+
+    session.moveEntities([
+      { entityId: 'label-start', position: { x: 40, y: 40 }, manual: true },
+      { entityId: 'node-intro', position: { x: 160, y: 220 }, manual: false },
+      { entityId: 'node-comment', position: { x: 200, y: 320 }, manual: true },
+    ]);
+
+    const movedGraph = session.graph;
+    expect(movedGraph.labels.find((label) => label.id === 'label-start')?.visual.position).toEqual({ x: 40, y: 40 });
+    expect(movedGraph.nodes.find((node) => node.id === 'node-intro')?.visual.position).toEqual({ x: 160, y: 220 });
+    expect(movedGraph.nodes.find((node) => node.id === 'node-intro')?.metadata._manual_position).toBeUndefined();
+    expect(movedGraph.nodes.find((node) => node.id === 'node-comment')?.metadata._manual_position).toBe(true);
+  });
+
   it('edits every MVP scenario node type through content and metadata operations without editor metadata leakage', () => {
     const clientA = createProjectGraphCrdtDoc(graph, { peerId: '1' });
     const clientB = importProjectGraphCrdtSnapshot(exportProjectGraphCrdtSnapshot(clientA), { peerId: '2' });
