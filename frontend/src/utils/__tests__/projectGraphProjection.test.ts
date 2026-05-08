@@ -66,6 +66,9 @@ const nodeRightPaddingInsideParent = (
   parent: { width?: number },
 ) => Number(parent.width ?? 0) - (child.position.x + Number(child.width ?? 0));
 
+const nodeCenterX = (node: { position: { x: number }; width?: number }) =>
+  node.position.x + Number(node.width ?? 0) / 2;
+
 const graph: ProjectGraphSnapshot = {
   project_id: 'projection-project',
   files: [
@@ -307,6 +310,12 @@ describe('projectGraphToReactFlow static projection', () => {
       data: { kind: 'scenario', scenarioType: 'dialogue', content: 'r "Hello projection."' },
       dragHandle: '.pg-node__drag-handle',
     });
+    expect(Math.abs(nodeCenterX(startNode!) - nodeCenterX(scenarioNode!))).toBeLessThanOrEqual(1);
+    expect(projection.edges.find((edge) => edge.source === startNode?.id && edge.target === scenarioNode?.id)).toMatchObject({
+      type: 'straight',
+      sourceHandle: 'flow-out',
+      targetHandle: 'flow-in',
+    });
   });
 
   it('exposes dedicated React Flow 2 node types for the new canvas layer', () => {
@@ -316,6 +325,45 @@ describe('projectGraphToReactFlow static projection', () => {
       'projectFrame',
       'scenarioNode',
     ]);
+  });
+
+  it('keeps old manual offsets from breaking a simple label vertical story column', () => {
+    const manualSimpleGraph: ProjectGraphSnapshot = {
+      ...graph,
+      nodes: [
+        {
+          ...graph.nodes[0],
+          metadata: { _manual_position: true },
+          visual: { position: { x: 188, y: 136 }, size: { width: 320, height: 88 } },
+        },
+        {
+          id: 'node-return',
+          file_id: 'file-day-1',
+          label_id: 'label-start',
+          parent_node_id: null,
+          type: 'return',
+          content: 'return',
+          order: '0001',
+          source_span: { start_line: 2, end_line: 2 },
+          metadata: { _manual_position: true },
+          visual: { position: { x: 72, y: 280 }, size: { width: 320, height: 88 } },
+        },
+      ],
+    };
+
+    const projection = projectGraphToReactFlow(manualSimpleGraph);
+    const byId = new Map(projection.nodes.map((node) => [node.id, node]));
+    const startNode = byId.get('start-node-start')!;
+    const dialogueNode = byId.get('node-dialogue-1')!;
+    const returnNode = byId.get('node-return')!;
+
+    expect(Math.abs(nodeCenterX(startNode) - nodeCenterX(dialogueNode))).toBeLessThanOrEqual(1);
+    expect(Math.abs(nodeCenterX(dialogueNode) - nodeCenterX(returnNode))).toBeLessThanOrEqual(1);
+    expect(
+      projection.edges
+        .filter((edge) => edge.data?.kind === 'sequence')
+        .map((edge) => `${edge.source}->${edge.target}:${edge.type}`),
+    ).toEqual(['start-node-start->node-dialogue-1:straight', 'node-dialogue-1->node-return:straight']);
   });
 
   it('uses action metadata as the visible scenario title without changing content', () => {
@@ -722,7 +770,7 @@ describe('projectGraphToReactFlow static projection', () => {
     expect(
       projection.edges
         .filter((edge) => edge.data?.derived === true && edge.data?.flowRole !== 'rejoin' && edge.data?.kind !== 'branch')
-        .every((edge) => edge.type === 'step'),
+        .every((edge) => edge.type === 'step' || edge.type === 'straight'),
     ).toBe(true);
     expect(branchEdges.every((edge) => edge.type === 'nearTargetStep')).toBe(true);
     expect(rejoinEdges.map((edge) => `${edge.source}->${edge.target}`).sort()).toEqual([

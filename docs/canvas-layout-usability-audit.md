@@ -877,3 +877,29 @@ Layout improvement можно закрыть только если выполн�
 3. Projection/helper test: click point inside empty label frame area selects label frame.
 4. Projection/helper test: click point outside canvas nodes returns no selection.
 5. Full frontend tests and production build pass.
+
+## 23. Simple Label Column Centering And Direct Sequence Edge
+
+Статус: закрывает readability regression, где small/simple label без `if`/`menu` ставил `LabelStartNode` слева сверху, а первый action/dialogue block оказывался правее под кривой ступенчатой стрелкой.
+
+### Наблюдение
+
+1. В small label вроде `ask_duck` start node и первый story block были оба внутри frame, но не на одной X-оси.
+2. React Flow `step` edge между разными X-центрами строил лишнюю ступеньку, поэтому простая последовательность читалась как странный обход.
+3. Для линейного label без branch-layout ожидается обычная вертикальная колонка: `START` строго над первым блоком.
+
+### Изменение
+
+1. Fallback compaction для children `LabelFrame` центрирует siblings по ширине самой широкой ноды, а не выравнивает их по левому краю.
+2. Simple label автоматически уходит в compaction, если `LabelStartNode` и первый visible scenario block имеют разные X-центры.
+3. Для сохранённых simple labels со старыми `_manual_position` offsets projection всё равно нормализует `LabelStartNode` и линейные scenario nodes в одну вертикальную колонку. Это сознательный MVP tradeoff: читаемость линейной истории важнее сохранения случайного старого X-drift.
+4. Forward `sequence` edge получает `type="straight"`, если source и target в одном parent и уже выровнены по вертикальной оси.
+5. Branch/rejoin routing не изменялся: для ветвлений остаются `nearTargetStep` и target-side turn lanes.
+
+### Проверка Закрытия
+
+1. Projection test: для простого label centerX `LabelStartNode` равен centerX первого scenario node.
+2. Projection test: `LabelStartNode -> first scenario` edge имеет `type="straight"` и входит в target через `flow-in`.
+3. Projection test: старые `_manual_position` offsets в simple label не ломают вертикальную story column.
+4. Existing conditional tree test допускает `straight` для уже выровненных forward sequence edges, но сохраняет `nearTargetStep` для branch/rejoin.
+5. `npm test -- --run src/utils/__tests__/projectGraphProjection.test.ts` - passed, 17 tests.

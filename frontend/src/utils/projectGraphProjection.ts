@@ -292,6 +292,8 @@ const hasImportedScenarioSpread = (siblings: LayoutNode[], parent: LayoutNode | 
   return maxY - minY > expectedHeight + 160;
 };
 
+const nodeCenterX = (node: LayoutNode): number => node.position.x + node.width / 2;
+
 const isLabelStartFirst = (siblings: LayoutNode[], parent: LayoutNode | undefined): boolean => {
   if (parent?.type !== 'labelFrame') {
     return true;
@@ -305,6 +307,54 @@ const isLabelStartFirst = (siblings: LayoutNode[], parent: LayoutNode | undefine
   return siblings.every(
     (sibling) => sibling.id === start.id || start.position.y < sibling.position.y || start.position.x < sibling.position.x,
   );
+};
+
+const hasSimpleLabelColumnMisalignment = (siblings: LayoutNode[], parent: LayoutNode | undefined): boolean => {
+  if (parent?.type !== 'labelFrame' || siblings.some(hasAutoBranchLayout)) {
+    return false;
+  }
+
+  const ordered = [...siblings].sort(compareLayoutSiblings(parent));
+  const start = ordered.find((sibling) => sibling.type === 'labelStart');
+  const firstFlowNode = ordered.find((sibling) => sibling.id !== start?.id && sibling.type !== 'labelFrame');
+
+  return !!start && !!firstFlowNode && Math.abs(nodeCenterX(start) - nodeCenterX(firstFlowNode)) > 1;
+};
+
+const alignSimpleLabelColumn = (siblings: LayoutNode[], parent: LayoutNode | undefined): void => {
+  if (parent?.type !== 'labelFrame' || siblings.some(hasAutoBranchLayout)) {
+    return;
+  }
+
+  const ordered = [...siblings].sort(compareLayoutSiblings(parent));
+  const columnNodes = ordered.filter(
+    (sibling) =>
+      sibling.type === 'labelStart' ||
+      (sibling.type === 'scenarioNode' &&
+        !isConditionalBranchNode(sibling) &&
+        !isMenuNode(sibling) &&
+        !isMenuChoiceNode(sibling)),
+  );
+
+  if (columnNodes.length < 3) {
+    return;
+  }
+
+  const manualScenarioCount = columnNodes.filter(
+    (sibling) => sibling.type === 'scenarioNode' && hasManualLayoutPosition(sibling),
+  ).length;
+  if (manualScenarioCount < 2) {
+    return;
+  }
+
+  const startX = 32;
+  const columnWidth = Math.max(...columnNodes.map((sibling) => sibling.width));
+  let cursorY = LABEL_FRAME_CONTENT_TOP_PADDING;
+  for (const sibling of columnNodes) {
+    sibling.position.x = startX + (columnWidth - sibling.width) / 2;
+    sibling.position.y = Math.max(sibling.position.y, cursorY);
+    cursorY = sibling.position.y + sibling.height + COMPACT_SIBLING_GAP;
+  }
 };
 
 const groupNeedsCompaction = (
@@ -321,6 +371,10 @@ const groupNeedsCompaction = (
   }
 
   if (!isLabelStartFirst(siblings, parent)) {
+    return true;
+  }
+
+  if (hasSimpleLabelColumnMisalignment(siblings, parent)) {
     return true;
   }
 
@@ -379,6 +433,9 @@ const compactSiblings = (
           ? 48
           : 32;
   const gap = parent?.type === 'scenarioNode' ? COMPACT_SCENARIO_CHILD_GAP : COMPACT_SIBLING_GAP;
+  const columnWidth = parent?.type === 'labelFrame' ? Math.max(...siblings.map((sibling) => sibling.width)) : 0;
+  const compactX = (sibling: LayoutNode): number =>
+    parent?.type === 'labelFrame' ? startX + (columnWidth - sibling.width) / 2 : startX;
   let cursorY = startY;
   let index = 0;
 
@@ -405,7 +462,7 @@ const compactSiblings = (
       continue;
     }
 
-    sibling.position.x = startX;
+    sibling.position.x = compactX(sibling);
     sibling.position.y = cursorY;
     cursorY += sibling.height + gap;
     index += 1;
@@ -494,6 +551,7 @@ const normalizeLayout = (nodes: LayoutNode[]): LayoutNode[] => {
       const parent = parentId === '__root__' ? undefined : byId.get(parentId);
       const groupKey = parent?.id ?? '__root__';
       reserveFrameHeaderSpace(siblings, parent);
+      alignSimpleLabelColumn(siblings, parent);
 
       if (siblings.some(hasAutoBranchLayout)) {
         const autoLaidOutSiblings = siblings.filter(hasAutoBranchLayout);
@@ -1039,12 +1097,19 @@ const deriveFlowEdges = (nodes: LayoutNode[], graph: ProjectGraphSnapshot): Edge
     seen.add(id);
 
     const useNearTargetRouting = flowRole === 'rejoin' || kind === 'branch';
+    const useStraightRouting =
+      !useNearTargetRouting &&
+      kind === 'sequence' &&
+      flowRole === 'forward' &&
+      source.parentId === target.parentId &&
+      Math.abs(nodeCenterX(source) - nodeCenterX(target)) <= 1 &&
+      target.position.y >= source.position.y + source.height;
 
     edges.push({
       id,
       source: source.id,
       target: target.id,
-      type: useNearTargetRouting ? 'nearTargetStep' : 'step',
+      type: useNearTargetRouting ? 'nearTargetStep' : useStraightRouting ? 'straight' : 'step',
       className: `project-edge project-edge--${kind}${flowRole === 'rejoin' ? ' project-edge--rejoin' : ''}`,
       markerEnd: { type: MarkerType.ArrowClosed },
       selectable: false,

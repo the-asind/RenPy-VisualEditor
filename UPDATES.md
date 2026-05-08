@@ -4,6 +4,34 @@ This file is the short project memory for RenPy Visual Editor 2.0. Keep it curre
 
 ## 2026-05-08
 
+### Simple Label Column Centering
+
+Fixed a canvas readability regression where small/simple labels without branch nodes could place `LabelStartNode` left of the first story block, producing an unnecessary crooked step edge between `START` and the next node.
+
+Files:
+
+1. `frontend/src/utils/projectGraphProjection.ts`
+2. `frontend/src/utils/__tests__/projectGraphProjection.test.ts`
+3. `docs/editor-2.0-architecture.md`
+4. `docs/canvas-layout-usability-audit.md`
+
+Result:
+
+1. Simple labels now compact as centered vertical columns when the start node and first visible scenario block are misaligned.
+2. Label-frame fallback compaction centers siblings by column width instead of left-aligning nodes with different widths.
+3. Forward sequence edges use `straight` routing when source and target are already vertically aligned in the same parent.
+4. Branch and rejoin edges still use the existing `nearTargetStep` routing.
+5. Old saved simple labels with `_manual_position` scenario offsets are also normalized into a readable vertical story column instead of preserving stale crooked X offsets.
+
+Checks:
+
+1. Added projection regression coverage for `LabelStartNode` and first scenario center alignment.
+2. Added projection regression coverage for a direct `straight` `LabelStartNode -> first scenario` sequence edge.
+3. Added projection regression coverage proving old manual offsets do not break a simple label column.
+4. `npm test -- --run src/utils/__tests__/projectGraphProjection.test.ts` passed with 17 tests.
+5. `npm test -- --run` passed with 43 frontend tests.
+6. `npm run build` passed with the known non-blocking Vite/env.js, Browserslist, and large Loro chunk warnings.
+
 ### Body Click Selection With Header-Only Drag
 
 Fixed a canvas interaction mismatch where nodes and frames could be dragged only from their header, which is correct, but single-click selection/opening also worked only from the header.
