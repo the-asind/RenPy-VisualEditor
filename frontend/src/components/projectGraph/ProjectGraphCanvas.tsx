@@ -181,6 +181,28 @@ export const expandAncestorFramesForMovedNodes = (nodes: Node[], movedNodeIds: S
   return nextNodes;
 };
 
+export const buildNestedDragPreviewNodes = (
+  baselineNodes: Node[],
+  movedNodeIds: Set<string>,
+  baselineMovedPositionsById: Map<string, GraphPoint>,
+  delta: GraphPoint,
+): Node[] => {
+  const movedNodes = baselineNodes.map((node) => {
+    const baselinePosition = baselineMovedPositionsById.get(node.id);
+    return baselinePosition
+      ? {
+          ...node,
+          position: {
+            x: baselinePosition.x + delta.x,
+            y: baselinePosition.y + delta.y,
+          },
+        }
+      : node;
+  });
+
+  return expandAncestorFramesForMovedNodes(movedNodes, movedNodeIds);
+};
+
 export interface ProjectGraphEntityPositionChange {
   entityId: string;
   position: GraphPoint;
@@ -412,6 +434,7 @@ const ProjectGraphCanvasInner = ({
       const initialAllPositionsById = new Map(
         interactiveNodesRef.current.map((node) => [node.id, { ...node.position }]),
       );
+      const baselineNodes = interactiveNodesRef.current.map(cloneNodeForDrag);
 
       event.preventDefault();
       event.stopPropagation();
@@ -434,14 +457,8 @@ const ProjectGraphCanvasInner = ({
           x: startPosition.x + delta.x,
           y: startPosition.y + delta.y,
         };
-        setInteractiveNodes((currentNodes) => {
-          const movedNodes = currentNodes.map((node) => {
-            const initialPosition = initialPositionsById.get(node.id);
-            return initialPosition
-              ? { ...node, position: { x: initialPosition.x + delta.x, y: initialPosition.y + delta.y } }
-              : node;
-          });
-          const expandedNodes = expandAncestorFramesForMovedNodes(movedNodes, dragGroupIds);
+        setInteractiveNodes(() => {
+          const expandedNodes = buildNestedDragPreviewNodes(baselineNodes, dragGroupIds, initialPositionsById, delta);
           const expandedDraggedNode = expandedNodes.find((node) => node.id === nodeId);
           latestPosition = expandedDraggedNode?.position ?? latestPosition;
           latestChangedPositions = expandedNodes

@@ -837,6 +837,7 @@ Layout improvement можно закрыть только если выполн�
 4. Pointer-up сохраняет все измененные positions grouped CRDT operation.
 5. Сценарные siblings, сдвинутые только из-за rebase, не получают `_manual_position`; manual semantics получает только реально dragged group.
 6. Follow-up correction: preview bounds are recalculated from current child bounds on every drag tick. A previously expanded parent frame can shrink back when the held child moves inward, and right/bottom expansion does not add any extra movement to the held child.
+7. Second follow-up correction: each pointermove preview is derived from the original pointer-down graph plus the current pointer delta, not from the previous preview nodes. This prevents a left-wall rebase or stale expansion from leaking into later drag ticks after the user moves the held node back inward.
 
 ### Проверка Закрытия
 
@@ -845,6 +846,7 @@ Layout improvement можно закрыть только если выполн�
 3. Collaboration test: grouped drag persistence preserves all changed positions and marks only dragged scenario nodes as manual.
 4. Full frontend tests and production build pass.
 5. Regression test: stale oversized parent frame shrinks from current children without moving the dragged child away from its pointer-controlled local position.
+6. Regression test: sequential drag preview pushes the left wall, pushes the right wall, then returns inward; the held child keeps the expected absolute pointer-derived position in every phase and the parent frame restores baseline bounds after return.
 
 ### Остаток
 

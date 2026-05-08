@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildNestedDragPreviewNodes,
   buildNearTargetStepPath,
   expandAncestorFramesForMovedNodes,
   projectGraphNodeTypes,
@@ -58,6 +59,11 @@ const makeCanvasNode = (
   data: {},
   style: size,
 });
+
+const nodeRightPaddingInsideParent = (
+  child: { position: { x: number }; width?: number },
+  parent: { width?: number },
+) => Number(parent.width ?? 0) - (child.position.x + Number(child.width ?? 0));
 
 const graph: ProjectGraphSnapshot = {
   project_id: 'projection-project',
@@ -149,6 +155,62 @@ describe('projectGraphToReactFlow static projection', () => {
     expect(label.height).toBeLessThan(620);
     expect(label.width).toBeGreaterThanOrEqual(action.position.x + Number(action.width) + 32);
     expect(label.height).toBeGreaterThanOrEqual(action.position.y + Number(action.height) + 32);
+  });
+
+  it('keeps a held child under the cursor and restores stable frame padding across drag ticks', () => {
+    const baselineNodes = [
+      makeCanvasNode('file', 'projectFrame', { x: 0, y: 0 }, { width: 900, height: 640 }),
+      makeCanvasNode('label', 'labelFrame', { x: 48, y: 48 }, { width: 520, height: 360 }, 'file'),
+      makeCanvasNode('start', 'labelStart', { x: 32, y: 72 }, { width: 260, height: 72 }, 'label'),
+      makeCanvasNode('action', 'scenarioNode', { x: 96, y: 220 }, { width: 320, height: 88 }, 'label'),
+    ];
+    const baselineMovedPositions = new Map([['action', { x: 96, y: 220 }]]);
+    const movedIds = new Set(['action']);
+    const baselineActionAbsolute = getAbsoluteNodePosition(baselineNodes, 'action')!;
+
+    const pushedLeft = buildNestedDragPreviewNodes(baselineNodes, movedIds, baselineMovedPositions, {
+      x: -180,
+      y: 0,
+    });
+    const pushedLeftLabel = pushedLeft.find((node) => node.id === 'label')!;
+    const pushedLeftAction = pushedLeft.find((node) => node.id === 'action')!;
+    const pushedLeftLabelAbsolute = getAbsoluteNodePosition(pushedLeft, 'label')!;
+    const pushedLeftActionAbsolute = getAbsoluteNodePosition(pushedLeft, 'action')!;
+
+    expect(pushedLeftLabelAbsolute.x).toBeLessThan(48);
+    expect(pushedLeftActionAbsolute).toEqual({
+      x: baselineActionAbsolute.x - 180,
+      y: baselineActionAbsolute.y,
+    });
+    expect(pushedLeftAction.position.x).toBe(32);
+
+    const pushedRight = buildNestedDragPreviewNodes(baselineNodes, movedIds, baselineMovedPositions, {
+      x: 424,
+      y: 0,
+    });
+    const pushedRightLabel = pushedRight.find((node) => node.id === 'label')!;
+    const pushedRightAction = pushedRight.find((node) => node.id === 'action')!;
+    const pushedRightActionAbsolute = getAbsoluteNodePosition(pushedRight, 'action')!;
+
+    expect(pushedRightAction.position.x).toBe(520);
+    expect(pushedRightActionAbsolute).toEqual({
+      x: baselineActionAbsolute.x + 424,
+      y: baselineActionAbsolute.y,
+    });
+    expect(nodeRightPaddingInsideParent(pushedRightAction, pushedRightLabel)).toBe(32);
+
+    const returned = buildNestedDragPreviewNodes(baselineNodes, movedIds, baselineMovedPositions, {
+      x: 0,
+      y: 0,
+    });
+    const returnedLabel = returned.find((node) => node.id === 'label')!;
+    const returnedAction = returned.find((node) => node.id === 'action')!;
+    const returnedActionAbsolute = getAbsoluteNodePosition(returned, 'action')!;
+
+    expect(returnedLabel.position).toEqual({ x: 48, y: 48 });
+    expect(returnedLabel.width).toBe(520);
+    expect(returnedAction.position).toEqual({ x: 96, y: 220 });
+    expect(returnedActionAbsolute).toEqual(baselineActionAbsolute);
   });
 
   it('rebases parent frames when a dragged child pushes the left or top wall', () => {
