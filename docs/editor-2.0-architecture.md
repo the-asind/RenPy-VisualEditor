@@ -363,6 +363,10 @@ React Flow получает только проекцию `ProjectGraph`.
 28. Простые labels без `if`/`menu` branch-layout должны строиться как центрированная вертикальная колонка: `LabelStartNode` стоит строго над первым scenario block по общей X-оси, чтобы первая `sequence` стрелка была прямой и не делала обходную ступеньку. Для старых сохранённых simple labels projection может нормализовать X-offsets линейных scenario nodes даже при `_manual_position`, потому что stale ручной drift не должен ломать базовую читаемость `START -> action -> jump/return`.
 29. Initial/import-like sibling `LabelFrame` layout может использовать resolved `jump/call` relation graph как эвристику 2D-размещения: если несколько sibling frames всё ещё стоят почти одной колонкой, target label frame связи кладётся вправо от source label frame с простым collision avoidance. Это не является глобальным математическим solver и не должно перепаковывать уже разнесённый пользователем 2D layout.
 30. Любой projection layout pass, который меняет frame/node positions или parent bounds, должен завершаться строгим sibling anti-overlap pass. Relation-aware layout может расширить `FileFrame`; после этого соседние `FileFrame` обязаны быть отодвинуты, чтобы sibling frames/nodes не залезали друг в друга.
+31. React Flow `extent: "parent"` не используется для ProjectGraph child nodes в MVP 2.0, потому что официальная семантика `extent: "parent"` ограничивает перемещение child границами parent. Вместо этого `nodesDraggable=false`, header-only pointer handler, parent-child projection и live parent expansion являются единственным drag-механизмом.
+32. Root-level `FileFrame` coordinates are unbounded: пользователь может увести файл выше/левее исходного import origin, и projection не должен автоматически возвращать root sibling к `(0, 0)`.
+33. Для безопасного MVP-drag `LabelStartNode` является drag-handle всего owning `LabelFrame`: пользователь тянет видимое начало label, но сохраняется позиция label frame, а дерево label движется как единое целое.
+34. В auto branch-managed labels (`if/menu`) индивидуальный manual drag scenario-ноды не применяется как постоянный layout override, потому что это ломает tree readability. Header drag по такой ноде перемещает owning `LabelFrame` целиком. Индивидуальный drag внутри branch tree можно проектировать позже отдельным solver/pass, если появится строгая модель без пересечений и хаоса линий.
 
 Layout MVP:
 
@@ -384,6 +388,8 @@ Layout MVP:
 16. Во время grouped drag можно сохранять несколько position changes одним CRDT operation. Только реально захваченные nodes/frames получают manual drag semantics; siblings, сдвинутые из-за parent rebase, сохраняют position без `_manual_position`, чтобы не разрушать branch auto-layout.
 17. Финальный anti-overlap pass работает по sibling groups: root-level `FileFrame`s раздвигаются горизонтально, children внутри frames раздвигаются вертикально. Attached branch headers могут соприкасаться с child block без зазора, но не должны геометрически пересекаться.
 18. Перед implementation проверить официальные React Flow docs по sub-flows/layouting/custom edges/handles/drag handles. Если Dagre конфликтует с nested frames и внешними edges, перейти к ELK или гибридному layout.
+19. Negative root-level `FileFrame` positions не являются поводом для import compaction. Negative child coordinates внутри parent frame остаются layout defect или transient drag state и должны решаться live expansion/rebase, а не скрытым clamp.
+20. Drag group selection is semantic: simple scenario nodes may move themselves or attached branch headers, but `LabelStartNode` and auto branch-managed scenario nodes move the owning `LabelFrame` as a stable subtree.
 
 ## 11. Loro CRDT Strategy
 

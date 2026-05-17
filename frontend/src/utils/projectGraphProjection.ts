@@ -374,7 +374,7 @@ const groupNeedsCompaction = (
     return false;
   }
 
-  if (hasNegativePosition(siblings) || hasStackedSiblingPositions(siblings)) {
+  if ((parent && hasNegativePosition(siblings)) || hasStackedSiblingPositions(siblings)) {
     return true;
   }
 
@@ -1490,7 +1490,6 @@ export const projectGraphToReactFlow = (graph: ProjectGraphSnapshot): ProjectGra
       type: 'labelFrame',
       className: PROJECT_GRAPH_REACT_FLOW_NODE_CLASS,
       parentId: label.parent_label_id ?? label.file_id,
-      extent: 'parent',
       position: clonePoint(label.visual.position),
       data: {
         kind: 'label',
@@ -1518,7 +1517,6 @@ export const projectGraphToReactFlow = (graph: ProjectGraphSnapshot): ProjectGra
       type: 'labelStart',
       className: PROJECT_GRAPH_REACT_FLOW_NODE_CLASS,
       parentId: start.label_id,
-      extent: 'parent',
       position: clonePoint(start.visual.position),
       data: {
         kind: 'labelStart',
@@ -1557,7 +1555,6 @@ export const projectGraphToReactFlow = (graph: ProjectGraphSnapshot): ProjectGra
       type: 'scenarioNode',
       className: PROJECT_GRAPH_REACT_FLOW_NODE_CLASS,
       parentId: resolveScenarioVisualParentId(scenario, scenariosById),
-      extent: 'parent',
       position: clonePoint(scenario.visual.position),
       data: {
         kind: 'scenario',

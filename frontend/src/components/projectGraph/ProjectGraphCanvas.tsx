@@ -48,6 +48,19 @@ const getDragGroupIds = (node: Node): string[] =>
     ? (node.data.dragGroupIds as string[])
     : [node.id];
 
+export const getProjectGraphHeaderDragGroupIds = (node: Node, nodes: Node[]): string[] => {
+  const parent = node.parentId ? nodes.find((candidate) => candidate.id === node.parentId) : undefined;
+  if (node.type === 'labelStart' && parent?.type === 'labelFrame') {
+    return [parent.id];
+  }
+
+  if (node.data?.autoBranchLayout === true && parent?.type === 'labelFrame') {
+    return [parent.id];
+  }
+
+  return getDragGroupIds(node);
+};
+
 const DRAG_FRAME_X_PADDING = 32;
 const DRAG_FILE_FRAME_TOP_PADDING = 48;
 const DRAG_LABEL_FRAME_TOP_PADDING = 72;
@@ -464,7 +477,7 @@ const ProjectGraphCanvasInner = ({
       if (!initialNode) {
         return;
       }
-      const dragGroupIds = new Set(getDragGroupIds(initialNode));
+      const dragGroupIds = new Set(getProjectGraphHeaderDragGroupIds(initialNode, interactiveNodesRef.current));
       const initialPositionsById = new Map(
         interactiveNodesRef.current
           .filter((node) => dragGroupIds.has(node.id))

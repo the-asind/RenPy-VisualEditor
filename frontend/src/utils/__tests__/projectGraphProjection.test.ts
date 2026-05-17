@@ -4,6 +4,7 @@ import {
   buildNearTargetStepPath,
   expandAncestorFramesForMovedNodes,
   findProjectGraphNodeAtCanvasPoint,
+  getProjectGraphHeaderDragGroupIds,
   projectGraphNodeTypes,
 } from '../../components/projectGraph/ProjectGraphCanvas';
 import {
@@ -217,6 +218,40 @@ describe('projectGraphToReactFlow static projection', () => {
     expect(returnedActionAbsolute).toEqual(baselineActionAbsolute);
   });
 
+  it('uses the containing label frame as the safe drag target for label starts and branch-managed nodes', () => {
+    const nodes = [
+      makeCanvasNode('file', 'projectFrame', { x: 0, y: 0 }, { width: 900, height: 640 }),
+      makeCanvasNode('label', 'labelFrame', { x: 48, y: 48 }, { width: 520, height: 360 }, 'file'),
+      makeCanvasNode('start', 'labelStart', { x: 32, y: 72 }, { width: 260, height: 72 }, 'label'),
+      {
+        ...makeCanvasNode('branch-action', 'scenarioNode', { x: 96, y: 220 }, { width: 320, height: 88 }, 'label'),
+        data: { autoBranchLayout: true, dragGroupIds: ['branch-action'] },
+      },
+      {
+        ...makeCanvasNode('simple-action', 'scenarioNode', { x: 96, y: 340 }, { width: 320, height: 88 }, 'label'),
+        data: { dragGroupIds: ['simple-action'] },
+      },
+    ];
+
+    expect(getProjectGraphHeaderDragGroupIds(nodes[2], nodes)).toEqual(['label']);
+    expect(getProjectGraphHeaderDragGroupIds(nodes[3], nodes)).toEqual(['label']);
+    expect(getProjectGraphHeaderDragGroupIds(nodes[4], nodes)).toEqual(['simple-action']);
+
+    const preview = buildNestedDragPreviewNodes(
+      nodes,
+      new Set(['label']),
+      new Map([['label', { x: 48, y: 48 }]]),
+      { x: -220, y: -160 },
+    );
+    const label = preview.find((node) => node.id === 'label')!;
+    const start = preview.find((node) => node.id === 'start')!;
+
+    expect(label.position).toEqual({ x: 48, y: 48 });
+    expect(start.position).toEqual({ x: 32, y: 72 });
+    expect(getAbsoluteNodePosition(preview, 'label')).toEqual({ x: -172, y: -112 });
+    expect(getAbsoluteNodePosition(preview, 'start')).toEqual({ x: -140, y: -40 });
+  });
+
   it('hit-tests body clicks to the deepest visible node while body drag remains pane-owned', () => {
     const nodes = [
       makeCanvasNode('file', 'projectFrame', { x: 0, y: 0 }, { width: 900, height: 640 }),
@@ -288,28 +323,28 @@ describe('projectGraphToReactFlow static projection', () => {
     expect(labelNode).toMatchObject({
       type: 'labelFrame',
       parentId: 'file-day-1',
-      extent: 'parent',
       data: { kind: 'label', qualifiedName: 'start', title: 'start' },
     });
+    expect(labelNode?.extent).toBeUndefined();
 
     const startNode = projection.nodes.find((node) => node.id === 'start-node-start');
     expect(startNode).toMatchObject({
       type: 'labelStart',
       parentId: 'label-start',
-      extent: 'parent',
       data: { kind: 'labelStart', qualifiedName: 'start', content: 'label start:' },
       dragHandle: '.pg-node__drag-handle',
     });
+    expect(startNode?.extent).toBeUndefined();
     expect(startNode?.position.y).toBeGreaterThanOrEqual(labelFrameContentTop);
 
     const scenarioNode = projection.nodes.find((node) => node.id === 'node-dialogue-1');
     expect(scenarioNode).toMatchObject({
       type: 'scenarioNode',
       parentId: 'label-start',
-      extent: 'parent',
       data: { kind: 'scenario', scenarioType: 'dialogue', content: 'r "Hello projection."' },
       dragHandle: '.pg-node__drag-handle',
     });
+    expect(scenarioNode?.extent).toBeUndefined();
     expect(Math.abs(nodeCenterX(startNode!) - nodeCenterX(scenarioNode!))).toBeLessThanOrEqual(1);
     expect(projection.edges.find((edge) => edge.source === startNode?.id && edge.target === scenarioNode?.id)).toMatchObject({
       type: 'straight',
@@ -325,6 +360,21 @@ describe('projectGraphToReactFlow static projection', () => {
       'projectFrame',
       'scenarioNode',
     ]);
+  });
+
+  it('preserves manually moved root file frames above and left of the initial import area', () => {
+    const movedGraph: ProjectGraphSnapshot = {
+      ...graph,
+      files: [
+        {
+          ...graph.files[0],
+          visual: { ...graph.files[0].visual, position: { x: -640, y: -360 } },
+        },
+      ],
+    };
+
+    const projection = projectGraphToReactFlow(movedGraph);
+    expect(projection.nodes.find((node) => node.id === 'file-day-1')?.position).toEqual({ x: -640, y: -360 });
   });
 
   it('keeps old manual offsets from breaking a simple label vertical story column', () => {
@@ -494,13 +544,13 @@ describe('projectGraphToReactFlow static projection', () => {
     expect(byId.get('label-start-shared-nook')).toMatchObject({
       type: 'labelFrame',
       parentId: 'label-start',
-      extent: 'parent',
     });
+    expect(byId.get('label-start-shared-nook')?.extent).toBeUndefined();
     expect(byId.get('start-node-shared-nook')).toMatchObject({
       type: 'labelStart',
       parentId: 'label-start-shared-nook',
-      extent: 'parent',
     });
+    expect(byId.get('start-node-shared-nook')?.extent).toBeUndefined();
     expect(byId.get('node-menu-choice')).toMatchObject({
       type: 'scenarioNode',
       parentId: 'label-start',
