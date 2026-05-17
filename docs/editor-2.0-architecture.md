@@ -362,6 +362,7 @@ React Flow получает только проекцию `ProjectGraph`.
 27. Single click и drag являются разными действиями. Body/content зоны остаются pan-поверхностью для drag, но single click по body/content должен выбирать/открывать ту же node/frame, что и single click по header. Реализация может делать это через pane-level hit-test, не включая object drag вне header.
 28. Простые labels без `if`/`menu` branch-layout должны строиться как центрированная вертикальная колонка: `LabelStartNode` стоит строго над первым scenario block по общей X-оси, чтобы первая `sequence` стрелка была прямой и не делала обходную ступеньку. Для старых сохранённых simple labels projection может нормализовать X-offsets линейных scenario nodes даже при `_manual_position`, потому что stale ручной drift не должен ломать базовую читаемость `START -> action -> jump/return`.
 29. Initial/import-like sibling `LabelFrame` layout может использовать resolved `jump/call` relation graph как эвристику 2D-размещения: если несколько sibling frames всё ещё стоят почти одной колонкой, target label frame связи кладётся вправо от source label frame с простым collision avoidance. Это не является глобальным математическим solver и не должно перепаковывать уже разнесённый пользователем 2D layout.
+30. Любой projection layout pass, который меняет frame/node positions или parent bounds, должен завершаться строгим sibling anti-overlap pass. Relation-aware layout может расширить `FileFrame`; после этого соседние `FileFrame` обязаны быть отодвинуты, чтобы sibling frames/nodes не залезали друг в друга.
 
 Layout MVP:
 
@@ -381,7 +382,8 @@ Layout MVP:
 14. В branch-managed label порядок normalize такой: сначала применить auto branch layout и отделить nested label frames ниже story-flow, затем учитывать manual-position guard для простых не-branch groups. `_manual_position` не должен отменять structural readability родительского branch tree.
 15. Normalize должен сохранять минимальный top padding для children внутри `LabelFrame`, даже если label не содержит `if/menu` и не проходит branch auto-layout.
 16. Во время grouped drag можно сохранять несколько position changes одним CRDT operation. Только реально захваченные nodes/frames получают manual drag semantics; siblings, сдвинутые из-за parent rebase, сохраняют position без `_manual_position`, чтобы не разрушать branch auto-layout.
-17. Перед implementation проверить официальные React Flow docs по sub-flows/layouting/custom edges/handles/drag handles. Если Dagre конфликтует с nested frames и внешними edges, перейти к ELK или гибридному layout.
+17. Финальный anti-overlap pass работает по sibling groups: root-level `FileFrame`s раздвигаются горизонтально, children внутри frames раздвигаются вертикально. Attached branch headers могут соприкасаться с child block без зазора, но не должны геометрически пересекаться.
+18. Перед implementation проверить официальные React Flow docs по sub-flows/layouting/custom edges/handles/drag handles. Если Dagre конфликтует с nested frames и внешними edges, перейти к ELK или гибридному layout.
 
 ## 11. Loro CRDT Strategy
 

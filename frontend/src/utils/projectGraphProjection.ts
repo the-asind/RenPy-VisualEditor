@@ -503,6 +503,38 @@ const shiftOverlappingSiblings = (
   }
 };
 
+const separateOverlappingSiblings = (
+  siblings: LayoutNode[],
+  parent: LayoutNode | undefined,
+  direction: 'horizontal' | 'vertical',
+): boolean => {
+  siblings.sort(compareLayoutSiblings(parent));
+  const placed: LayoutNode[] = [];
+  let changed = false;
+
+  for (const sibling of siblings) {
+    const originalPosition = { ...sibling.position };
+    while (placed.some((placedSibling) => overlaps(sibling, placedSibling))) {
+      const overlapping = placed.filter((placedSibling) => overlaps(sibling, placedSibling));
+      if (direction === 'horizontal') {
+        sibling.position.x = Math.max(
+          sibling.position.x,
+          ...overlapping.map((placedSibling) => placedSibling.position.x + placedSibling.width + SIBLING_GAP),
+        );
+      } else {
+        sibling.position.y = Math.max(
+          sibling.position.y,
+          ...overlapping.map((placedSibling) => placedSibling.position.y + placedSibling.height + SIBLING_GAP),
+        );
+      }
+    }
+    changed = changed || sibling.position.x !== originalPosition.x || sibling.position.y !== originalPosition.y;
+    placed.push(sibling);
+  }
+
+  return changed;
+};
+
 const compactMinSize = (node: LayoutNode): GraphSize => COMPACT_FRAME_MIN_SIZE[node.type ?? ''] ?? {
   width: node.width,
   height: node.height,
@@ -739,6 +771,41 @@ const normalizeLayout = (nodes: LayoutNode[]): LayoutNode[] => {
   }
 
   return nodes;
+};
+
+const enforceNoSiblingOverlaps = (nodes: LayoutNode[]): void => {
+  const touchedParentIds = new Set<string>();
+
+  for (let pass = 0; pass < 6; pass += 1) {
+    const byId = new Map(nodes.map((node) => [node.id, node]));
+    const childrenByParent = buildChildrenByParent(nodes);
+    let changed = false;
+
+    for (const [parentId, siblings] of childrenByParent.entries()) {
+      if (siblings.length < 2) {
+        continue;
+      }
+
+      const parent = parentId === '__root__' ? undefined : byId.get(parentId);
+      const direction = parentId === '__root__' ? 'horizontal' : 'vertical';
+      if (!separateOverlappingSiblings(siblings, parent, direction)) {
+        continue;
+      }
+
+      changed = true;
+      if (parent) {
+        addParentAndAncestors(parent.id, byId, touchedParentIds);
+      }
+    }
+
+    if (touchedParentIds.size > 0) {
+      expandParentsToFitChildren(nodes, touchedParentIds);
+    }
+
+    if (!changed) {
+      return;
+    }
+  }
 };
 
 export const getAbsoluteNodePosition = (nodes: Node[], nodeId: string): GraphPoint | null => {
@@ -1516,6 +1583,7 @@ export const projectGraphToReactFlow = (graph: ProjectGraphSnapshot): ProjectGra
   applyConditionalStoryLayout(nodes, graph);
   const normalizedNodes = normalizeLayout(nodes);
   applyRelationAwareLabelFrameLayout(normalizedNodes, graph);
+  enforceNoSiblingOverlaps(normalizedNodes);
   const projectedNodes = normalizedNodes.map((node) => withFixedSize(node));
   const derivedEdges = deriveFlowEdges(projectedNodes, graph);
   const relationEdges: Edge[] = graph.edges.map((edge) => ({

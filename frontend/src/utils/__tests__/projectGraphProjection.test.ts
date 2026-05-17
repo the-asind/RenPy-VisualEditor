@@ -1454,6 +1454,159 @@ describe('projectGraphToReactFlow static projection', () => {
     expect(Number(file.height)).toBeLessThanOrEqual(2100);
   });
 
+  it('keeps file frames from overlapping after relation-aware label placement expands a file', () => {
+    const relationGraph: ProjectGraphSnapshot = {
+      project_id: 'relation-overlap-guard',
+      files: [
+        {
+          id: 'file-day-6',
+          path: 'day6.rpy',
+          order: '0000',
+          visual: { position: { x: 0, y: 0 }, size: { width: 760, height: 420 } },
+        },
+        {
+          id: 'file-script',
+          path: 'script.rpy',
+          order: '0001',
+          visual: { position: { x: 820, y: 0 }, size: { width: 760, height: 420 } },
+        },
+      ],
+      labels: [
+        {
+          id: 'label-d6-main',
+          file_id: 'file-day-6',
+          parent_label_id: null,
+          name: 'd6_main',
+          qualified_name: 'd6_main',
+          scope: 'global',
+          label_start_node_id: 'start-d6-main',
+          source_span: { start_line: 0, end_line: 0 },
+          visual: { position: { x: 48, y: 48 }, size: { width: 640, height: 300 } },
+        },
+        {
+          id: 'label-ending-main',
+          file_id: 'file-day-6',
+          parent_label_id: null,
+          name: 'ending_main',
+          qualified_name: 'ending_main',
+          scope: 'global',
+          label_start_node_id: 'start-ending-main',
+          source_span: { start_line: 20, end_line: 20 },
+          visual: { position: { x: 48, y: 396 }, size: { width: 520, height: 260 } },
+        },
+        {
+          id: 'label-script-start',
+          file_id: 'file-script',
+          parent_label_id: null,
+          name: 'start',
+          qualified_name: 'start',
+          scope: 'global',
+          label_start_node_id: 'start-script-start',
+          source_span: { start_line: 0, end_line: 0 },
+          visual: { position: { x: 48, y: 48 }, size: { width: 520, height: 260 } },
+        },
+      ],
+      label_starts: [
+        {
+          id: 'start-d6-main',
+          file_id: 'file-day-6',
+          label_id: 'label-d6-main',
+          qualified_name: 'd6_main',
+          content: 'label d6_main:',
+          visual: { position: { x: 32, y: 32 }, size: { width: 280, height: 72 } },
+        },
+        {
+          id: 'start-ending-main',
+          file_id: 'file-day-6',
+          label_id: 'label-ending-main',
+          qualified_name: 'ending_main',
+          content: 'label ending_main:',
+          visual: { position: { x: 32, y: 32 }, size: { width: 280, height: 72 } },
+        },
+        {
+          id: 'start-script-start',
+          file_id: 'file-script',
+          label_id: 'label-script-start',
+          qualified_name: 'start',
+          content: 'label start:',
+          visual: { position: { x: 32, y: 32 }, size: { width: 280, height: 72 } },
+        },
+      ],
+      nodes: [
+        {
+          id: 'node-d6-action',
+          file_id: 'file-day-6',
+          label_id: 'label-d6-main',
+          parent_node_id: null,
+          type: 'action',
+          content: 'window hide',
+          order: '0000',
+          source_span: { start_line: 1, end_line: 1 },
+          metadata: {},
+          visual: { position: { x: 96, y: 136 }, size: { width: 320, height: 88 } },
+        },
+        {
+          id: 'node-jump-ending',
+          file_id: 'file-day-6',
+          label_id: 'label-d6-main',
+          parent_node_id: null,
+          type: 'jump',
+          content: 'jump ending_main',
+          order: '0001',
+          source_span: { start_line: 2, end_line: 2 },
+          metadata: {},
+          visual: { position: { x: 96, y: 248 }, size: { width: 320, height: 88 } },
+        },
+        {
+          id: 'node-ending-return',
+          file_id: 'file-day-6',
+          label_id: 'label-ending-main',
+          parent_node_id: null,
+          type: 'return',
+          content: 'return',
+          order: '0000',
+          source_span: { start_line: 21, end_line: 21 },
+          metadata: {},
+          visual: { position: { x: 96, y: 136 }, size: { width: 320, height: 88 } },
+        },
+        {
+          id: 'node-script-action',
+          file_id: 'file-script',
+          label_id: 'label-script-start',
+          parent_node_id: null,
+          type: 'action',
+          content: 'stop music',
+          order: '0000',
+          source_span: { start_line: 1, end_line: 1 },
+          metadata: {},
+          visual: { position: { x: 96, y: 136 }, size: { width: 320, height: 88 } },
+        },
+      ],
+      edges: [
+        {
+          id: 'edge-jump-ending',
+          source_node_id: 'node-jump-ending',
+          target_node_id: 'start-ending-main',
+          kind: 'jump',
+          metadata: { target: 'ending_main' },
+        },
+      ],
+      diagnostics: [],
+      source_index: { files: {} },
+    };
+
+    const projection = projectGraphToReactFlow(relationGraph);
+    const byId = new Map(projection.nodes.map((node) => [node.id, node]));
+    const day6File = byId.get('file-day-6')!;
+    const scriptFile = byId.get('file-script')!;
+    const d6Label = byId.get('label-d6-main')!;
+    const endingLabel = byId.get('label-ending-main')!;
+
+    expect(endingLabel.position.x).toBeGreaterThan(d6Label.position.x + Number(d6Label.width));
+    expect(rectsOverlap(nodeRect(day6File), nodeRect(scriptFile))).toBe(false);
+    expect(scriptFile.position.x).toBeGreaterThanOrEqual(day6File.position.x + Number(day6File.width));
+  });
+
   it('projects a complete multi-file MVP 2.0 canvas contract', () => {
     const fullGraph: ProjectGraphSnapshot = {
       project_id: 'sprint-4-contract',

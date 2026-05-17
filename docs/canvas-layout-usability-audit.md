@@ -936,3 +936,30 @@ Layout improvement можно закрыть только если выполн�
 1. Это эвристика, не полный layout solver.
 2. Cross-parent relation вроде `start -> start.cupboard` пока не переносит nested frame наружу и не меняет containment.
 3. Для большого проекта понадобится следующий pass: weighted relation graph, pin/manual-position model for frames, better edge lanes, and explicit "Auto arrange project" command.
+
+## 25. Post-relation Anti-overlap Invariant
+
+Дата: 2026-05-17.
+
+Статус: закрывает регрессию, где relation-aware placement уменьшал дистанцию до jump/call target, но расширенный `FileFrame` мог залезть на соседний `FileFrame`.
+
+### Наблюдение
+
+1. В проекте `751db053-2bdf-44ee-8e57-9e6b093fb14d` `day6.rpy` и `script.rpy` визуально пересекались.
+2. Причина не в containment: это sibling file frames, которые стали пересекаться после расширения parent bounds.
+3. Любой layout pass, который меняет frame positions или размеры родителей, должен заново проверять sibling overlap.
+
+### Изменение
+
+1. После relation-aware label placement добавлен финальный anti-overlap pass.
+2. Root-level file frames раздвигаются по горизонтали.
+3. Siblings внутри file/label frames раздвигаются по вертикали.
+4. Attached `else/elif` headers не получают искусственный gap перед child block, но геометрическое пересечение всё равно запрещено.
+
+### Проверка Закрытия
+
+1. Projection regression: `jump ending_main` расширяет `day6.rpy`, а соседний `script.rpy` отодвигается и не пересекается.
+2. Targeted projection test suite: 18 tests passed.
+3. Full frontend suite: 44 tests passed.
+4. Backend suite: 151 tests passed.
+5. Production build passed with known warnings.

@@ -2,6 +2,35 @@
 
 This file is the short project memory for RenPy Visual Editor 2.0. Keep it current when closing master items, changing decisions, or classifying old code.
 
+## 2026-05-17
+
+### Projection Anti-overlap After Relation-aware Frame Placement
+
+Fixed a layout regression where the relation-aware label-frame heuristic could expand a `FileFrame` toward a jump/call target and leave the expanded file overlapping a neighboring file frame.
+
+Files:
+
+1. `frontend/src/utils/projectGraphProjection.ts`
+2. `frontend/src/utils/__tests__/projectGraphProjection.test.ts`
+3. `docs/editor-2.0-architecture.md`
+4. `UPDATES.md`
+
+Result:
+
+1. Projection now runs a final sibling anti-overlap pass after relation-aware label placement.
+2. Root-level `FileFrame`s are separated horizontally after parent bounds expand.
+3. Children inside frames are separated vertically if any layout pass left them intersecting.
+4. Attached `else/elif` headers remain allowed to touch their first child without a visual gap; the pass prevents geometric overlap, not intentional header attachment.
+
+Checks:
+
+1. Added a regression test where `jump ending_main` places a target label to the right, expands `day6.rpy`, and would previously overlap `script.rpy`.
+2. `npm test -- --run src/utils/__tests__/projectGraphProjection.test.ts` passed with 18 tests.
+3. `npm test -- --run` passed with 44 frontend tests.
+4. `python -m pytest backend/tests -q` passed with 151 tests.
+5. `npm run build` passed with known non-blocking Vite/env.js, Browserslist, and large Loro chunk warnings.
+6. Pulled the reported project `751db053-2bdf-44ee-8e57-9e6b093fb14d` snapshot through the local API as `user1`; snapshot contains 7 files, 11 labels, 393 nodes, and 23 relation edges.
+
 ## 2026-05-08
 
 ### Raw-like Ren'Py Blocks Are Aggregated Into Action Nodes
