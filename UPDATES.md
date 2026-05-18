@@ -4,6 +4,60 @@ This file is the short project memory for RenPy Visual Editor 2.0. Keep it curre
 
 ## 2026-05-18
 
+### Terminal Flow And Source-side Edge Routing
+
+Continued the large-tree readability fix after checking the real `a2ee7408-89a7-480f-bffb-9df474ebdd27` project in the browser. Subtree width helped, but remaining clutter came from two sources: `jump/return` nodes incorrectly participating in local fallthrough flow and non-aligned edges using midpoint step routing.
+
+Files:
+
+1. `frontend/src/utils/projectGraphProjection.ts`
+2. `frontend/src/components/projectGraph/ProjectGraphCanvas.tsx`
+3. `frontend/src/utils/__tests__/projectGraphProjection.test.ts`
+4. `docs/editor-2.0-architecture.md`
+5. `UPDATES.md`
+
+Result:
+
+1. `jump` and `return` scenario nodes are terminal endpoints for derived local flow. `jump` still keeps its relation edge to the target `LabelStartNode`, but no longer gets a false fallthrough `sequence` edge to the next lexical node.
+2. Branch edges use source-side top-down routing: short vertical exit from the source, horizontal lane transfer, then vertical entry into the target from above.
+3. Non-aligned forward sequence edges use the same source-side routing instead of React Flow midpoint `step`, reducing long down/up/down routes through dense branch content.
+4. Rejoin edges stay target-side and visually weaker, because they represent branch convergence rather than primary reading flow.
+5. Stale `_manual_position` values in branch-managed labels are clamped after manual position application so alternatives and following nodes cannot sit above their incoming source.
+
+Checks:
+
+1. Added black-box coverage that `jump` and `return` do not derive local fallthrough/rejoin edges.
+2. Added black-box coverage that stale manual branch positions are clamped below their source.
+3. Added path coverage for source-side top-down routing.
+4. `npm test -- --run src/utils/__tests__/projectGraphProjection.test.ts` passed with 24 tests.
+5. `npm test -- --run` passed with 50 frontend tests.
+6. `npm run build` passed with known non-blocking Vite/env.js, Browserslist, and large Loro chunk warnings.
+
+### Subtree-aware Branch Lane Layout
+
+Fixed a large-canvas readability regression where deep `if/else` and menu trees could collapse into repeated X lanes, forcing later anti-overlap passes to push nodes vertically and creating long down/up/down arrows through unrelated blocks.
+
+Files:
+
+1. `frontend/src/utils/projectGraphProjection.ts`
+2. `frontend/src/utils/__tests__/projectGraphProjection.test.ts`
+3. `docs/editor-2.0-architecture.md`
+4. `UPDATES.md`
+
+Result:
+
+1. Top-down branch layout now measures each branch subtree before placing lanes.
+2. `if/else` lanes expand according to the actual width of their nested branch trees instead of using only the fixed `TOP_DOWN_BRANCH_COLUMN_GAP`.
+3. Menu choice lanes use the same measured subtree spacing, so a large choice branch no longer occupies the same lane as a small neighboring choice.
+4. The old minimum left/right branch separation is preserved, but large subtrees can ask for more horizontal space.
+
+Checks:
+
+1. Added a black-box projection test with a generated deep binary Ren'Py-style conditional tree: 16 terminal action leaves must get 16 distinct X lanes and no leaf overlap.
+2. `npm test -- --run src/utils/__tests__/projectGraphProjection.test.ts` passed with 22 tests.
+3. `npm test -- --run` passed with 48 frontend tests.
+4. `npm run build` passed with known non-blocking Vite/env.js, Browserslist, and large Loro chunk warnings.
+
 ### Ren'Py Colon Normalization And No-else False Flow
 
 Fixed two import/projection readability regressions reported from a real project.

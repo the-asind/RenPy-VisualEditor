@@ -820,7 +820,7 @@ describe('projectGraphToReactFlow static projection', () => {
       type: 'nearTargetStep',
       sourceHandle: 'flow-out',
       targetHandle: 'flow-in',
-      data: expect.objectContaining({ direction: 'vertical', targetTurnOffset: 24 }),
+      data: expect.objectContaining({ direction: 'source-vertical', sourceTurnOffset: 36, targetTurnOffset: 24 }),
     });
     expect(sequenceEdges.find((edge) => edge.source === 'start-node-start' && edge.target === 'node-intro-action')).toMatchObject({
       sourceHandle: 'flow-out',
@@ -1028,6 +1028,309 @@ describe('projectGraphToReactFlow static projection', () => {
     );
   });
 
+  it('expands branch lanes by measured subtree width for deep binary conditionals', () => {
+    const nodes: ProjectGraphSnapshot['nodes'] = [];
+    let order = 0;
+    let line = 1;
+    const nextOrder = () => `${String(order++).padStart(4, '0')}`;
+    const addNode = (
+      id: string,
+      parentNodeId: string | null,
+      type: string,
+      content: string,
+      metadata: Record<string, unknown> = {},
+    ) => {
+      nodes.push({
+        id,
+        file_id: 'file-day-1',
+        label_id: 'label-start',
+        parent_node_id: parentNodeId,
+        type,
+        content,
+        order: nextOrder(),
+        source_span: { start_line: line, end_line: line },
+        metadata,
+        visual: { position: { x: 96, y: 136 + order * 112 }, size: { width: 320, height: type === 'action' ? 104 : 96 } },
+      });
+      line += 1;
+    };
+    const addBinaryFork = (parentNodeId: string | null, path: string, depth: number) => {
+      const ifId = `node-if-${path}`;
+      addNode(ifId, parentNodeId, 'if', `if flags["${path}"]:`, { condition: `flags["${path}"]` });
+      if (depth === 0) {
+        addNode(`node-leaf-${path}-true`, ifId, 'action', `r "RenPy Mouse takes true path ${path}."`, {
+          default_title: `r "RenPy Mouse takes true path ${path}."`,
+        });
+      } else {
+        addBinaryFork(ifId, `${path}T`, depth - 1);
+      }
+
+      const elseId = `node-else-${path}`;
+      addNode(elseId, parentNodeId, 'else', 'else:', { condition: null });
+      if (depth === 0) {
+        addNode(`node-leaf-${path}-false`, elseId, 'action', `r "RenPy Mouse takes false path ${path}."`, {
+          default_title: `r "RenPy Mouse takes false path ${path}."`,
+        });
+      } else {
+        addBinaryFork(elseId, `${path}F`, depth - 1);
+      }
+    };
+
+    addNode('node-intro-action', null, 'action', 'r "RenPy Mouse opens the recursive cheese map."', {
+      default_title: 'r "RenPy Mouse opens the recursive cheese map."',
+    });
+    addBinaryFork(null, 'root', 3);
+    addNode('node-after-action', null, 'action', 'r "RenPy Mouse escapes the recursive cheese map."', {
+      default_title: 'r "RenPy Mouse escapes the recursive cheese map."',
+    });
+
+    const deepGraph: ProjectGraphSnapshot = {
+      ...graph,
+      nodes,
+    };
+
+    const projection = projectGraphToReactFlow(deepGraph);
+    const byId = new Map(projection.nodes.map((node) => [node.id, node]));
+    const leafNodes = nodes
+      .filter((node) => node.id.startsWith('node-leaf-'))
+      .map((node) => byId.get(node.id)!)
+      .sort((left, right) => nodeCenterX(left) - nodeCenterX(right));
+    const roundedCenters = leafNodes.map((node) => Math.round(nodeCenterX(node)));
+    const uniqueCenters = new Set(roundedCenters);
+
+    expect(leafNodes).toHaveLength(16);
+    expect(uniqueCenters.size).toBe(leafNodes.length);
+    for (let index = 1; index < leafNodes.length; index += 1) {
+      expect(nodeCenterX(leafNodes[index]) - nodeCenterX(leafNodes[index - 1])).toBeGreaterThanOrEqual(280);
+    }
+
+    for (let leftIndex = 0; leftIndex < leafNodes.length; leftIndex += 1) {
+      for (let rightIndex = leftIndex + 1; rightIndex < leafNodes.length; rightIndex += 1) {
+        expect(rectsOverlap(nodeRect(leafNodes[leftIndex]), nodeRect(leafNodes[rightIndex]))).toBe(false);
+      }
+    }
+  });
+
+  it('treats jump and return nodes as terminal flow endpoints', () => {
+    const terminalGraph: ProjectGraphSnapshot = {
+      ...graph,
+      labels: [
+        ...graph.labels,
+        {
+          id: 'label-day-two',
+          file_id: 'file-day-1',
+          parent_label_id: null,
+          name: 'day_two',
+          qualified_name: 'day_two',
+          scope: 'global',
+          label_start_node_id: 'start-node-day-two',
+          source_span: { start_line: 20, end_line: 24 },
+          visual: { position: { x: 640, y: 48 }, size: { width: 520, height: 420 } },
+        },
+      ],
+      label_starts: [
+        ...graph.label_starts,
+        {
+          id: 'start-node-day-two',
+          file_id: 'file-day-1',
+          label_id: 'label-day-two',
+          qualified_name: 'day_two',
+          content: 'label day_two:',
+          visual: { position: { x: 96, y: 120 }, size: { width: 280, height: 80 } },
+        },
+      ],
+      nodes: [
+        {
+          id: 'node-intro',
+          file_id: 'file-day-1',
+          label_id: 'label-start',
+          parent_node_id: null,
+          type: 'action',
+          content: '# RenPy Mouse checks the hallway.',
+          order: '0000',
+          source_span: { start_line: 1, end_line: 1 },
+          metadata: {},
+          visual: { position: { x: 96, y: 220 }, size: { width: 320, height: 88 } },
+        },
+        {
+          id: 'node-jump-away',
+          file_id: 'file-day-1',
+          label_id: 'label-start',
+          parent_node_id: null,
+          type: 'jump',
+          content: 'jump day_two',
+          order: '0001',
+          source_span: { start_line: 2, end_line: 2 },
+          metadata: {},
+          visual: { position: { x: 96, y: 360 }, size: { width: 320, height: 88 } },
+        },
+        {
+          id: 'node-after-jump',
+          file_id: 'file-day-1',
+          label_id: 'label-start',
+          parent_node_id: null,
+          type: 'action',
+          content: '# This text is lexically after jump, not a fallthrough.',
+          order: '0002',
+          source_span: { start_line: 3, end_line: 3 },
+          metadata: {},
+          visual: { position: { x: 96, y: 500 }, size: { width: 320, height: 88 } },
+        },
+        {
+          id: 'node-if-snack',
+          file_id: 'file-day-1',
+          label_id: 'label-start',
+          parent_node_id: null,
+          type: 'if',
+          content: 'if snack_ready:',
+          order: '0003',
+          source_span: { start_line: 4, end_line: 4 },
+          metadata: {},
+          visual: { position: { x: 96, y: 640 }, size: { width: 320, height: 88 } },
+        },
+        {
+          id: 'node-return-snack',
+          file_id: 'file-day-1',
+          label_id: 'label-start',
+          parent_node_id: 'node-if-snack',
+          type: 'return',
+          content: 'return',
+          order: '0004',
+          source_span: { start_line: 5, end_line: 5 },
+          metadata: {},
+          visual: { position: { x: 96, y: 780 }, size: { width: 320, height: 88 } },
+        },
+        {
+          id: 'node-else-snack',
+          file_id: 'file-day-1',
+          label_id: 'label-start',
+          parent_node_id: null,
+          type: 'else',
+          content: 'else:',
+          order: '0005',
+          source_span: { start_line: 6, end_line: 6 },
+          metadata: {},
+          visual: { position: { x: 96, y: 920 }, size: { width: 320, height: 88 } },
+        },
+        {
+          id: 'node-else-action',
+          file_id: 'file-day-1',
+          label_id: 'label-start',
+          parent_node_id: 'node-else-snack',
+          type: 'action',
+          content: '# RenPy Mouse keeps walking.',
+          order: '0006',
+          source_span: { start_line: 7, end_line: 7 },
+          metadata: {},
+          visual: { position: { x: 96, y: 1060 }, size: { width: 320, height: 88 } },
+        },
+        {
+          id: 'node-after-if',
+          file_id: 'file-day-1',
+          label_id: 'label-start',
+          parent_node_id: null,
+          type: 'action',
+          content: '# Only the else path can fall through here.',
+          order: '0007',
+          source_span: { start_line: 8, end_line: 8 },
+          metadata: {},
+          visual: { position: { x: 96, y: 1200 }, size: { width: 320, height: 88 } },
+        },
+      ],
+      edges: [
+        {
+          id: 'edge-jump-away',
+          source_node_id: 'node-jump-away',
+          target_node_id: 'start-node-day-two',
+          kind: 'jump',
+          metadata: {},
+        },
+      ],
+    };
+
+    const projection = projectGraphToReactFlow(terminalGraph);
+    const derivedPairs = new Set(
+      projection.edges
+        .filter((edge) => edge.data?.derived === true)
+        .map((edge) => `${edge.source}->${edge.target}`),
+    );
+
+    expect(derivedPairs).toContain('start-node-start->node-intro');
+    expect(derivedPairs).toContain('node-intro->node-jump-away');
+    expect(derivedPairs).not.toContain('node-jump-away->node-after-jump');
+    expect(derivedPairs).toContain('node-after-jump->node-if-snack');
+    expect(derivedPairs).toContain('node-if-snack->node-return-snack');
+    expect(derivedPairs).toContain('node-if-snack->node-else-snack');
+    expect(derivedPairs).not.toContain('node-return-snack->node-after-if');
+    expect(derivedPairs).toContain('node-else-action->node-after-if');
+  });
+
+  it('clamps stale manual branch positions so alternatives remain below their source', () => {
+    const staleManualBranchGraph: ProjectGraphSnapshot = {
+      ...graph,
+      nodes: [
+        {
+          id: 'node-if-shelf',
+          file_id: 'file-day-1',
+          label_id: 'label-start',
+          parent_node_id: null,
+          type: 'if',
+          content: 'if shelf_is_tall:',
+          order: '0000',
+          source_span: { start_line: 1, end_line: 1 },
+          metadata: { _manual_position: true },
+          visual: { position: { x: 96, y: 520 }, size: { width: 320, height: 88 } },
+        },
+        {
+          id: 'node-if-action',
+          file_id: 'file-day-1',
+          label_id: 'label-start',
+          parent_node_id: 'node-if-shelf',
+          type: 'action',
+          content: '# RenPy Mouse climbs the tall shelf.',
+          order: '0001',
+          source_span: { start_line: 2, end_line: 2 },
+          metadata: {},
+          visual: { position: { x: 96, y: 660 }, size: { width: 320, height: 88 } },
+        },
+        {
+          id: 'node-else-shelf',
+          file_id: 'file-day-1',
+          label_id: 'label-start',
+          parent_node_id: null,
+          type: 'else',
+          content: 'else:',
+          order: '0002',
+          source_span: { start_line: 3, end_line: 3 },
+          metadata: { _manual_position: true },
+          visual: { position: { x: 520, y: 480 }, size: { width: 320, height: 88 } },
+        },
+        {
+          id: 'node-else-action',
+          file_id: 'file-day-1',
+          label_id: 'label-start',
+          parent_node_id: 'node-else-shelf',
+          type: 'action',
+          content: '# RenPy Mouse asks for a tiny ladder.',
+          order: '0003',
+          source_span: { start_line: 4, end_line: 4 },
+          metadata: {},
+          visual: { position: { x: 520, y: 620 }, size: { width: 320, height: 88 } },
+        },
+      ],
+      edges: [],
+    };
+
+    const projection = projectGraphToReactFlow(staleManualBranchGraph);
+    const byId = new Map(projection.nodes.map((node) => [node.id, node]));
+    const ifNode = byId.get('node-if-shelf')!;
+    const elseNode = byId.get('node-else-shelf')!;
+    const branchEdge = projection.edges.find((edge) => edge.source === 'node-if-shelf' && edge.target === 'node-else-shelf');
+
+    expect(elseNode.position.y).toBeGreaterThanOrEqual(ifNode.position.y + Number(ifNode.height) + 48);
+    expect(branchEdge?.type).toBe('nearTargetStep');
+  });
+
   it('builds near-target rejoin paths with a shared target-side turn lane', () => {
     const firstPath = buildNearTargetStepPath({
       sourceX: 120,
@@ -1053,10 +1356,19 @@ describe('projectGraphToReactFlow static projection', () => {
       targetOffset: 24,
       direction: 'vertical',
     });
+    const sourceVerticalPath = buildNearTargetStepPath({
+      sourceX: 120,
+      sourceY: 80,
+      targetX: 640,
+      targetY: 520,
+      sourceOffset: 36,
+      direction: 'source-vertical',
+    });
 
     expect(firstPath).toBe('M 120 80 L 568 80 L 568 180 L 640 180');
     expect(secondPath).toBe('M 320 300 L 568 300 L 568 180 L 640 180');
     expect(verticalPath).toBe('M 120 80 L 120 496 L 640 496 L 640 520');
+    expect(sourceVerticalPath).toBe('M 120 80 L 120 116 L 640 116 L 640 520');
   });
 
   it('normalizes overlapping layout and expands parent frames around children', () => {

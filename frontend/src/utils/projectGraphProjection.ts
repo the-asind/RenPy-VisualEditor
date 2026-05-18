@@ -140,6 +140,7 @@ const LABEL_FRAME_CONTENT_TOP_PADDING = 72;
 const TOP_DOWN_FLOW_ROW_GAP = 84;
 const TOP_DOWN_BRANCH_HEADER_GAP = 0;
 const TOP_DOWN_BRANCH_COLUMN_GAP = 420;
+const TOP_DOWN_BRANCH_SUBTREE_GAP = 96;
 const TOP_DOWN_REJOIN_TURN_OFFSET = 24;
 const BRANCH_HEADER_HEIGHT = 40;
 const RELATION_LABEL_FRAME_COLUMN_GAP = 64;
@@ -180,6 +181,8 @@ const isBranchHeaderNode = (node: LayoutNode): boolean => ['elif', 'else'].inclu
 const isMenuNode = (node: LayoutNode): boolean => scenarioKind(node) === 'menu';
 
 const isMenuChoiceNode = (node: LayoutNode): boolean => scenarioKind(node) === 'menu_choice';
+
+const isFlowTerminalNode = (node: LayoutNode): boolean => ['jump', 'return'].includes(scenarioKind(node));
 
 const isBranchingParentNode = (node: LayoutNode | undefined): boolean =>
   !!node && node.type === 'scenarioNode' && ['if', 'elif', 'else', 'menu'].includes(scenarioKind(node));
@@ -1041,6 +1044,160 @@ const applyConditionalStoryLayout = (nodes: LayoutNode[], graph: ProjectGraphSna
     }
   };
 
+  const shiftScenarioSubtreeY = (labelId: string, scenarioId: string, deltaY: number, seen = new Set<string>()): void => {
+    if (seen.has(scenarioId) || deltaY === 0) {
+      return;
+    }
+    seen.add(scenarioId);
+
+    const node = scenarioLayoutsById.get(scenarioId);
+    if (node) {
+      node.position.y += deltaY;
+    }
+
+    for (const child of getChildren(labelId, scenarioId)) {
+      shiftScenarioSubtreeY(labelId, child.id, deltaY, seen);
+    }
+  };
+
+  const shiftScenarioAtLeastY = (labelId: string, scenario: ScenarioNodeSnapshot, minimumY: number): void => {
+    const node = scenarioLayoutsById.get(scenario.id);
+    if (!node || node.position.y >= minimumY) {
+      return;
+    }
+
+    shiftScenarioSubtreeY(labelId, scenario.id, minimumY - node.position.y);
+  };
+
+  const sourceMinimumY = (sources: LayoutNode[]): number | null => {
+    const activeSources = sources.filter((node) => !isFlowTerminalNode(node));
+    if (activeSources.length === 0) {
+      return null;
+    }
+
+    return Math.max(
+      ...activeSources.map((node) => nodeBottom(node) + (isBranchHeaderNode(node) ? TOP_DOWN_BRANCH_HEADER_GAP : TOP_DOWN_FLOW_ROW_GAP)),
+    );
+  };
+
+  const enforceManualTopDownFlow = (labelId: string): void => {
+    const enforceList = (parentNodeId: string | null, incomingSources: LayoutNode[]): LayoutNode[] => {
+      const siblings = getChildren(labelId, parentNodeId);
+      let sources = incomingSources.filter((node) => !isFlowTerminalNode(node));
+      let index = 0;
+
+      while (index < siblings.length) {
+        const sibling = siblings[index];
+        const siblingNode = scenarioLayoutsById.get(sibling.id);
+        if (!siblingNode) {
+          index += 1;
+          continue;
+        }
+
+        if (isConditionalScenario(sibling)) {
+          const branches = [sibling];
+          let afterBranchIndex = index + 1;
+          while (afterBranchIndex < siblings.length && isConditionalScenario(siblings[afterBranchIndex])) {
+            branches.push(siblings[afterBranchIndex]);
+            afterBranchIndex += 1;
+          }
+
+          const incomingMinimumY = sourceMinimumY(sources);
+          if (incomingMinimumY !== null) {
+            shiftScenarioAtLeastY(labelId, branches[0], incomingMinimumY);
+          }
+
+          const rootBranchNode = scenarioLayoutsById.get(branches[0].id);
+          const alternativeMinimumY = rootBranchNode
+            ? nodeBottom(rootBranchNode) + TOP_DOWN_FLOW_ROW_GAP
+            : incomingMinimumY;
+          if (alternativeMinimumY !== null) {
+            for (const branch of branches.slice(1)) {
+              shiftScenarioAtLeastY(labelId, branch, alternativeMinimumY);
+            }
+          }
+
+          const terminals: LayoutNode[] = [];
+          for (const branch of branches) {
+            const branchNode = scenarioLayoutsById.get(branch.id);
+            if (!branchNode) {
+              continue;
+            }
+
+            const branchChildren = getChildren(labelId, branch.id);
+            if (branchChildren.length > 0) {
+              terminals.push(...enforceList(branch.id, [branchNode]));
+            } else if (!isFlowTerminalNode(branchNode)) {
+              terminals.push(branchNode);
+            }
+          }
+
+          sources = terminals.filter((node) => !isFlowTerminalNode(node));
+          index = afterBranchIndex;
+          continue;
+        }
+
+        if (isMenuScenario(sibling)) {
+          const incomingMinimumY = sourceMinimumY(sources);
+          if (incomingMinimumY !== null) {
+            shiftScenarioAtLeastY(labelId, sibling, incomingMinimumY);
+          }
+
+          const menuNode = scenarioLayoutsById.get(sibling.id);
+          const choiceMinimumY = menuNode ? nodeBottom(menuNode) + TOP_DOWN_FLOW_ROW_GAP : null;
+          const choices = getChildren(labelId, sibling.id).filter(isMenuChoiceScenario);
+          if (choiceMinimumY !== null) {
+            for (const choice of choices) {
+              shiftScenarioAtLeastY(labelId, choice, choiceMinimumY);
+            }
+          }
+
+          const terminals: LayoutNode[] = [];
+          for (const choice of choices) {
+            const choiceNode = scenarioLayoutsById.get(choice.id);
+            if (!choiceNode) {
+              continue;
+            }
+
+            const choiceChildren = getChildren(labelId, choice.id);
+            if (choiceChildren.length > 0) {
+              terminals.push(...enforceList(choice.id, [choiceNode]));
+            } else if (!isFlowTerminalNode(choiceNode)) {
+              terminals.push(choiceNode);
+            }
+          }
+
+          sources = terminals.filter((node) => !isFlowTerminalNode(node));
+          index += 1;
+          continue;
+        }
+
+        const incomingMinimumY = sourceMinimumY(sources);
+        if (incomingMinimumY !== null) {
+          shiftScenarioAtLeastY(labelId, sibling, incomingMinimumY);
+        }
+
+        const childSnapshots = getChildren(labelId, sibling.id);
+        if (isFlowTerminalNode(siblingNode)) {
+          sources = [];
+        } else if (childSnapshots.length > 0) {
+          sources = enforceList(sibling.id, [siblingNode]);
+        } else {
+          sources = [siblingNode];
+        }
+        index += 1;
+      }
+
+      return sources.filter((node) => !isFlowTerminalNode(node));
+    };
+
+    const labelStart = graph.label_starts.find((start) => start.label_id === labelId);
+    const startNode = labelStart ? byId.get(labelStart.id) : undefined;
+    if (startNode) {
+      enforceList(null, [startNode]);
+    }
+  };
+
   const combineBounds = (
     current: { leftX: number; rightX: number; topY: number; bottomY: number },
     next: { leftX: number; rightX: number; topY: number; bottomY: number },
@@ -1050,6 +1207,175 @@ const applyConditionalStoryLayout = (nodes: LayoutNode[], graph: ProjectGraphSna
     topY: Math.min(current.topY, next.topY),
     bottomY: Math.max(current.bottomY, next.bottomY),
   });
+
+  type TreeMeasure = { left: number; right: number };
+  type ConditionalLanePlan = {
+    trueOffset: number;
+    alternativeOffsetsById: Map<string, number>;
+    groupMeasure: TreeMeasure;
+  };
+
+  const measureWidth = (measure: TreeMeasure): number => measure.left + measure.right;
+  const hasMeasureContent = (measure: TreeMeasure): boolean => measureWidth(measure) > 0;
+  const measureNode = (node: LayoutNode | undefined): TreeMeasure => ({
+    left: (node?.width ?? COMPACT_FRAME_MIN_SIZE.scenarioNode.width) / 2,
+    right: (node?.width ?? COMPACT_FRAME_MIN_SIZE.scenarioNode.width) / 2,
+  });
+  const combineMeasureAtOffset = (current: TreeMeasure, offset: number, next: TreeMeasure): TreeMeasure => ({
+    left: Math.max(current.left, next.left - offset),
+    right: Math.max(current.right, offset + next.right),
+  });
+  const computeLaneCenters = (measures: TreeMeasure[], gap: number): number[] => {
+    const totalWidth =
+      measures.reduce((sum, measure) => sum + measureWidth(measure), 0) + gap * Math.max(0, measures.length - 1);
+    let cursor = -totalWidth / 2;
+    return measures.map((measure) => {
+      const center = cursor + measure.left;
+      cursor += measureWidth(measure) + gap;
+      return center;
+    });
+  };
+  const widenConditionalLaneCenters = (centers: number[]): number[] => {
+    if (centers.length < 2) {
+      return centers;
+    }
+
+    const leftmost = centers[0];
+    const rightmost = centers[centers.length - 1];
+    const leftScale = leftmost < 0 ? TOP_DOWN_BRANCH_COLUMN_GAP / Math.abs(leftmost) : 1;
+    const rightScale = rightmost > 0 ? TOP_DOWN_BRANCH_COLUMN_GAP / rightmost : 1;
+    const scale = Math.max(1, leftScale, rightScale);
+    return centers.map((center) => center * scale);
+  };
+  const conditionalBranchesAt = (
+    items: ScenarioNodeSnapshot[],
+    index: number,
+  ): { branches: ScenarioNodeSnapshot[]; nextIndex: number } => {
+    const branches = [items[index]];
+    let nextIndex = index + 1;
+    while (nextIndex < items.length && isConditionalScenario(items[nextIndex])) {
+      branches.push(items[nextIndex]);
+      nextIndex += 1;
+    }
+    return { branches, nextIndex };
+  };
+  const measureCache = new Map<string, TreeMeasure>();
+
+  const measureBranchHead = (labelId: string, branch: ScenarioNodeSnapshot): TreeMeasure => {
+    const branchNode = scenarioLayoutsById.get(branch.id);
+    const branchChildren = getChildren(labelId, branch.id);
+    const firstChildNode = branchChildren[0] ? scenarioLayoutsById.get(branchChildren[0].id) : undefined;
+    const headerWidth = isBranchHeaderScenario(branch) && firstChildNode ? firstChildNode.width : branchNode?.width;
+    let result = {
+      left: (headerWidth ?? COMPACT_FRAME_MIN_SIZE.scenarioNode.width) / 2,
+      right: (headerWidth ?? COMPACT_FRAME_MIN_SIZE.scenarioNode.width) / 2,
+    };
+
+    if (branchChildren.length > 0) {
+      result = combineMeasureAtOffset(result, 0, measureList(labelId, branch.id));
+    }
+
+    return result;
+  };
+
+  const measureConditionalGroup = (
+    labelId: string,
+    rootBranch: ScenarioNodeSnapshot,
+    alternativeBranches: ScenarioNodeSnapshot[],
+  ): ConditionalLanePlan => {
+    const rootNode = scenarioLayoutsById.get(rootBranch.id);
+    const trueMeasure = measureList(labelId, rootBranch.id);
+    let groupMeasure = measureNode(rootNode);
+    const alternativeOffsetsById = new Map<string, number>();
+    let trueOffset = 0;
+
+    if (alternativeBranches.length === 0) {
+      if (hasMeasureContent(trueMeasure)) {
+        trueOffset = Math.max(
+          TOP_DOWN_BRANCH_COLUMN_GAP,
+          (rootNode?.width ?? COMPACT_FRAME_MIN_SIZE.scenarioNode.width) / 2 + TOP_DOWN_BRANCH_SUBTREE_GAP + trueMeasure.left,
+        );
+        groupMeasure = combineMeasureAtOffset(groupMeasure, trueOffset, trueMeasure);
+      }
+
+      return { trueOffset, alternativeOffsetsById, groupMeasure };
+    }
+
+    const laneBranches = [...alternativeBranches].reverse();
+    const laneMeasures = [
+      ...laneBranches.map((branch) => measureBranchHead(labelId, branch)),
+      hasMeasureContent(trueMeasure) ? trueMeasure : measureNode(rootNode),
+    ];
+    const laneCenters = widenConditionalLaneCenters(computeLaneCenters(laneMeasures, TOP_DOWN_BRANCH_SUBTREE_GAP));
+
+    for (const [laneIndex, branch] of laneBranches.entries()) {
+      const offset = laneCenters[laneIndex];
+      alternativeOffsetsById.set(branch.id, offset);
+      groupMeasure = combineMeasureAtOffset(groupMeasure, offset, laneMeasures[laneIndex]);
+    }
+
+    trueOffset = laneCenters[laneCenters.length - 1];
+    if (hasMeasureContent(trueMeasure)) {
+      groupMeasure = combineMeasureAtOffset(groupMeasure, trueOffset, trueMeasure);
+    }
+
+    return { trueOffset, alternativeOffsetsById, groupMeasure };
+  };
+
+  function measureList(labelId: string, parentNodeId: string | null): TreeMeasure {
+    const cacheKey = domainChildrenKey(labelId, parentNodeId);
+    const cached = measureCache.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    const items = getChildren(labelId, parentNodeId);
+    let result: TreeMeasure = { left: 0, right: 0 };
+    let index = 0;
+
+    while (index < items.length) {
+      const scenario = items[index];
+      const layoutNode = scenarioLayoutsById.get(scenario.id);
+      if (!layoutNode) {
+        index += 1;
+        continue;
+      }
+
+      if (isConditionalScenario(scenario)) {
+        const { branches, nextIndex } = conditionalBranchesAt(items, index);
+        const conditionalMeasure = measureConditionalGroup(labelId, scenario, branches.slice(1)).groupMeasure;
+        result = combineMeasureAtOffset(result, 0, conditionalMeasure);
+        index = nextIndex;
+        continue;
+      }
+
+      if (isMenuScenario(scenario)) {
+        let menuMeasure = measureNode(layoutNode);
+        const choices = getChildren(labelId, scenario.id).filter(isMenuChoiceScenario);
+        if (choices.length > 0) {
+          const choiceMeasures = choices.map((choice) => measureBranchHead(labelId, choice));
+          const choiceCenters = computeLaneCenters(choiceMeasures, TOP_DOWN_BRANCH_SUBTREE_GAP);
+          for (const [choiceIndex, choiceMeasure] of choiceMeasures.entries()) {
+            menuMeasure = combineMeasureAtOffset(menuMeasure, choiceCenters[choiceIndex], choiceMeasure);
+          }
+        }
+        result = combineMeasureAtOffset(result, 0, menuMeasure);
+        index += 1;
+        continue;
+      }
+
+      let nodeMeasure = measureNode(layoutNode);
+      const childMeasure = measureList(labelId, scenario.id);
+      if (hasMeasureContent(childMeasure)) {
+        nodeMeasure = combineMeasureAtOffset(nodeMeasure, 0, childMeasure);
+      }
+      result = combineMeasureAtOffset(result, 0, nodeMeasure);
+      index += 1;
+    }
+
+    measureCache.set(cacheKey, result);
+    return result;
+  }
 
   const layoutList = (
     labelId: string,
@@ -1145,8 +1471,10 @@ const applyConditionalStoryLayout = (nodes: LayoutNode[], graph: ProjectGraphSna
         };
       }
 
+      const choiceMeasures = choices.map((choice) => measureBranchHead(labelId, choice));
+      const choiceCenters = computeLaneCenters(choiceMeasures, TOP_DOWN_BRANCH_SUBTREE_GAP);
       for (const [choiceIndex, choice] of choices.entries()) {
-        const choiceCenterX = centerX + (choiceIndex - (choices.length - 1) / 2) * TOP_DOWN_BRANCH_COLUMN_GAP;
+        const choiceCenterX = centerX + choiceCenters[choiceIndex];
         const choiceResult = layoutBranchHead(choice, choiceCenterX, branchStartY);
         if (!choiceResult) {
           continue;
@@ -1173,12 +1501,8 @@ const applyConditionalStoryLayout = (nodes: LayoutNode[], graph: ProjectGraphSna
       }
 
       if (isConditionalScenario(scenario)) {
-        const branches: ScenarioNodeSnapshot[] = [scenario];
-        let nextIndex = index + 1;
-        while (nextIndex < items.length && isConditionalScenario(items[nextIndex])) {
-          branches.push(items[nextIndex]);
-          nextIndex += 1;
-        }
+        const { branches, nextIndex } = conditionalBranchesAt(items, index);
+        const lanePlan = measureConditionalGroup(labelId, scenario, branches.slice(1));
 
         placeNodeAtCenter(layoutNode, centerX, cursorY);
         let groupBounds = {
@@ -1193,7 +1517,7 @@ const applyConditionalStoryLayout = (nodes: LayoutNode[], graph: ProjectGraphSna
         const trueResult = layoutList(
           labelId,
           scenario.id,
-          centerX + TOP_DOWN_BRANCH_COLUMN_GAP,
+          centerX + lanePlan.trueOffset,
           branchStartY,
         );
         if (trueResult.terminals.length > 0) {
@@ -1204,9 +1528,10 @@ const applyConditionalStoryLayout = (nodes: LayoutNode[], graph: ProjectGraphSna
         }
 
         for (const [alternativeIndex, branch] of branches.slice(1).entries()) {
+          const branchOffset = lanePlan.alternativeOffsetsById.get(branch.id) ?? -TOP_DOWN_BRANCH_COLUMN_GAP * (alternativeIndex + 1);
           const branchResult = layoutBranchHead(
             branch,
-            centerX - TOP_DOWN_BRANCH_COLUMN_GAP * (alternativeIndex + 1),
+            centerX + branchOffset,
             branchStartY,
           );
           if (!branchResult) {
@@ -1301,6 +1626,7 @@ const applyConditionalStoryLayout = (nodes: LayoutNode[], graph: ProjectGraphSna
     }
 
     applyManualBranchPositions(labelId);
+    enforceManualTopDownFlow(labelId);
   }
 };
 
@@ -1326,14 +1652,16 @@ const deriveFlowEdges = (nodes: LayoutNode[], graph: ProjectGraphSnapshot): Edge
     }
     seen.add(id);
 
-    const useNearTargetRouting = flowRole === 'rejoin' || kind === 'branch';
     const useStraightRouting =
-      !useNearTargetRouting &&
       kind === 'sequence' &&
       flowRole === 'forward' &&
       source.parentId === target.parentId &&
       Math.abs(nodeCenterX(source) - nodeCenterX(target)) <= 1 &&
       target.position.y >= source.position.y + source.height;
+    const useSourceSideFlowRouting =
+      (kind === 'branch' && flowRole !== 'rejoin') ||
+      (kind === 'sequence' && flowRole === 'forward' && !useStraightRouting);
+    const useNearTargetRouting = flowRole === 'rejoin' || kind === 'branch' || useSourceSideFlowRouting;
 
     edges.push({
       id,
@@ -1363,7 +1691,8 @@ const deriveFlowEdges = (nodes: LayoutNode[], graph: ProjectGraphSnapshot): Edge
         kind,
         flowRole,
         targetTurnOffset: useNearTargetRouting ? TOP_DOWN_REJOIN_TURN_OFFSET : undefined,
-        direction: useNearTargetRouting ? 'vertical' : undefined,
+        sourceTurnOffset: useSourceSideFlowRouting ? 36 : undefined,
+        direction: useSourceSideFlowRouting ? 'source-vertical' : useNearTargetRouting ? 'vertical' : undefined,
       },
     });
   };
@@ -1397,7 +1726,7 @@ const deriveFlowEdges = (nodes: LayoutNode[], graph: ProjectGraphSnapshot): Edge
           afterBranchIndex += 1;
         }
 
-        for (const source of sources) {
+        for (const source of sources.filter((node) => !isFlowTerminalNode(node))) {
           addEdge(source, branches[0], isBranchingParentNode(source) ? 'branch' : 'sequence');
         }
 
@@ -1430,7 +1759,7 @@ const deriveFlowEdges = (nodes: LayoutNode[], graph: ProjectGraphSnapshot): Edge
       }
 
       if (isMenuNode(sibling)) {
-        for (const source of sources) {
+        for (const source of sources.filter((node) => !isFlowTerminalNode(node))) {
           addEdge(
             source,
             sibling,
@@ -1458,7 +1787,7 @@ const deriveFlowEdges = (nodes: LayoutNode[], graph: ProjectGraphSnapshot): Edge
         continue;
       }
 
-      for (const source of sources) {
+      for (const source of sources.filter((node) => !isFlowTerminalNode(node))) {
         if (isAttachedBranchHeaderEdge(source, sibling)) {
           continue;
         }
@@ -1470,11 +1799,15 @@ const deriveFlowEdges = (nodes: LayoutNode[], graph: ProjectGraphSnapshot): Edge
         );
       }
       const childSnapshots = getChildren(labelId, sibling.id);
-      sources = childSnapshots.length > 0 ? deriveList(labelId, sibling.id, [sibling]) : [sibling];
+      if (isFlowTerminalNode(sibling)) {
+        sources = [];
+      } else {
+        sources = childSnapshots.length > 0 ? deriveList(labelId, sibling.id, [sibling]) : [sibling];
+      }
       index += 1;
     }
 
-    return sources;
+    return sources.filter((node) => !isFlowTerminalNode(node));
   };
 
   for (const label of graph.labels) {

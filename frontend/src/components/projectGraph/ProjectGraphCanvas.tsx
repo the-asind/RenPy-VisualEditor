@@ -330,7 +330,8 @@ export interface NearTargetStepPathParams {
   targetX: number;
   targetY: number;
   targetOffset?: number;
-  direction?: 'horizontal' | 'vertical';
+  sourceOffset?: number;
+  direction?: 'horizontal' | 'vertical' | 'source-vertical';
 }
 
 const formatPathNumber = (value: number): string =>
@@ -342,8 +343,30 @@ export const buildNearTargetStepPath = ({
   targetX,
   targetY,
   targetOffset = NEAR_TARGET_TURN_OFFSET,
+  sourceOffset = targetOffset,
   direction = 'horizontal',
 }: NearTargetStepPathParams): string => {
+  if (direction === 'source-vertical') {
+    const verticalDirection = targetY >= sourceY ? 1 : -1;
+    const minimumSourceClearance = 24;
+    const turnY = sourceY + verticalDirection * Math.max(minimumSourceClearance, sourceOffset);
+
+    return [
+      'M',
+      formatPathNumber(sourceX),
+      formatPathNumber(sourceY),
+      'L',
+      formatPathNumber(sourceX),
+      formatPathNumber(turnY),
+      'L',
+      formatPathNumber(targetX),
+      formatPathNumber(turnY),
+      'L',
+      formatPathNumber(targetX),
+      formatPathNumber(targetY),
+    ].join(' ');
+  }
+
   if (direction === 'vertical') {
     const verticalDirection = targetY >= sourceY ? 1 : -1;
     const requestedTurnY = targetY - verticalDirection * targetOffset;
@@ -396,8 +419,10 @@ export const buildNearTargetStepPath = ({
 const NearTargetStepEdge = memo(({ sourceX, sourceY, targetX, targetY, markerEnd, style, data }: EdgeProps) => {
   const targetOffset =
     typeof data?.targetTurnOffset === 'number' ? data.targetTurnOffset : NEAR_TARGET_TURN_OFFSET;
-  const direction = data?.direction === 'vertical' ? 'vertical' : 'horizontal';
-  const path = buildNearTargetStepPath({ sourceX, sourceY, targetX, targetY, targetOffset, direction });
+  const sourceOffset = typeof data?.sourceTurnOffset === 'number' ? data.sourceTurnOffset : targetOffset;
+  const direction =
+    data?.direction === 'vertical' || data?.direction === 'source-vertical' ? data.direction : 'horizontal';
+  const path = buildNearTargetStepPath({ sourceX, sourceY, targetX, targetY, targetOffset, sourceOffset, direction });
 
   return <BaseEdge markerEnd={markerEnd} path={path} style={style} />;
 });
