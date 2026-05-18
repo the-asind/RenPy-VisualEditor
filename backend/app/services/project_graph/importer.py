@@ -1,5 +1,6 @@
 from pathlib import Path
 from dataclasses import replace
+import re
 from typing import Iterable
 from uuid import uuid4
 
@@ -106,7 +107,7 @@ class ProjectGraphImporter:
         label_index_by_parent: dict[str | None, int] = {None: 0}
 
         for line_number, line in enumerate(content.splitlines()):
-            stripped = line.strip()
+            stripped = self._normalize_statement_colon_spacing(line.strip())
             label_name = self._extract_label_name(stripped)
             if label_name is None:
                 continue
@@ -231,7 +232,7 @@ class ProjectGraphImporter:
     ) -> int:
         while index < end_index:
             line = lines[index]
-            stripped = line.strip()
+            stripped = self._normalize_statement_colon_spacing(line.strip())
 
             if not stripped:
                 index += 1
@@ -340,6 +341,7 @@ class ProjectGraphImporter:
         node_order: list[int],
     ) -> int:
         menu_line = lines[index]
+        menu_content = self._normalize_statement_colon_spacing(menu_line.strip())
         menu_indent = self._indent_level(menu_line)
         menu_id = str(uuid4())
         nodes.append(
@@ -348,7 +350,7 @@ class ProjectGraphImporter:
                 label_id=label.id,
                 parent_node_id=parent_node_id,
                 node_type="menu",
-                content=menu_line.strip(),
+                content=menu_content,
                 order=node_order[0],
                 line_number=index,
                 metadata={},
@@ -360,7 +362,7 @@ class ProjectGraphImporter:
 
         while index < end_index:
             line = lines[index]
-            child = line.strip()
+            child = self._normalize_statement_colon_spacing(line.strip())
             child_indent = self._indent_level(line)
 
             if not child:
@@ -455,7 +457,7 @@ class ProjectGraphImporter:
 
         while index < end_index:
             line = lines[index]
-            stripped = line.strip()
+            stripped = self._normalize_statement_colon_spacing(line.strip())
 
             if not stripped:
                 if block_lines:
@@ -524,7 +526,7 @@ class ProjectGraphImporter:
                 index += 1
                 continue
 
-            stripped = lines[index].strip()
+            stripped = self._normalize_statement_colon_spacing(lines[index].strip())
             if current_label is None or not self._is_menu_line(stripped):
                 index += 1
                 continue
@@ -551,7 +553,7 @@ class ProjectGraphImporter:
             while index < len(lines):
                 line = lines[index]
                 child_indent = self._indent_level(line)
-                child = line.strip()
+                child = self._normalize_statement_colon_spacing(line.strip())
 
                 if not child:
                     consumed_lines.add(index)
@@ -602,7 +604,7 @@ class ProjectGraphImporter:
 
                     while index < len(lines):
                         statement_line = lines[index]
-                        statement = statement_line.strip()
+                        statement = self._normalize_statement_colon_spacing(statement_line.strip())
                         statement_indent = self._indent_level(statement_line)
 
                         if not statement:
@@ -662,7 +664,7 @@ class ProjectGraphImporter:
                 index += 1
                 continue
 
-            stripped = lines[index].strip()
+            stripped = self._normalize_statement_colon_spacing(lines[index].strip())
             branch_type = self._conditional_node_type(stripped)
             if current_label is None or branch_type is None:
                 index += 1
@@ -689,7 +691,7 @@ class ProjectGraphImporter:
 
             while index < len(lines):
                 child_line = lines[index]
-                child = child_line.strip()
+                child = self._normalize_statement_colon_spacing(child_line.strip())
                 child_indent = self._indent_level(child_line)
 
                 if not child:
@@ -748,7 +750,7 @@ class ProjectGraphImporter:
                 index += 1
                 continue
 
-            stripped = lines[index].strip()
+            stripped = self._normalize_statement_colon_spacing(lines[index].strip())
             if current_label is None or not stripped:
                 index += 1
                 continue
@@ -920,7 +922,8 @@ class ProjectGraphImporter:
 
     @staticmethod
     def _is_menu_line(stripped_line: str) -> bool:
-        return stripped_line.startswith("menu") and stripped_line.endswith(":")
+        normalized = ProjectGraphImporter._normalize_statement_colon_spacing(stripped_line)
+        return normalized.startswith("menu") and normalized.endswith(":")
 
     @staticmethod
     def _is_menu_prompt_line(stripped_line: str) -> bool:
@@ -928,11 +931,13 @@ class ProjectGraphImporter:
 
     @staticmethod
     def _is_menu_choice_line(stripped_line: str) -> bool:
-        return stripped_line.startswith('"') and stripped_line.endswith(":")
+        normalized = ProjectGraphImporter._normalize_statement_colon_spacing(stripped_line)
+        return normalized.startswith('"') and normalized.endswith(":")
 
     @staticmethod
     def _parse_choice_metadata(choice_line: str) -> dict[str, str | None]:
-        without_colon = choice_line[:-1].strip()
+        normalized = ProjectGraphImporter._normalize_statement_colon_spacing(choice_line)
+        without_colon = normalized[:-1].strip()
         closing_quote_index = without_colon.find('"', 1)
         if closing_quote_index == -1:
             return {"choice_text": without_colon.strip('"'), "condition": None}
@@ -950,20 +955,22 @@ class ProjectGraphImporter:
 
     @staticmethod
     def _conditional_node_type(statement: str) -> str | None:
-        if statement.startswith("if ") and statement.endswith(":"):
+        normalized = ProjectGraphImporter._normalize_statement_colon_spacing(statement)
+        if normalized.startswith("if ") and normalized.endswith(":"):
             return "if"
-        if statement.startswith("elif ") and statement.endswith(":"):
+        if normalized.startswith("elif ") and normalized.endswith(":"):
             return "elif"
-        if statement == "else:":
+        if normalized == "else:":
             return "else"
         return None
 
     @staticmethod
     def _conditional_condition(statement: str) -> str | None:
-        if statement.startswith("if ") and statement.endswith(":"):
-            return statement[len("if "):-1].strip()
-        if statement.startswith("elif ") and statement.endswith(":"):
-            return statement[len("elif "):-1].strip()
+        normalized = ProjectGraphImporter._normalize_statement_colon_spacing(statement)
+        if normalized.startswith("if ") and normalized.endswith(":"):
+            return normalized[len("if "):-1].strip()
+        if normalized.startswith("elif ") and normalized.endswith(":"):
+            return normalized[len("elif "):-1].strip()
         return None
 
     @staticmethod
@@ -978,17 +985,22 @@ class ProjectGraphImporter:
 
     @staticmethod
     def _raw_block_type(statement: str) -> str | None:
-        if not statement.endswith(":"):
+        normalized = ProjectGraphImporter._normalize_statement_colon_spacing(statement)
+        if not normalized.endswith(":"):
             return None
-        if statement.startswith("python"):
+        if normalized.startswith("python"):
             return "python"
-        if statement.startswith("show "):
+        if normalized.startswith("show "):
             return "show"
-        if statement.startswith("image "):
+        if normalized.startswith("image "):
             return "image"
-        if statement.startswith("while "):
+        if normalized.startswith("while "):
             return "while"
         return None
+
+    @staticmethod
+    def _normalize_statement_colon_spacing(stripped_line: str) -> str:
+        return re.sub(r"\s+:\s*$", ":", stripped_line)
 
     def _is_control_statement(self, statement: str) -> bool:
         return (

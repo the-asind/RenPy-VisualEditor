@@ -95,6 +95,38 @@ def test_import_assigns_compact_local_layout_for_label_and_nested_scenario_child
                 cursor_y += node.visual.size.height + 24.0
 
 
+def test_import_normalizes_control_statement_space_before_colon(tmp_path):
+    source = tmp_path / "renpy_mouse_spaced_colon.rpy"
+    source.write_text(
+        "\n".join(
+            [
+                "label start :",
+                '    if flags["d4"]["tried_move"] :',
+                '        r "RenPy Mouse walks the true cheese path."',
+                "    else :",
+                '        r "RenPy Mouse notices the fallback cheese path."',
+                "    return",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    graph = ProjectGraphImporter().import_files(
+        project_id="mouse-renpy-spaced-colon-project",
+        files=[source],
+    )
+
+    assert graph.label_starts[0].content == "label start:"
+
+    conditional_nodes = [node for node in graph.nodes if node.type in {"if", "else"}]
+    assert [(node.type, node.content, node.metadata["condition"]) for node in conditional_nodes] == [
+        ("if", 'if flags["d4"]["tried_move"]:', 'flags["d4"]["tried_move"]'),
+        ("else", "else:", None),
+    ]
+    assert not any(node.type == "action" and node.content.startswith("else") for node in graph.nodes)
+
+
 def test_import_rejects_non_rpy_file(tmp_path):
     bad_file = tmp_path / "notes.txt"
     bad_file.write_text("label start:\n    return\n", encoding="utf-8")

@@ -1405,6 +1405,11 @@ const deriveFlowEdges = (nodes: LayoutNode[], graph: ProjectGraphSnapshot): Edge
           addEdge(branches[0], branch, 'branch', 'alternative');
         }
 
+        const falsePassThroughTarget = branches.length === 1 ? scenarioSiblings[afterBranchIndex] : undefined;
+        if (falsePassThroughTarget) {
+          addEdge(branches[0], falsePassThroughTarget, 'branch', 'alternative');
+        }
+
         sources = branches.flatMap((branch) => {
           const branchChildren = getChildren(
             typeof branch.data?.original === 'object' &&

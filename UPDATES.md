@@ -2,6 +2,34 @@
 
 This file is the short project memory for RenPy Visual Editor 2.0. Keep it current when closing master items, changing decisions, or classifying old code.
 
+## 2026-05-18
+
+### Ren'Py Colon Normalization And No-else False Flow
+
+Fixed two import/projection readability regressions reported from a real project.
+
+Files:
+
+1. `backend/app/services/project_graph/importer.py`
+2. `backend/tests/test_project_graph_importer.py`
+3. `frontend/src/utils/projectGraphProjection.ts`
+4. `frontend/src/utils/__tests__/projectGraphProjection.test.ts`
+5. `docs/editor-2.0-architecture.md`
+6. `UPDATES.md`
+
+Result:
+
+1. Import now normalizes statement headers that have whitespace before the final colon, so `label start :`, `if condition :`, `elif condition :`, `else :`, `menu :`, and menu-choice headers are parsed as their canonical `...:` form.
+2. `else :` no longer falls into an `action` block and no longer appears as visible story text on the canvas.
+3. An `if` without an explicit `else` now gets a derived branch arrow from the `if` node to the next linear block, making the false/pass-through path visible instead of visually looking like a story break.
+
+Checks:
+
+1. Added backend black-box coverage for spaced-colon `label`, `if`, and `else` import.
+2. Added frontend projection coverage for a no-else `if` with explicit false pass-through branch edge and true-branch rejoin.
+3. `python -m pytest backend/tests/test_project_graph_importer.py -q` passed with 5 tests.
+4. `npm test -- --run src/utils/__tests__/projectGraphProjection.test.ts` passed with 21 tests.
+
 ## 2026-05-17
 
 ### Header Drag Coordinate Freedom And Safe Tree Moves

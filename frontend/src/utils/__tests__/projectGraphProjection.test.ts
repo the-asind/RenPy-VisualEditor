@@ -948,6 +948,86 @@ describe('projectGraphToReactFlow static projection', () => {
     expect(manualLocalNoteLabel.position.y).toBeGreaterThanOrEqual(manualStoryFlowBottom + 24);
   });
 
+  it('draws an explicit false pass-through edge when if has no else branch', () => {
+    const graphWithoutElse: ProjectGraphSnapshot = {
+      ...graph,
+      nodes: [
+        {
+          id: 'node-intro-action',
+          file_id: 'file-day-1',
+          label_id: 'label-start',
+          parent_node_id: null,
+          type: 'action',
+          content: 'r "RenPy Mouse checks the corridor."',
+          order: '0000',
+          source_span: { start_line: 1, end_line: 1 },
+          metadata: { default_title: 'r "RenPy Mouse checks the corridor."' },
+          visual: { position: { x: 96, y: 136 }, size: { width: 320, height: 96 } },
+        },
+        {
+          id: 'node-if-cheese',
+          file_id: 'file-day-1',
+          label_id: 'label-start',
+          parent_node_id: null,
+          type: 'if',
+          content: 'if cheese_ready:',
+          order: '0001',
+          source_span: { start_line: 2, end_line: 2 },
+          metadata: { condition: 'cheese_ready' },
+          visual: { position: { x: 96, y: 256 }, size: { width: 320, height: 96 } },
+        },
+        {
+          id: 'node-if-action',
+          file_id: 'file-day-1',
+          label_id: 'label-start',
+          parent_node_id: 'node-if-cheese',
+          type: 'action',
+          content: 'r "The cheese path is true."',
+          order: '0001.0000',
+          source_span: { start_line: 3, end_line: 3 },
+          metadata: { default_title: 'r "The cheese path is true."' },
+          visual: { position: { x: 24, y: 64 }, size: { width: 320, height: 96 } },
+        },
+        {
+          id: 'node-after-action',
+          file_id: 'file-day-1',
+          label_id: 'label-start',
+          parent_node_id: null,
+          type: 'action',
+          content: 'r "RenPy Mouse continues after the optional cheese."',
+          order: '0002',
+          source_span: { start_line: 4, end_line: 4 },
+          metadata: { default_title: 'r "RenPy Mouse continues after the optional cheese."' },
+          visual: { position: { x: 96, y: 376 }, size: { width: 320, height: 96 } },
+        },
+      ],
+    };
+
+    const projection = projectGraphToReactFlow(graphWithoutElse);
+    const branchEdges = projectionEdgesByKind(projection, 'branch');
+    const sequenceEdges = projectionEdgesByKind(projection, 'sequence');
+    const edgePairs = (edges: typeof projection.edges) => new Set(edges.map((edge) => `${edge.source}->${edge.target}`));
+
+    expect(edgePairs(branchEdges)).toEqual(
+      new Set([
+        'node-if-cheese->node-if-action',
+        'node-if-cheese->node-after-action',
+      ]),
+    );
+    expect(branchEdges.find((edge) => edge.source === 'node-if-cheese' && edge.target === 'node-after-action')).toMatchObject({
+      data: expect.objectContaining({ flowRole: 'alternative' }),
+      sourceHandle: 'flow-out',
+      targetHandle: 'flow-in',
+    });
+    expect(edgePairs(sequenceEdges)).toEqual(
+      new Set([
+        'start-node-start->node-intro-action',
+        'node-intro-action->node-if-cheese',
+        'node-if-action->node-after-action',
+      ]),
+    );
+  });
+
   it('builds near-target rejoin paths with a shared target-side turn lane', () => {
     const firstPath = buildNearTargetStepPath({
       sourceX: 120,
