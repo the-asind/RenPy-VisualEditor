@@ -1005,6 +1005,41 @@ const applyConditionalStoryLayout = (nodes: LayoutNode[], graph: ProjectGraphSna
     node.position.x = centerX - node.width / 2;
     node.position.y = y;
   };
+  const applyManualBranchPositions = (labelId: string): void => {
+    for (const scenario of graph.nodes) {
+      if (scenario.label_id !== labelId || !hasManualScenarioPosition(scenario)) {
+        continue;
+      }
+
+      const node = scenarioLayoutsById.get(scenario.id);
+      if (!node) {
+        continue;
+      }
+
+      node.position = clonePoint(scenario.visual.position);
+    }
+
+    for (const scenario of graph.nodes) {
+      if (scenario.label_id !== labelId || !isBranchHeaderScenario(scenario) || hasManualScenarioPosition(scenario)) {
+        continue;
+      }
+
+      const firstChild = getChildren(labelId, scenario.id)[0];
+      if (!firstChild || !hasManualScenarioPosition(firstChild)) {
+        continue;
+      }
+
+      const headerNode = scenarioLayoutsById.get(scenario.id);
+      const childNode = scenarioLayoutsById.get(firstChild.id);
+      if (!headerNode || !childNode) {
+        continue;
+      }
+
+      headerNode.width = childNode.width;
+      headerNode.position.x = childNode.position.x;
+      headerNode.position.y = childNode.position.y - headerNode.height;
+    }
+  };
 
   const combineBounds = (
     current: { leftX: number; rightX: number; topY: number; bottomY: number },
@@ -1264,6 +1299,8 @@ const applyConditionalStoryLayout = (nodes: LayoutNode[], graph: ProjectGraphSna
         node.position.y += shiftY;
       }
     }
+
+    applyManualBranchPositions(labelId);
   }
 };
 

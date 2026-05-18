@@ -218,7 +218,7 @@ describe('projectGraphToReactFlow static projection', () => {
     expect(returnedActionAbsolute).toEqual(baselineActionAbsolute);
   });
 
-  it('uses the containing label frame as the safe drag target for label starts and branch-managed nodes', () => {
+  it('uses semantic drag groups for label starts, branch-managed nodes, and simple nodes', () => {
     const nodes = [
       makeCanvasNode('file', 'projectFrame', { x: 0, y: 0 }, { width: 900, height: 640 }),
       makeCanvasNode('label', 'labelFrame', { x: 48, y: 48 }, { width: 520, height: 360 }, 'file'),
@@ -234,7 +234,7 @@ describe('projectGraphToReactFlow static projection', () => {
     ];
 
     expect(getProjectGraphHeaderDragGroupIds(nodes[2], nodes)).toEqual(['label']);
-    expect(getProjectGraphHeaderDragGroupIds(nodes[3], nodes)).toEqual(['label']);
+    expect(getProjectGraphHeaderDragGroupIds(nodes[3], nodes)).toEqual(['branch-action']);
     expect(getProjectGraphHeaderDragGroupIds(nodes[4], nodes)).toEqual(['simple-action']);
 
     const preview = buildNestedDragPreviewNodes(
@@ -250,6 +250,15 @@ describe('projectGraphToReactFlow static projection', () => {
     expect(start.position).toEqual({ x: 32, y: 72 });
     expect(getAbsoluteNodePosition(preview, 'label')).toEqual({ x: -172, y: -112 });
     expect(getAbsoluteNodePosition(preview, 'start')).toEqual({ x: -140, y: -40 });
+
+    const branchPreview = buildNestedDragPreviewNodes(
+      nodes,
+      new Set(['branch-action']),
+      new Map([['branch-action', { x: 96, y: 220 }]]),
+      { x: 140, y: -40 },
+    );
+    expect(branchPreview.find((node) => node.id === 'label')?.position).toEqual({ x: 48, y: 48 });
+    expect(branchPreview.find((node) => node.id === 'branch-action')?.position).toEqual({ x: 236, y: 180 });
   });
 
   it('hit-tests body clicks to the deepest visible node while body drag remains pane-owned', () => {
@@ -897,11 +906,17 @@ describe('projectGraphToReactFlow static projection', () => {
     const manuallyMovedBranchGraph: ProjectGraphSnapshot = {
       ...conditionalGraph,
       nodes: conditionalGraph.nodes.map((node) =>
-        node.id === 'node-else-action'
+        node.id === 'node-else-cheese'
           ? {
               ...node,
               metadata: { ...node.metadata, _manual_position: true },
               visual: { ...node.visual, position: { x: 64, y: 720 } },
+            }
+          : node.id === 'node-else-action'
+          ? {
+              ...node,
+              metadata: { ...node.metadata, _manual_position: true },
+              visual: { ...node.visual, position: { x: 64, y: 760 } },
             }
           : node,
       ),
@@ -921,6 +936,8 @@ describe('projectGraphToReactFlow static projection', () => {
     );
 
     expect(manualProjection.nodes.filter((node) => node.data?.autoBranchLayout === true).length).toBeGreaterThan(6);
+    expect(manualElseNode.position).toEqual({ x: 64, y: 720 });
+    expect(manualElseAction.position).toEqual({ x: 64, y: 760 });
     expect(manualElseAction.position.y).toBe(manualElseNode.position.y + Number(manualElseNode.height));
     expect(Number(manualElseNode.width)).toBe(Number(manualElseAction.width));
     expect(Math.abs(manualElseAction.position.x + Number(manualElseAction.width) / 2 - (manualElseNode.position.x + Number(manualElseNode.width) / 2))).toBeLessThanOrEqual(2);

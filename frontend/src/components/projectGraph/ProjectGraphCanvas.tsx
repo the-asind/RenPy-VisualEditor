@@ -54,10 +54,6 @@ export const getProjectGraphHeaderDragGroupIds = (node: Node, nodes: Node[]): st
     return [parent.id];
   }
 
-  if (node.data?.autoBranchLayout === true && parent?.type === 'labelFrame') {
-    return [parent.id];
-  }
-
   return getDragGroupIds(node);
 };
 

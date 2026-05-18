@@ -21,16 +21,18 @@ Result:
 1. Root-level `FileFrame`s may now keep negative X/Y positions after manual drag; projection no longer treats negative root coordinates as an import layout defect to compact back to `(0, 0)`.
 2. Child nodes no longer project with React Flow `extent: "parent"`. The canvas uses its own header-only drag plus live parent expansion, so React Flow must not add a hidden parent-boundary clamp.
 3. Dragging a `LabelStartNode` now uses the containing `LabelFrame` as the actual drag target, so the visible label start behaves like a handle for the whole label tree.
-4. Dragging a node inside an auto branch-managed `if/menu` label also moves the containing `LabelFrame` as a safe MVP behavior instead of trying to persist an individual node offset that structural branch layout immediately overwrites.
-5. Simple non-branch scenario nodes keep their previous individual drag behavior.
+4. Scenario nodes inside auto branch-managed `if/menu` labels now keep semantic scenario drag groups instead of moving the containing `LabelFrame`.
+5. Manual scenario positions inside branch-managed labels are applied after structural branch layout, so a dragged node/group is not immediately snapped back by projection.
+6. Simple non-branch scenario nodes keep their previous individual drag behavior.
 
 Checks:
 
-1. Added projection coverage for label-start drag groups, branch-managed drag groups, and simple scenario drag groups.
+1. Added projection coverage for label-start drag groups, branch-managed scenario drag groups, and simple scenario drag groups.
 2. Added regression coverage proving root file frames preserve manual negative coordinates.
 3. Updated projection expectations to assert child nodes are not constrained by React Flow `extent: "parent"`.
-4. `npm test -- --run src/utils/__tests__/projectGraphProjection.test.ts` passed with 20 tests.
-5. `npm test -- --run` passed with 46 frontend tests.
+4. Added regression coverage proving manual `else` header/action positions survive branch projection after grouped drag.
+5. `npm test -- --run src/utils/__tests__/projectGraphProjection.test.ts` passed with 20 tests.
+6. `npm test -- --run` passed with 46 frontend tests.
 
 ### Projection Anti-overlap After Relation-aware Frame Placement
 

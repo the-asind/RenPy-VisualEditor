@@ -366,7 +366,7 @@ React Flow получает только проекцию `ProjectGraph`.
 31. React Flow `extent: "parent"` не используется для ProjectGraph child nodes в MVP 2.0, потому что официальная семантика `extent: "parent"` ограничивает перемещение child границами parent. Вместо этого `nodesDraggable=false`, header-only pointer handler, parent-child projection и live parent expansion являются единственным drag-механизмом.
 32. Root-level `FileFrame` coordinates are unbounded: пользователь может увести файл выше/левее исходного import origin, и projection не должен автоматически возвращать root sibling к `(0, 0)`.
 33. Для безопасного MVP-drag `LabelStartNode` является drag-handle всего owning `LabelFrame`: пользователь тянет видимое начало label, но сохраняется позиция label frame, а дерево label движется как единое целое.
-34. В auto branch-managed labels (`if/menu`) индивидуальный manual drag scenario-ноды не применяется как постоянный layout override, потому что это ломает tree readability. Header drag по такой ноде перемещает owning `LabelFrame` целиком. Индивидуальный drag внутри branch tree можно проектировать позже отдельным solver/pass, если появится строгая модель без пересечений и хаоса линий.
+34. В auto branch-managed labels (`if/menu`) header drag scenario-ноды двигает semantic drag-group этой ноды: сама нода, её scenario-descendants и прикрепленные branch headers, если они входят в группу. Structural branch layout строится первым, затем применяются сохраненные `_manual_position` для реально перетянутых scenario nodes, чтобы projection не возвращал их сразу назад.
 
 Layout MVP:
 
@@ -389,7 +389,7 @@ Layout MVP:
 17. Финальный anti-overlap pass работает по sibling groups: root-level `FileFrame`s раздвигаются горизонтально, children внутри frames раздвигаются вертикально. Attached branch headers могут соприкасаться с child block без зазора, но не должны геометрически пересекаться.
 18. Перед implementation проверить официальные React Flow docs по sub-flows/layouting/custom edges/handles/drag handles. Если Dagre конфликтует с nested frames и внешними edges, перейти к ELK или гибридному layout.
 19. Negative root-level `FileFrame` positions не являются поводом для import compaction. Negative child coordinates внутри parent frame остаются layout defect или transient drag state и должны решаться live expansion/rebase, а не скрытым clamp.
-20. Drag group selection is semantic: simple scenario nodes may move themselves or attached branch headers, but `LabelStartNode` and auto branch-managed scenario nodes move the owning `LabelFrame` as a stable subtree.
+20. Drag group selection is semantic: `LabelStartNode` moves the owning `LabelFrame` as a stable subtree; scenario nodes move their scenario drag group, including attached `else/elif` headers and descendants when the domain tree requires it.
 
 ## 11. Loro CRDT Strategy
 
