@@ -1530,6 +1530,7 @@ describe('projectGraphToReactFlow static projection', () => {
       sourceY: 80,
       targetX: 640,
       targetY: 520,
+      targetOffset: 24,
       sourceOffset: 36,
       direction: 'source-vertical',
     });
@@ -1537,7 +1538,7 @@ describe('projectGraphToReactFlow static projection', () => {
     expect(firstPath).toBe('M 120 80 L 568 80 L 568 180 L 640 180');
     expect(secondPath).toBe('M 320 300 L 568 300 L 568 180 L 640 180');
     expect(verticalPath).toBe('M 120 80 L 120 496 L 640 496 L 640 520');
-    expect(sourceVerticalPath).toBe('M 120 80 L 120 116 L 640 116 L 640 520');
+    expect(sourceVerticalPath).toBe('M 120 80 L 120 496 L 640 496 L 640 520');
   });
 
   it('normalizes overlapping layout and expands parent frames around children', () => {

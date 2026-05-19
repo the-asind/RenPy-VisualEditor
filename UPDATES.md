@@ -4,6 +4,30 @@ This file is the short project memory for RenPy Visual Editor 2.0. Keep it curre
 
 ## 2026-05-19
 
+### Source-vertical Edges Turn Near Target
+
+Fixed a custom edge routing regression where non-aligned `sequence`/`branch` lines turned horizontally near the source node and could cross unrelated blocks before dropping to the target.
+
+Files:
+
+1. `frontend/src/components/projectGraph/ProjectGraphCanvas.tsx`
+2. `frontend/src/utils/__tests__/projectGraphProjection.test.ts`
+3. `docs/editor-2.0-architecture.md`
+4. `UPDATES.md`
+
+Result:
+
+1. `source-vertical` custom edges now keep the source X lane until `targetY - targetTurnOffset`.
+2. The horizontal segment is drawn near the target, then the edge enters the target from the top.
+3. The old early-turn path near the source is covered by a regression assertion.
+
+Checks:
+
+1. Updated path-builder black-box coverage for `source-vertical` routing.
+2. `npm test -- --run src/utils/__tests__/projectGraphProjection.test.ts` passed with 25 tests.
+3. `npm test -- --run` passed with 51 frontend tests.
+4. `npm run build` passed with known non-blocking Vite/env.js, Browserslist, and large Loro chunk warnings.
+
 ### Sequential If/Else Groups Stay Separate
 
 Fixed a projection regression where plain sequential Ren'Py code shaped as `if/else`, then another `if/else`, was displayed as one huge conditional branch group with four lanes.

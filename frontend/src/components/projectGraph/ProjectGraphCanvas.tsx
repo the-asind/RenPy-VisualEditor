@@ -348,8 +348,12 @@ export const buildNearTargetStepPath = ({
 }: NearTargetStepPathParams): string => {
   if (direction === 'source-vertical') {
     const verticalDirection = targetY >= sourceY ? 1 : -1;
+    const requestedTurnY = targetY - verticalDirection * targetOffset;
     const minimumSourceClearance = 24;
-    const turnY = sourceY + verticalDirection * Math.max(minimumSourceClearance, sourceOffset);
+    const turnY =
+      verticalDirection > 0
+        ? Math.max(sourceY + Math.max(minimumSourceClearance, sourceOffset), requestedTurnY)
+        : Math.min(sourceY - Math.max(minimumSourceClearance, sourceOffset), requestedTurnY);
 
     return [
       'M',
