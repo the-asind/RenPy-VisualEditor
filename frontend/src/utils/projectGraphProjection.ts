@@ -1635,12 +1635,14 @@ const deriveFlowEdges = (nodes: LayoutNode[], graph: ProjectGraphSnapshot): Edge
   const childrenByDomainParent = buildScenarioChildrenByDomainParent(graph);
   const edges: Edge[] = [];
   const seen = new Set<string>();
+  type BranchRole = 'true' | 'false';
 
   const addEdge = (
     source: LayoutNode,
     target: LayoutNode,
     kind: 'sequence' | 'branch',
     flowRole: 'forward' | 'alternative' | 'rejoin' = 'forward',
+    branchRole?: BranchRole,
   ): void => {
     if (source.id === target.id) {
       return;
@@ -1668,7 +1670,7 @@ const deriveFlowEdges = (nodes: LayoutNode[], graph: ProjectGraphSnapshot): Edge
       source: source.id,
       target: target.id,
       type: useNearTargetRouting ? 'nearTargetStep' : useStraightRouting ? 'straight' : 'step',
-      className: `project-edge project-edge--${kind}${flowRole === 'rejoin' ? ' project-edge--rejoin' : ''}`,
+      className: `project-edge project-edge--${kind}${branchRole ? ` project-edge--branch-${branchRole}` : ''}${flowRole === 'rejoin' ? ' project-edge--rejoin' : ''}`,
       markerEnd: { type: MarkerType.ArrowClosed },
       selectable: false,
       focusable: false,
@@ -1690,6 +1692,7 @@ const deriveFlowEdges = (nodes: LayoutNode[], graph: ProjectGraphSnapshot): Edge
         derived: true,
         kind,
         flowRole,
+        branchRole,
         targetTurnOffset: useNearTargetRouting ? TOP_DOWN_REJOIN_TURN_OFFSET : undefined,
         sourceTurnOffset: useSourceSideFlowRouting ? 36 : undefined,
         direction: useSourceSideFlowRouting ? 'source-vertical' : useNearTargetRouting ? 'vertical' : undefined,
@@ -1700,6 +1703,9 @@ const deriveFlowEdges = (nodes: LayoutNode[], graph: ProjectGraphSnapshot): Edge
   const isAttachedBranchHeaderEdge = (source: LayoutNode, target: LayoutNode): boolean =>
     isBranchHeaderNode(source) && scenarioParentNodeId(target) === source.id;
 
+  const branchRoleForParentChild = (source: LayoutNode, target: LayoutNode): BranchRole | undefined =>
+    isConditionalBranchNode(source) && scenarioParentNodeId(target) === source.id ? 'true' : undefined;
+
   const getChildren = (labelId: string, parentNodeId: string | null): ScenarioNodeSnapshot[] =>
     (childrenByDomainParent.get(domainChildrenKey(labelId, parentNodeId)) ?? []).filter(
       (scenario) => !isMenuPromptScenario(scenario),
@@ -1709,6 +1715,7 @@ const deriveFlowEdges = (nodes: LayoutNode[], graph: ProjectGraphSnapshot): Edge
     labelId: string,
     parentNodeId: string | null,
     incomingSources: LayoutNode[],
+    fallthroughTarget?: LayoutNode,
   ): LayoutNode[] => {
     const scenarioSiblings = getChildren(labelId, parentNodeId)
       .map((scenario) => byId.get(scenario.id))
@@ -1727,16 +1734,22 @@ const deriveFlowEdges = (nodes: LayoutNode[], graph: ProjectGraphSnapshot): Edge
         }
 
         for (const source of sources.filter((node) => !isFlowTerminalNode(node))) {
-          addEdge(source, branches[0], isBranchingParentNode(source) ? 'branch' : 'sequence');
+          addEdge(
+            source,
+            branches[0],
+            isBranchingParentNode(source) ? 'branch' : 'sequence',
+            'forward',
+            branchRoleForParentChild(source, branches[0]),
+          );
         }
 
         for (const branch of branches.slice(1)) {
-          addEdge(branches[0], branch, 'branch', 'alternative');
+          addEdge(branches[0], branch, 'branch', 'alternative', 'false');
         }
 
-        const falsePassThroughTarget = branches.length === 1 ? scenarioSiblings[afterBranchIndex] : undefined;
+        const falsePassThroughTarget = branches.length === 1 ? scenarioSiblings[afterBranchIndex] ?? fallthroughTarget : undefined;
         if (falsePassThroughTarget) {
-          addEdge(branches[0], falsePassThroughTarget, 'branch', 'alternative');
+          addEdge(branches[0], falsePassThroughTarget, 'branch', 'alternative', 'false');
         }
 
         sources = branches.flatMap((branch) => {
@@ -1752,7 +1765,7 @@ const deriveFlowEdges = (nodes: LayoutNode[], graph: ProjectGraphSnapshot): Edge
           if (branchChildren.length === 0) {
             return [branch];
           }
-          return deriveList(labelId, branch.id, [branch]);
+          return deriveList(labelId, branch.id, [branch], falsePassThroughTarget);
         });
         index = afterBranchIndex;
         continue;
@@ -1781,7 +1794,7 @@ const deriveFlowEdges = (nodes: LayoutNode[], graph: ProjectGraphSnapshot): Edge
           if (choiceChildren.length === 0) {
             return [choice];
           }
-          return deriveList(labelId, choice.id, [choice]);
+          return deriveList(labelId, choice.id, [choice], scenarioSiblings[index + 1] ?? fallthroughTarget);
         });
         index += 1;
         continue;
@@ -1796,13 +1809,14 @@ const deriveFlowEdges = (nodes: LayoutNode[], graph: ProjectGraphSnapshot): Edge
           sibling,
           isBranchingParentNode(source) ? 'branch' : 'sequence',
           sources.length > 1 ? 'rejoin' : 'forward',
+          branchRoleForParentChild(source, sibling),
         );
       }
       const childSnapshots = getChildren(labelId, sibling.id);
       if (isFlowTerminalNode(sibling)) {
         sources = [];
       } else {
-        sources = childSnapshots.length > 0 ? deriveList(labelId, sibling.id, [sibling]) : [sibling];
+        sources = childSnapshots.length > 0 ? deriveList(labelId, sibling.id, [sibling], scenarioSiblings[index + 1] ?? fallthroughTarget) : [sibling];
       }
       index += 1;
     }

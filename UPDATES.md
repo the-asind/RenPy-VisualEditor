@@ -4,6 +4,33 @@ This file is the short project memory for RenPy Visual Editor 2.0. Keep it curre
 
 ## 2026-05-19
 
+### Explicit True/False If Branch Edges
+
+Fixed a projection gap where nested `if` statements without explicit `else` could miss their false/pass-through edge to the next reachable statement outside the nested block.
+
+Files:
+
+1. `frontend/src/utils/projectGraphProjection.ts`
+2. `frontend/src/utils/__tests__/projectGraphProjection.test.ts`
+3. `frontend/src/components/projectGraph/ProjectGraphCanvas.css`
+4. `docs/editor-2.0-architecture.md`
+5. `UPDATES.md`
+
+Result:
+
+1. Every projected `if` now gets explicit derived `true` and `false` branch edges when both runtime paths have a reachable target.
+2. Nested `if` without a local next sibling inherits the nearest outer fallthrough target, so false flow does not disappear inside nested blocks.
+3. True branch edges receive `branchRole: "true"` and `project-edge--branch-true`.
+4. False branch edges receive `branchRole: "false"` and `project-edge--branch-false`.
+5. True/false branch edges use soft green/red colors in CSS.
+
+Checks:
+
+1. Added black-box projection coverage for the nested `if`/no-`else` shape from the reported Ren'Py snippet.
+2. `npm test -- --run src/utils/__tests__/projectGraphProjection.test.ts` passed with 27 tests.
+3. `npm test -- --run` passed with 53 frontend tests.
+4. `npm run build` passed with known non-blocking Vite/env.js, Browserslist, and large Loro chunk warnings.
+
 ### Asymmetric Conditional Lane Packing
 
 Fixed an unbalanced-branch layout regression where a narrow `else` branch could be pushed extremely far left only because the `if` true branch contained a wide nested subtree.

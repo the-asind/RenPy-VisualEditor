@@ -1028,6 +1028,84 @@ describe('projectGraphToReactFlow static projection', () => {
     );
   });
 
+  it('draws explicit true and false branch edges for nested if blocks without else', () => {
+    const nestedNoElseGraph: ProjectGraphSnapshot = {
+      ...graph,
+      nodes: [
+        {
+          id: 'node-process-if',
+          file_id: 'file-day-1',
+          label_id: 'label-start',
+          parent_node_id: null,
+          type: 'if',
+          content: 'if not list(set(process_list).intersection(stream_list)):',
+          order: '0000',
+          source_span: { start_line: 1, end_line: 1 },
+          metadata: { condition: 'not list(set(process_list).intersection(stream_list))' },
+          visual: { position: { x: 96, y: 136 }, size: { width: 420, height: 96 } },
+        },
+        {
+          id: 'node-current-user-if',
+          file_id: 'file-day-1',
+          label_id: 'label-start',
+          parent_node_id: 'node-process-if',
+          type: 'if',
+          content: 'if currentuser != "" and currentuser.lower() != player.lower():',
+          order: '0000.0000',
+          source_span: { start_line: 2, end_line: 2 },
+          metadata: { condition: 'currentuser != "" and currentuser.lower() != player.lower()' },
+          visual: { position: { x: 24, y: 48 }, size: { width: 420, height: 104 } },
+        },
+        {
+          id: 'node-or-action',
+          file_id: 'file-day-1',
+          label_id: 'label-start',
+          parent_node_id: 'node-current-user-if',
+          type: 'action',
+          content: 'm "Or..."\n\nm "...Do you actually go by [currentuser] or something?"',
+          order: '0000.0000.0000',
+          source_span: { start_line: 3, end_line: 5 },
+          metadata: { default_title: 'm "Or..."' },
+          visual: { position: { x: 24, y: 48 }, size: { width: 420, height: 128 } },
+        },
+        {
+          id: 'node-real-you-action',
+          file_id: 'file-day-1',
+          label_id: 'label-start',
+          parent_node_id: null,
+          type: 'action',
+          content: 'm "Now that I think about it, I don\'t really know anything about the real you."',
+          order: '0001',
+          source_span: { start_line: 7, end_line: 7 },
+          metadata: { default_title: 'm "Now that I think about it, I don\'t really know anything about the real you."' },
+          visual: { position: { x: 96, y: 376 }, size: { width: 420, height: 112 } },
+        },
+      ],
+      edges: [],
+    };
+
+    const projection = projectGraphToReactFlow(nestedNoElseGraph);
+    const branchEdges = projectionEdgesByKind(projection, 'branch');
+    const branchEdgeByPair = new Map(branchEdges.map((edge) => [`${edge.source}->${edge.target}`, edge]));
+
+    expect(branchEdgeByPair.get('node-process-if->node-current-user-if')).toMatchObject({
+      data: expect.objectContaining({ branchRole: 'true' }),
+      className: expect.stringContaining('project-edge--branch-true'),
+    });
+    expect(branchEdgeByPair.get('node-process-if->node-real-you-action')).toMatchObject({
+      data: expect.objectContaining({ branchRole: 'false' }),
+      className: expect.stringContaining('project-edge--branch-false'),
+    });
+    expect(branchEdgeByPair.get('node-current-user-if->node-or-action')).toMatchObject({
+      data: expect.objectContaining({ branchRole: 'true' }),
+      className: expect.stringContaining('project-edge--branch-true'),
+    });
+    expect(branchEdgeByPair.get('node-current-user-if->node-real-you-action')).toMatchObject({
+      data: expect.objectContaining({ branchRole: 'false' }),
+      className: expect.stringContaining('project-edge--branch-false'),
+    });
+  });
+
   it('keeps sequential if/else blocks as separate branch groups', () => {
     const sequentialConditionGraph: ProjectGraphSnapshot = {
       ...graph,
