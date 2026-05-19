@@ -1240,18 +1240,6 @@ const applyConditionalStoryLayout = (nodes: LayoutNode[], graph: ProjectGraphSna
       return center;
     });
   };
-  const widenConditionalLaneCenters = (centers: number[]): number[] => {
-    if (centers.length < 2) {
-      return centers;
-    }
-
-    const leftmost = centers[0];
-    const rightmost = centers[centers.length - 1];
-    const leftScale = leftmost < 0 ? TOP_DOWN_BRANCH_COLUMN_GAP / Math.abs(leftmost) : 1;
-    const rightScale = rightmost > 0 ? TOP_DOWN_BRANCH_COLUMN_GAP / rightmost : 1;
-    const scale = Math.max(1, leftScale, rightScale);
-    return centers.map((center) => center * scale);
-  };
   const conditionalBranchesAt = (
     items: ScenarioNodeSnapshot[],
     index: number,
@@ -1293,12 +1281,13 @@ const applyConditionalStoryLayout = (nodes: LayoutNode[], graph: ProjectGraphSna
     let groupMeasure = measureNode(rootNode);
     const alternativeOffsetsById = new Map<string, number>();
     let trueOffset = 0;
+    const rootHalfWidth = (rootNode?.width ?? COMPACT_FRAME_MIN_SIZE.scenarioNode.width) / 2;
 
     if (alternativeBranches.length === 0) {
       if (hasMeasureContent(trueMeasure)) {
         trueOffset = Math.max(
           TOP_DOWN_BRANCH_COLUMN_GAP,
-          (rootNode?.width ?? COMPACT_FRAME_MIN_SIZE.scenarioNode.width) / 2 + TOP_DOWN_BRANCH_SUBTREE_GAP + trueMeasure.left,
+          rootHalfWidth + TOP_DOWN_BRANCH_SUBTREE_GAP + trueMeasure.left,
         );
         groupMeasure = combineMeasureAtOffset(groupMeasure, trueOffset, trueMeasure);
       }
@@ -1307,20 +1296,26 @@ const applyConditionalStoryLayout = (nodes: LayoutNode[], graph: ProjectGraphSna
     }
 
     const laneBranches = [...alternativeBranches].reverse();
-    const laneMeasures = [
-      ...laneBranches.map((branch) => measureBranchHead(labelId, branch)),
-      hasMeasureContent(trueMeasure) ? trueMeasure : measureNode(rootNode),
-    ];
-    const laneCenters = widenConditionalLaneCenters(computeLaneCenters(laneMeasures, TOP_DOWN_BRANCH_SUBTREE_GAP));
+    const branchMeasures = new Map(laneBranches.map((branch) => [branch.id, measureBranchHead(labelId, branch)]));
+    let leftPackingBoundary = -rootHalfWidth - TOP_DOWN_BRANCH_SUBTREE_GAP;
 
-    for (const [laneIndex, branch] of laneBranches.entries()) {
-      const offset = laneCenters[laneIndex];
+    for (let index = laneBranches.length - 1; index >= 0; index -= 1) {
+      const branch = laneBranches[index];
+      const branchMeasure = branchMeasures.get(branch.id) ?? measureNode(scenarioLayoutsById.get(branch.id));
+      const offset = Math.min(
+        -TOP_DOWN_BRANCH_COLUMN_GAP,
+        leftPackingBoundary - branchMeasure.right,
+      );
       alternativeOffsetsById.set(branch.id, offset);
-      groupMeasure = combineMeasureAtOffset(groupMeasure, offset, laneMeasures[laneIndex]);
+      groupMeasure = combineMeasureAtOffset(groupMeasure, offset, branchMeasure);
+      leftPackingBoundary = offset - branchMeasure.left - TOP_DOWN_BRANCH_SUBTREE_GAP;
     }
 
-    trueOffset = laneCenters[laneCenters.length - 1];
     if (hasMeasureContent(trueMeasure)) {
+      trueOffset = Math.max(
+        TOP_DOWN_BRANCH_COLUMN_GAP,
+        rootHalfWidth + TOP_DOWN_BRANCH_SUBTREE_GAP + trueMeasure.left,
+      );
       groupMeasure = combineMeasureAtOffset(groupMeasure, trueOffset, trueMeasure);
     }
 

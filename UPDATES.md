@@ -4,6 +4,31 @@ This file is the short project memory for RenPy Visual Editor 2.0. Keep it curre
 
 ## 2026-05-19
 
+### Asymmetric Conditional Lane Packing
+
+Fixed an unbalanced-branch layout regression where a narrow `else` branch could be pushed extremely far left only because the `if` true branch contained a wide nested subtree.
+
+Files:
+
+1. `frontend/src/utils/projectGraphProjection.ts`
+2. `frontend/src/utils/__tests__/projectGraphProjection.test.ts`
+3. `docs/editor-2.0-architecture.md`
+4. `UPDATES.md`
+
+Result:
+
+1. Conditional lane planning no longer centers all branch lanes as one shared row around the root `if`.
+2. True-side and alternative-side lanes are packed independently from the root `if` center.
+3. A narrow `else` remains near the root `if` even when the true branch expands into a wide nested tree.
+4. Wide true subtrees still reserve enough right-side space to avoid overlap.
+
+Checks:
+
+1. Added black-box projection coverage for a wide true subtree plus a narrow `else`; before the fix the `else` was more than 10k px away from the root `if`.
+2. `npm test -- --run src/utils/__tests__/projectGraphProjection.test.ts` passed with 26 tests.
+3. `npm test -- --run` passed with 52 frontend tests.
+4. `npm run build` passed with known non-blocking Vite/env.js, Browserslist, and large Loro chunk warnings.
+
 ### Source-vertical Edges Turn Near Target
 
 Fixed a custom edge routing regression where non-aligned `sequence`/`branch` lines turned horizontally near the source node and could cross unrelated blocks before dropping to the target.

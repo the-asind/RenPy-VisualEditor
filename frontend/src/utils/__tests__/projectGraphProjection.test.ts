@@ -1197,6 +1197,87 @@ describe('projectGraphToReactFlow static projection', () => {
     expect(secondElse.position.y).toBeGreaterThanOrEqual(secondIf.position.y + Number(secondIf.height) + 48);
   });
 
+  it('keeps a narrow else branch close when the true branch has a wide subtree', () => {
+    const nodes: ProjectGraphSnapshot['nodes'] = [];
+    let order = 0;
+    let line = 1;
+    const nextOrder = () => `${String(order++).padStart(4, '0')}`;
+    const addNode = (
+      id: string,
+      parentNodeId: string | null,
+      type: string,
+      content: string,
+      metadata: Record<string, unknown> = {},
+    ) => {
+      nodes.push({
+        id,
+        file_id: 'file-day-1',
+        label_id: 'label-start',
+        parent_node_id: parentNodeId,
+        type,
+        content,
+        order: nextOrder(),
+        source_span: { start_line: line, end_line: line },
+        metadata,
+        visual: { position: { x: 96, y: 136 + order * 112 }, size: { width: 320, height: type === 'action' ? 104 : 96 } },
+      });
+      line += 1;
+    };
+    const addWideTrueFork = (parentNodeId: string, path: string, depth: number) => {
+      const ifId = `node-wide-if-${path}`;
+      addNode(ifId, parentNodeId, 'if', `if flags["wide_${path}"]:`, { condition: `flags["wide_${path}"]` });
+      if (depth === 0) {
+        addNode(`node-wide-leaf-${path}-true`, ifId, 'action', `r "RenPy Mouse counts crumbs on true path ${path}."`, {
+          default_title: `r "RenPy Mouse counts crumbs on true path ${path}."`,
+        });
+      } else {
+        addWideTrueFork(ifId, `${path}T`, depth - 1);
+      }
+
+      const elseId = `node-wide-else-${path}`;
+      addNode(elseId, parentNodeId, 'else', 'else:', { condition: null });
+      if (depth === 0) {
+        addNode(`node-wide-leaf-${path}-false`, elseId, 'action', `r "RenPy Mouse counts crumbs on false path ${path}."`, {
+          default_title: `r "RenPy Mouse counts crumbs on false path ${path}."`,
+        });
+      } else {
+        addWideTrueFork(elseId, `${path}F`, depth - 1);
+      }
+    };
+
+    addNode('node-root-if', null, 'if', 'if renpy_mouse_enters_big_maze:', {
+      condition: 'renpy_mouse_enters_big_maze',
+    });
+    addWideTrueFork('node-root-if', 'T', 3);
+    addNode('node-root-else', null, 'else', 'else:', { condition: null });
+    addNode('node-small-else-action', 'node-root-else', 'action', 'r "RenPy Mouse takes the tiny shortcut."', {
+      default_title: 'r "RenPy Mouse takes the tiny shortcut."',
+    });
+    addNode('node-after-root-if', null, 'action', 'r "RenPy Mouse returns to the readable path."', {
+      default_title: 'r "RenPy Mouse returns to the readable path."',
+    });
+
+    const unbalancedGraph: ProjectGraphSnapshot = {
+      ...graph,
+      nodes,
+      edges: [],
+    };
+
+    const projection = projectGraphToReactFlow(unbalancedGraph);
+    const byId = new Map(projection.nodes.map((node) => [node.id, node]));
+    const rootIf = byId.get('node-root-if')!;
+    const rootElse = byId.get('node-root-else')!;
+    const trueEntry = byId.get('node-wide-if-T')!;
+    const rootIfCenterX = nodeCenterX(rootIf);
+    const rootElseCenterX = nodeCenterX(rootElse);
+    const trueEntryCenterX = nodeCenterX(trueEntry);
+
+    expect(rootElseCenterX).toBeLessThan(rootIfCenterX);
+    expect(trueEntryCenterX).toBeGreaterThan(rootIfCenterX);
+    expect(rootIfCenterX - rootElseCenterX).toBeLessThanOrEqual(560);
+    expect(trueEntryCenterX - rootIfCenterX).toBeGreaterThan(rootIfCenterX - rootElseCenterX);
+  });
+
   it('expands branch lanes by measured subtree width for deep binary conditionals', () => {
     const nodes: ProjectGraphSnapshot['nodes'] = [];
     let order = 0;
