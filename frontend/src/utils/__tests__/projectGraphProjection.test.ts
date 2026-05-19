@@ -1028,6 +1028,175 @@ describe('projectGraphToReactFlow static projection', () => {
     );
   });
 
+  it('keeps sequential if/else blocks as separate branch groups', () => {
+    const sequentialConditionGraph: ProjectGraphSnapshot = {
+      ...graph,
+      nodes: [
+        {
+          id: 'node-name-empty-if',
+          file_id: 'file-day-1',
+          label_id: 'label-start',
+          parent_node_id: null,
+          type: 'if',
+          content: 'if player_name_buf == "":',
+          order: '0000',
+          source_span: { start_line: 1, end_line: 1 },
+          metadata: { condition: 'player_name_buf == ""' },
+          visual: { position: { x: 96, y: 136 }, size: { width: 360, height: 96 } },
+        },
+        {
+          id: 'node-name-default-action',
+          file_id: 'file-day-1',
+          label_id: 'label-start',
+          parent_node_id: 'node-name-empty-if',
+          type: 'action',
+          content: '$ player_name = "Саня Юрченко"\n$ player_name_buf = "Юрченко"',
+          order: '0000.0000',
+          source_span: { start_line: 2, end_line: 3 },
+          metadata: { default_title: '$ player_name = "Саня Юрченко"' },
+          visual: { position: { x: 24, y: 48 }, size: { width: 360, height: 112 } },
+        },
+        {
+          id: 'node-name-empty-else',
+          file_id: 'file-day-1',
+          label_id: 'label-start',
+          parent_node_id: null,
+          type: 'else',
+          content: 'else:',
+          order: '0001',
+          source_span: { start_line: 4, end_line: 4 },
+          metadata: { condition: null },
+          visual: { position: { x: 96, y: 256 }, size: { width: 360, height: 96 } },
+        },
+        {
+          id: 'node-name-append-action',
+          file_id: 'file-day-1',
+          label_id: 'label-start',
+          parent_node_id: 'node-name-empty-else',
+          type: 'action',
+          content: '$ player_name += player_name_buf',
+          order: '0001.0000',
+          source_span: { start_line: 5, end_line: 5 },
+          metadata: { default_title: '$ player_name += player_name_buf' },
+          visual: { position: { x: 24, y: 48 }, size: { width: 360, height: 88 } },
+        },
+        {
+          id: 'node-name-changed-if',
+          file_id: 'file-day-1',
+          label_id: 'label-start',
+          parent_node_id: null,
+          type: 'if',
+          content: 'if player_name_buf != player_name_tmp:',
+          order: '0002',
+          source_span: { start_line: 7, end_line: 7 },
+          metadata: { condition: 'player_name_buf != player_name_tmp' },
+          visual: { position: { x: 96, y: 376 }, size: { width: 360, height: 96 } },
+        },
+        {
+          id: 'node-name-changed-action',
+          file_id: 'file-day-1',
+          label_id: 'label-start',
+          parent_node_id: 'node-name-changed-if',
+          type: 'action',
+          content: 'pasha "А-а-а, а я почему-то запомнил [player_name_tmp], ну ладно, [player_name_buf], теперь никогда не забуду!"',
+          order: '0002.0000',
+          source_span: { start_line: 8, end_line: 8 },
+          metadata: {
+            default_title:
+              'pasha "А-а-а, а я почему-то запомнил [player_name_tmp], ну ладно, [player_name_buf], теперь никогда не забуду!"',
+          },
+          visual: { position: { x: 24, y: 48 }, size: { width: 360, height: 128 } },
+        },
+        {
+          id: 'node-name-changed-else',
+          file_id: 'file-day-1',
+          label_id: 'label-start',
+          parent_node_id: null,
+          type: 'else',
+          content: 'else:',
+          order: '0003',
+          source_span: { start_line: 9, end_line: 9 },
+          metadata: { condition: null },
+          visual: { position: { x: 96, y: 496 }, size: { width: 360, height: 96 } },
+        },
+        {
+          id: 'node-name-same-action',
+          file_id: 'file-day-1',
+          label_id: 'label-start',
+          parent_node_id: 'node-name-changed-else',
+          type: 'action',
+          content: 'pasha "А-а-а, ну я так и запомнил! Давай, [player_name_buf], бывай!"',
+          order: '0003.0000',
+          source_span: { start_line: 10, end_line: 10 },
+          metadata: { default_title: 'pasha "А-а-а, ну я так и запомнил! Давай, [player_name_buf], бывай!"' },
+          visual: { position: { x: 24, y: 48 }, size: { width: 360, height: 112 } },
+        },
+        {
+          id: 'node-hide-pasha',
+          file_id: 'file-day-1',
+          label_id: 'label-start',
+          parent_node_id: null,
+          type: 'action',
+          content: 'hide pasha sad',
+          order: '0004',
+          source_span: { start_line: 12, end_line: 12 },
+          metadata: { default_title: 'hide pasha sad' },
+          visual: { position: { x: 96, y: 616 }, size: { width: 360, height: 88 } },
+        },
+      ],
+      edges: [],
+    };
+
+    const projection = projectGraphToReactFlow(sequentialConditionGraph);
+    const byId = new Map(projection.nodes.map((node) => [node.id, node]));
+    const branchPairs = new Set(projectionEdgesByKind(projection, 'branch').map((edge) => `${edge.source}->${edge.target}`));
+    const sequencePairs = new Set(projectionEdgesByKind(projection, 'sequence').map((edge) => `${edge.source}->${edge.target}`));
+    const firstIf = byId.get('node-name-empty-if')!;
+    const firstElse = byId.get('node-name-empty-else')!;
+    const firstTrueAction = byId.get('node-name-default-action')!;
+    const firstElseAction = byId.get('node-name-append-action')!;
+    const secondIf = byId.get('node-name-changed-if')!;
+    const secondElse = byId.get('node-name-changed-else')!;
+    const hidePasha = byId.get('node-hide-pasha')!;
+    const firstIfCenterX = nodeCenterX(firstIf);
+    const secondIfCenterX = nodeCenterX(secondIf);
+
+    expect(branchPairs).toEqual(
+      new Set([
+        'node-name-empty-if->node-name-default-action',
+        'node-name-empty-if->node-name-empty-else',
+        'node-name-changed-if->node-name-changed-action',
+        'node-name-changed-if->node-name-changed-else',
+      ]),
+    );
+    expect(branchPairs).not.toContain('node-name-empty-if->node-name-changed-if');
+    expect(branchPairs).not.toContain('node-name-empty-if->node-name-changed-else');
+    expect(sequencePairs).toEqual(
+      new Set([
+        'start-node-start->node-name-empty-if',
+        'node-name-default-action->node-name-changed-if',
+        'node-name-append-action->node-name-changed-if',
+        'node-name-changed-action->node-hide-pasha',
+        'node-name-same-action->node-hide-pasha',
+      ]),
+    );
+    expect(Math.abs(firstIfCenterX - secondIfCenterX)).toBeLessThanOrEqual(2);
+    expect(secondIf.position.y).toBeGreaterThan(
+      Math.max(
+        firstTrueAction.position.y + Number(firstTrueAction.height),
+        firstElseAction.position.y + Number(firstElseAction.height),
+      ),
+    );
+    expect(hidePasha.position.y).toBeGreaterThan(
+      Math.max(
+        byId.get('node-name-changed-action')!.position.y + Number(byId.get('node-name-changed-action')!.height),
+        byId.get('node-name-same-action')!.position.y + Number(byId.get('node-name-same-action')!.height),
+      ),
+    );
+    expect(firstElse.position.y).toBeGreaterThanOrEqual(firstIf.position.y + Number(firstIf.height) + 48);
+    expect(secondElse.position.y).toBeGreaterThanOrEqual(secondIf.position.y + Number(secondIf.height) + 48);
+  });
+
   it('expands branch lanes by measured subtree width for deep binary conditionals', () => {
     const nodes: ProjectGraphSnapshot['nodes'] = [];
     let order = 0;

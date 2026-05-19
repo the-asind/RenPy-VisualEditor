@@ -176,6 +176,8 @@ const scenarioKind = (node: LayoutNode): string =>
 
 const isConditionalBranchNode = (node: LayoutNode): boolean => ['if', 'elif', 'else'].includes(scenarioKind(node));
 
+const isConditionalContinuationNode = (node: LayoutNode): boolean => ['elif', 'else'].includes(scenarioKind(node));
+
 const isBranchHeaderNode = (node: LayoutNode): boolean => ['elif', 'else'].includes(scenarioKind(node));
 
 const isMenuNode = (node: LayoutNode): boolean => scenarioKind(node) === 'menu';
@@ -189,6 +191,9 @@ const isBranchingParentNode = (node: LayoutNode | undefined): boolean =>
 
 const isConditionalScenario = (node: ScenarioNodeSnapshot | undefined): boolean =>
   !!node && ['if', 'elif', 'else'].includes(node.type);
+
+const isConditionalContinuationScenario = (node: ScenarioNodeSnapshot | undefined): boolean =>
+  !!node && ['elif', 'else'].includes(node.type);
 
 const isBranchHeaderScenario = (node: ScenarioNodeSnapshot | undefined): boolean =>
   !!node && ['elif', 'else'].includes(node.type);
@@ -1097,7 +1102,7 @@ const applyConditionalStoryLayout = (nodes: LayoutNode[], graph: ProjectGraphSna
         if (isConditionalScenario(sibling)) {
           const branches = [sibling];
           let afterBranchIndex = index + 1;
-          while (afterBranchIndex < siblings.length && isConditionalScenario(siblings[afterBranchIndex])) {
+          while (afterBranchIndex < siblings.length && isConditionalContinuationScenario(siblings[afterBranchIndex])) {
             branches.push(siblings[afterBranchIndex]);
             afterBranchIndex += 1;
           }
@@ -1253,7 +1258,7 @@ const applyConditionalStoryLayout = (nodes: LayoutNode[], graph: ProjectGraphSna
   ): { branches: ScenarioNodeSnapshot[]; nextIndex: number } => {
     const branches = [items[index]];
     let nextIndex = index + 1;
-    while (nextIndex < items.length && isConditionalScenario(items[nextIndex])) {
+    while (nextIndex < items.length && isConditionalContinuationScenario(items[nextIndex])) {
       branches.push(items[nextIndex]);
       nextIndex += 1;
     }
@@ -1721,7 +1726,7 @@ const deriveFlowEdges = (nodes: LayoutNode[], graph: ProjectGraphSnapshot): Edge
       if (isConditionalBranchNode(sibling)) {
         const branches = [sibling];
         let afterBranchIndex = index + 1;
-        while (afterBranchIndex < scenarioSiblings.length && isConditionalBranchNode(scenarioSiblings[afterBranchIndex])) {
+        while (afterBranchIndex < scenarioSiblings.length && isConditionalContinuationNode(scenarioSiblings[afterBranchIndex])) {
           branches.push(scenarioSiblings[afterBranchIndex]);
           afterBranchIndex += 1;
         }

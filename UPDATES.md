@@ -4,6 +4,30 @@ This file is the short project memory for RenPy Visual Editor 2.0. Keep it curre
 
 ## 2026-05-19
 
+### Sequential If/Else Groups Stay Separate
+
+Fixed a projection regression where plain sequential Ren'Py code shaped as `if/else`, then another `if/else`, was displayed as one huge conditional branch group with four lanes.
+
+Files:
+
+1. `frontend/src/utils/projectGraphProjection.ts`
+2. `frontend/src/utils/__tests__/projectGraphProjection.test.ts`
+3. `docs/editor-2.0-architecture.md`
+4. `UPDATES.md`
+
+Result:
+
+1. Conditional grouping now treats only adjacent `elif`/`else` nodes as continuation of the previous conditional group.
+2. A new adjacent `if` starts a new conditional group and is laid out below the rejoin of the previous group.
+3. Derived branch edges no longer connect the first `if` to the second `if` or to the second `else` as false alternatives.
+4. The same grouping rule is used by layout, manual top-down flow guards, and derived edge generation.
+
+Checks:
+
+1. Added black-box projection coverage using a Ren'Py-style `if/else -> if/else -> action` snippet with Russian dialogue/action content.
+2. `npm test -- --run src/utils/__tests__/projectGraphProjection.test.ts` passed with 25 tests.
+3. `npm test -- --run` passed with 51 frontend tests.
+
 ### Leading Comments Attach To Control Nodes
 
 Fixed an import regression where a comment immediately before `else:` became its own `action` node, inserted a false flow step, and pushed the branch layout away from the intended tree.
