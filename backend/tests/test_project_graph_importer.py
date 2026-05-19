@@ -127,6 +127,123 @@ def test_import_normalizes_control_statement_space_before_colon(tmp_path):
     assert not any(node.type == "action" and node.content.startswith("else") for node in graph.nodes)
 
 
+def test_comment_before_else_attaches_to_else_instead_of_becoming_action_node(tmp_path):
+    source = tmp_path / "renpy_mouse_comment_before_else.rpy"
+    source.write_text(
+        "\n".join(
+            [
+                "label start:",
+                '    if flags["d5"]["sanya_love_yuli"]:',
+                '        sanya "Ну... думаю, что скорее да, чем нет..."',
+                "    # концовка",
+                "    else:",
+                '        sanya "Юль, что за бред?"',
+                "    return",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    graph = ProjectGraphImporter().import_files(
+        project_id="mouse-renpy-comment-before-else-project",
+        files=[source],
+    )
+
+    top_level_nodes = sorted(
+        [node for node in graph.nodes if node.parent_node_id is None],
+        key=lambda node: node.order,
+    )
+
+    assert [node.type for node in top_level_nodes] == ["if", "else", "return"]
+    else_node = next(node for node in graph.nodes if node.type == "else")
+    assert else_node.content == "# концовка\nelse:"
+    assert else_node.source_span == {"start_line": 3, "end_line": 4}
+    assert not any(node.type == "action" and node.content.strip() == "# концовка" for node in graph.nodes)
+
+    else_children = [node for node in graph.nodes if node.parent_node_id == else_node.id]
+    assert [(node.type, node.content) for node in else_children] == [
+        ("action", 'sanya "Юль, что за бред?"'),
+    ]
+
+
+def test_comment_before_menu_attaches_to_menu_instead_of_becoming_action_node(tmp_path):
+    source = tmp_path / "renpy_mouse_comment_before_menu.rpy"
+    source.write_text(
+        "\n".join(
+            [
+                "label start:",
+                "    # RenPy Mouse reaches the snack crossroads.",
+                "    menu:",
+                '        "Which snack should RenPy inspect?"',
+                '        "Cheese map":',
+                '            r "The cheese map is suspiciously detailed."',
+                "    return",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    graph = ProjectGraphImporter().import_files(
+        project_id="mouse-renpy-comment-before-menu-project",
+        files=[source],
+    )
+
+    top_level_nodes = sorted(
+        [node for node in graph.nodes if node.parent_node_id is None],
+        key=lambda node: node.order,
+    )
+
+    assert [node.type for node in top_level_nodes] == ["menu", "return"]
+    menu_node = top_level_nodes[0]
+    assert menu_node.content == "# RenPy Mouse reaches the snack crossroads.\nmenu:"
+    assert menu_node.source_span == {"start_line": 1, "end_line": 2}
+    assert not any(
+        node.type == "action" and node.content.strip() == "# RenPy Mouse reaches the snack crossroads."
+        for node in graph.nodes
+    )
+
+
+def test_comment_before_menu_choice_attaches_to_choice_instead_of_becoming_action_node(tmp_path):
+    source = tmp_path / "renpy_mouse_comment_before_choice.rpy"
+    source.write_text(
+        "\n".join(
+            [
+                "label start:",
+                "    menu:",
+                '        "Which snack should RenPy inspect?"',
+                "        # RenPy Mouse trusts only labeled cheese.",
+                '        "Cheese map":',
+                '            r "The cheese map is suspiciously detailed."',
+                '        "Cupboard":',
+                '            jump .cupboard',
+                "    return",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    graph = ProjectGraphImporter().import_files(
+        project_id="mouse-renpy-comment-before-choice-project",
+        files=[source],
+    )
+
+    choice_nodes = sorted(
+        [node for node in graph.nodes if node.type == "menu_choice"],
+        key=lambda node: node.order,
+    )
+
+    assert choice_nodes[0].content == '# RenPy Mouse trusts only labeled cheese.\n"Cheese map":'
+    assert choice_nodes[0].source_span == {"start_line": 3, "end_line": 4}
+    assert choice_nodes[0].metadata == {"choice_text": "Cheese map", "condition": None}
+    assert not any(
+        node.type == "action" and node.content.strip() == "# RenPy Mouse trusts only labeled cheese."
+        for node in graph.nodes
+    )
+
+
 def test_import_rejects_non_rpy_file(tmp_path):
     bad_file = tmp_path / "notes.txt"
     bad_file.write_text("label start:\n    return\n", encoding="utf-8")

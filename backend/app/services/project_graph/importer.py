@@ -231,6 +231,15 @@ class ProjectGraphImporter:
         node_order: list[int],
     ) -> int:
         while index < end_index:
+            leading_comments, leading_start, statement_index = self._collect_leading_comments_before_control(
+                lines=lines,
+                index=index,
+                end_index=end_index,
+                parent_indent=parent_indent,
+            )
+            if leading_comments:
+                index = statement_index
+
             line = lines[index]
             stripped = self._normalize_statement_colon_spacing(line.strip())
 
@@ -245,17 +254,19 @@ class ProjectGraphImporter:
             branch_type = self._conditional_node_type(stripped)
             if branch_type is not None:
                 branch_id = str(uuid4())
+                branch_content = self._prepend_leading_comments(leading_comments, stripped)
                 nodes.append(
                     self._make_node(
                         file_id=file_id,
                         label_id=label.id,
                         parent_node_id=parent_node_id,
                         node_type=branch_type,
-                        content=stripped,
+                        content=branch_content,
                         order=node_order[0],
-                        line_number=index,
+                        line_number=leading_start if leading_comments else index,
                         metadata={"condition": self._conditional_condition(stripped)},
                         node_id=branch_id,
+                        source_end_line=index,
                     )
                 )
                 node_order[0] += 1
@@ -282,21 +293,25 @@ class ProjectGraphImporter:
                     parent_node_id=parent_node_id,
                     nodes=nodes,
                     node_order=node_order,
+                    leading_comments=leading_comments,
+                    leading_start=leading_start,
                 )
                 continue
 
             statement_type = self._statement_node_type(stripped)
             if statement_type in {"jump", "call", "return"}:
+                statement_content = self._prepend_leading_comments(leading_comments, stripped)
                 nodes.append(
                     self._make_node(
                         file_id=file_id,
                         label_id=label.id,
                         parent_node_id=parent_node_id,
                         node_type=statement_type,
-                        content=stripped,
+                        content=statement_content,
                         order=node_order[0],
-                        line_number=index,
+                        line_number=leading_start if leading_comments else index,
                         metadata={},
+                        source_end_line=index,
                     )
                 )
                 node_order[0] += 1
@@ -329,6 +344,71 @@ class ProjectGraphImporter:
 
         return index
 
+    def _collect_leading_comments_before_control(
+        self,
+        lines: list[str],
+        index: int,
+        end_index: int,
+        parent_indent: int,
+        *,
+        include_menu_choice: bool = False,
+        include_menu_prompt: bool = False,
+    ) -> tuple[list[str], int, int]:
+        if index >= end_index:
+            return [], index, index
+
+        comments: list[str] = []
+        comment_start = index
+        comment_indent: int | None = None
+        cursor = index
+
+        while cursor < end_index:
+            line = lines[cursor]
+            stripped = self._normalize_statement_colon_spacing(line.strip())
+
+            if not stripped:
+                if comments:
+                    comments.append("")
+                    cursor += 1
+                    continue
+                return [], index, index
+
+            line_indent = self._indent_level(line)
+            if line_indent <= parent_indent or self._extract_label_name(stripped) is not None:
+                return [], index, index
+
+            if stripped.startswith("#"):
+                if comment_indent is None:
+                    comment_indent = line_indent
+                    comment_start = cursor
+                if line_indent != comment_indent:
+                    return [], index, index
+                comments.append(line[comment_indent:].rstrip())
+                cursor += 1
+                continue
+
+            if (
+                comments
+                and line_indent == comment_indent
+                and (
+                    self._is_control_statement(stripped)
+                    or self._is_menu_line(stripped)
+                    or (include_menu_choice and self._is_menu_choice_line(stripped))
+                    or (include_menu_prompt and self._is_menu_prompt_line(stripped))
+                )
+            ):
+                while comments and not comments[-1].strip():
+                    comments.pop()
+                return comments, comment_start, cursor
+
+            return [], index, index
+
+        return [], index, index
+
+    @staticmethod
+    def _prepend_leading_comments(comments: list[str], statement: str) -> str:
+        return "\n".join([*comments, statement]) if comments else statement
+
     def _parse_menu_block(
         self,
         file_id: str,
@@ -339,9 +419,12 @@ class ProjectGraphImporter:
         parent_node_id: str | None,
         nodes: list[ScenarioNode],
         node_order: list[int],
+        leading_comments: list[str] | None = None,
+        leading_start: int | None = None,
     ) -> int:
         menu_line = lines[index]
         menu_content = self._normalize_statement_colon_spacing(menu_line.strip())
+        menu_content = self._prepend_leading_comments(leading_comments or [], menu_content)
         menu_indent = self._indent_level(menu_line)
         menu_id = str(uuid4())
         nodes.append(
@@ -352,15 +435,27 @@ class ProjectGraphImporter:
                 node_type="menu",
                 content=menu_content,
                 order=node_order[0],
-                line_number=index,
+                line_number=leading_start if leading_comments else index,
                 metadata={},
                 node_id=menu_id,
+                source_end_line=index,
             )
         )
         node_order[0] += 1
         index += 1
 
         while index < end_index:
+            leading_comments, leading_start, statement_index = self._collect_leading_comments_before_control(
+                lines=lines,
+                index=index,
+                end_index=end_index,
+                parent_indent=menu_indent,
+                include_menu_choice=True,
+                include_menu_prompt=True,
+            )
+            if leading_comments:
+                index = statement_index
+
             line = lines[index]
             child = self._normalize_statement_colon_spacing(line.strip())
             child_indent = self._indent_level(line)
@@ -373,16 +468,18 @@ class ProjectGraphImporter:
                 break
 
             if self._is_menu_prompt_line(child):
+                prompt_content = self._prepend_leading_comments(leading_comments, child)
                 nodes.append(
                     self._make_node(
                         file_id=file_id,
                         label_id=label.id,
                         parent_node_id=menu_id,
                         node_type="menu_prompt",
-                        content=child,
+                        content=prompt_content,
                         order=node_order[0],
-                        line_number=index,
+                        line_number=leading_start if leading_comments else index,
                         metadata={"prompt_text": child.strip('"')},
+                        source_end_line=index,
                     )
                 )
                 node_order[0] += 1
@@ -391,17 +488,19 @@ class ProjectGraphImporter:
 
             if self._is_menu_choice_line(child):
                 choice_id = str(uuid4())
+                choice_content = self._prepend_leading_comments(leading_comments, child)
                 nodes.append(
                     self._make_node(
                         file_id=file_id,
                         label_id=label.id,
                         parent_node_id=menu_id,
                         node_type="menu_choice",
-                        content=child,
+                        content=choice_content,
                         order=node_order[0],
-                        line_number=index,
+                        line_number=leading_start if leading_comments else index,
                         metadata=self._parse_choice_metadata(child),
                         node_id=choice_id,
+                        source_end_line=index,
                     )
                 )
                 node_order[0] += 1

@@ -137,6 +137,43 @@ def test_single_file_export_matches_expected_normalized_renpy_text(tmp_path):
             "",
         ]
     )
+
+
+def test_comment_before_else_roundtrips_as_part_of_else_statement(tmp_path):
+    source = tmp_path / "mouse_comment_before_else.rpy"
+    source.write_text(
+        "\n".join(
+            [
+                "label start:",
+                '    if flags["d5"]["sanya_love_yuli"]:',
+                '        sanya "Ну... думаю, что скорее да, чем нет..."',
+                "    # концовка",
+                "    else:",
+                '        sanya "Юль, что за бред?"',
+                "    return",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    graph = import_and_resolve(source)
+    exported = ProjectGraphExporter().export(graph)
+
+    assert exported["mouse_comment_before_else.rpy"] == "\n".join(
+        [
+            "label start:",
+            '    if flags["d5"]["sanya_love_yuli"]:',
+            '        sanya "Ну... думаю, что скорее да, чем нет..."',
+            "    # концовка",
+            "    else:",
+            '        sanya "Юль, что за бред?"',
+            "    return",
+            "",
+        ]
+    )
+
+
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "renpy_mouse"
 
 

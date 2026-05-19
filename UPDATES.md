@@ -2,6 +2,33 @@
 
 This file is the short project memory for RenPy Visual Editor 2.0. Keep it current when closing master items, changing decisions, or classifying old code.
 
+## 2026-05-19
+
+### Leading Comments Attach To Control Nodes
+
+Fixed an import regression where a comment immediately before `else:` became its own `action` node, inserted a false flow step, and pushed the branch layout away from the intended tree.
+
+Files:
+
+1. `backend/app/services/project_graph/importer.py`
+2. `backend/tests/test_project_graph_importer.py`
+3. `backend/tests/test_project_graph_exporter.py`
+4. `docs/editor-2.0-architecture.md`
+5. `UPDATES.md`
+
+Result:
+
+1. Comments immediately preceding `if/elif/else`, `menu`, `menu_choice`, `menu_prompt`, `jump`, `call`, or `return` at the same indentation attach to that control node.
+2. These comments no longer create standalone visible `action` nodes and no longer participate in sequence layout.
+3. Export preserves the comment before the related control statement, for example `# концовка` before `else:`.
+4. Regular comments inside linear story/action text still remain inside aggregated `action` blocks.
+
+Checks:
+
+1. Added black-box import coverage for comment-before-`else`, comment-before-`menu`, and comment-before-`menu_choice`.
+2. Added exporter roundtrip coverage for comment-before-`else`.
+3. `python -m pytest backend/tests/test_project_graph_importer.py backend/tests/test_project_graph_exporter.py -q` passed with 13 tests.
+
 ## 2026-05-18
 
 ### Terminal Flow And Source-side Edge Routing
