@@ -118,6 +118,19 @@ export interface ProjectGraphProblem {
   labelId: string | null;
 }
 
+export interface LabelRelation {
+  sourceLabelId: string;
+  targetLabelId: string;
+  weight: number;
+  kinds: Set<'jump' | 'call'>;
+}
+
+export interface LabelPackingQuality {
+  weightedRelationDistance: number;
+  boundingBoxArea: number;
+  overlapCount: number;
+}
+
 const PROJECT_GRAPH_REACT_FLOW_NODE_CLASS = 'project-graph-rf-node';
 
 type LayoutNode = Node & {
@@ -309,6 +322,7 @@ const hasImportedScenarioSpread = (siblings: LayoutNode[], parent: LayoutNode | 
 };
 
 const nodeCenterX = (node: LayoutNode): number => node.position.x + node.width / 2;
+const nodeCenterY = (node: LayoutNode): number => node.position.y + node.height / 2;
 
 const isLabelStartFirst = (siblings: LayoutNode[], parent: LayoutNode | undefined): boolean => {
   if (parent?.type !== 'labelFrame') {
@@ -587,38 +601,383 @@ const expandParentsToFitChildren = (nodes: LayoutNode[], compactParentIds: Set<s
   }
 };
 
-const isMostlySingleColumn = (siblings: LayoutNode[]): boolean => {
-  if (siblings.length < 2) {
+const hasManualFramePosition = (node: Pick<Node, 'data'>): boolean => {
+  const data = node.data as Record<string, unknown> | undefined;
+  const original = data?.original as { metadata?: Record<string, unknown> } | undefined;
+  return data?.manualPosition === true || original?.metadata?._manual_position === true;
+};
+
+export const shouldAutoPackLabelFrames = (
+  siblings: Array<Pick<LayoutNode, 'position' | 'width' | 'height' | 'data'>>,
+  localRelationCount: number,
+): boolean => {
+  if (siblings.length < 2 || siblings.some(hasManualFramePosition)) {
     return false;
   }
 
   const centers = siblings.map(nodeCenterX);
   const spread = Math.max(...centers) - Math.min(...centers);
   const maxWidth = Math.max(...siblings.map((sibling) => sibling.width));
-  return spread <= Math.max(96, maxWidth * 0.35);
+  const mostlySingleColumn = spread <= Math.max(96, maxWidth * 0.5);
+  return mostlySingleColumn && (localRelationCount > 0 || siblings.length >= 8);
 };
 
-const applyRelationAwareLabelFrameLayout = (nodes: LayoutNode[], graph: ProjectGraphSnapshot): void => {
-  const byId = new Map(nodes.map((node) => [node.id, node]));
+const relationWeight = (kind: FlowEdgeSnapshot['kind']): number => (kind === 'jump' ? 1 : 0.8);
+
+export const buildLabelRelations = (graph: ProjectGraphSnapshot): LabelRelation[] => {
   const sourceLabelIdByScenarioId = new Map(graph.nodes.map((scenario) => [scenario.id, scenario.label_id]));
   const labelIdByStartId = new Map(graph.label_starts.map((start) => [start.id, start.label_id]));
-  const relationTargetsBySourceLabel = new Map<string, Set<string>>();
+  const labelsById = new Map(graph.labels.map((label) => [label.id, label]));
+  const relationByPair = new Map<string, LabelRelation>();
 
   for (const edge of graph.edges) {
     const sourceLabelId = sourceLabelIdByScenarioId.get(edge.source_node_id);
     const targetLabelId = edge.target_node_id ? labelIdByStartId.get(edge.target_node_id) : undefined;
+    const sourceLabel = sourceLabelId ? labelsById.get(sourceLabelId) : undefined;
+    const targetLabel = targetLabelId ? labelsById.get(targetLabelId) : undefined;
 
-    if (!sourceLabelId || !targetLabelId || sourceLabelId === targetLabelId) {
+    if (
+      !sourceLabel ||
+      !targetLabel ||
+      sourceLabel.id === targetLabel.id ||
+      sourceLabel.file_id !== targetLabel.file_id ||
+      sourceLabel.parent_label_id !== targetLabel.parent_label_id
+    ) {
       continue;
     }
 
-    const targets = relationTargetsBySourceLabel.get(sourceLabelId) ?? new Set<string>();
-    targets.add(targetLabelId);
-    relationTargetsBySourceLabel.set(sourceLabelId, targets);
+    const pairKey = `${sourceLabel.id}->${targetLabel.id}`;
+    const relation = relationByPair.get(pairKey) ?? {
+      sourceLabelId: sourceLabel.id,
+      targetLabelId: targetLabel.id,
+      weight: 0,
+      kinds: new Set<'jump' | 'call'>(),
+    };
+    relation.weight = Math.min(3, Number((relation.weight + relationWeight(edge.kind)).toFixed(4)));
+    relation.kinds.add(edge.kind);
+    relationByPair.set(pairKey, relation);
   }
 
-  if (relationTargetsBySourceLabel.size === 0) {
-    return;
+  const labelSourceOrder = (labelId: string): number => labelsById.get(labelId)?.source_span?.start_line ?? Number.MAX_SAFE_INTEGER;
+  return [...relationByPair.values()].sort(
+    (left, right) =>
+      labelSourceOrder(left.sourceLabelId) - labelSourceOrder(right.sourceLabelId) ||
+      labelSourceOrder(left.targetLabelId) - labelSourceOrder(right.targetLabelId) ||
+      left.sourceLabelId.localeCompare(right.sourceLabelId) ||
+      left.targetLabelId.localeCompare(right.targetLabelId),
+  );
+};
+
+export const buildLabelRelationComponents = (
+  orderedLabelIds: string[],
+  relations: LabelRelation[],
+): string[][] => {
+  const labelIds = new Set(orderedLabelIds);
+  const originalIndexById = new Map(orderedLabelIds.map((labelId, index) => [labelId, index]));
+  const adjacency = new Map<string, Set<string>>();
+
+  for (const labelId of orderedLabelIds) {
+    adjacency.set(labelId, new Set());
+  }
+
+  for (const relation of relations) {
+    if (!labelIds.has(relation.sourceLabelId) || !labelIds.has(relation.targetLabelId)) {
+      continue;
+    }
+    adjacency.get(relation.sourceLabelId)?.add(relation.targetLabelId);
+    adjacency.get(relation.targetLabelId)?.add(relation.sourceLabelId);
+  }
+
+  const sortByOriginalOrder = (left: string, right: string) =>
+    (originalIndexById.get(left) ?? Number.MAX_SAFE_INTEGER) -
+      (originalIndexById.get(right) ?? Number.MAX_SAFE_INTEGER) ||
+    left.localeCompare(right);
+
+  const visited = new Set<string>();
+  const connectedComponents: string[][] = [];
+  const isolatedLabels: string[] = [];
+
+  for (const labelId of orderedLabelIds) {
+    if (visited.has(labelId)) {
+      continue;
+    }
+
+    const neighbors = adjacency.get(labelId) ?? new Set<string>();
+    if (neighbors.size === 0) {
+      visited.add(labelId);
+      isolatedLabels.push(labelId);
+      continue;
+    }
+
+    const component: string[] = [];
+    const queue = [labelId];
+    visited.add(labelId);
+
+    for (let queueIndex = 0; queueIndex < queue.length; queueIndex += 1) {
+      const current = queue[queueIndex];
+      component.push(current);
+      for (const next of [...(adjacency.get(current) ?? [])].sort(sortByOriginalOrder)) {
+        if (!visited.has(next)) {
+          visited.add(next);
+          queue.push(next);
+        }
+      }
+    }
+
+    connectedComponents.push(component.sort(sortByOriginalOrder));
+  }
+
+  connectedComponents.sort((left, right) => sortByOriginalOrder(left[0], right[0]));
+  if (isolatedLabels.length > 0) {
+    connectedComponents.push(isolatedLabels.sort(sortByOriginalOrder));
+  }
+
+  return connectedComponents;
+};
+
+export const measureLabelPackingQuality = (
+  labels: Array<Pick<LayoutNode, 'id' | 'position' | 'width' | 'height'>>,
+  relations: LabelRelation[],
+): LabelPackingQuality => {
+  if (labels.length === 0) {
+    return { weightedRelationDistance: 0, boundingBoxArea: 0, overlapCount: 0 };
+  }
+
+  const byId = new Map(labels.map((label) => [label.id, label]));
+  const minX = Math.min(...labels.map((label) => label.position.x));
+  const minY = Math.min(...labels.map((label) => label.position.y));
+  const maxX = Math.max(...labels.map((label) => label.position.x + label.width));
+  const maxY = Math.max(...labels.map((label) => label.position.y + label.height));
+  let weightedRelationDistance = 0;
+  let relationWeightSum = 0;
+
+  for (const relation of relations) {
+    const source = byId.get(relation.sourceLabelId);
+    const target = byId.get(relation.targetLabelId);
+    if (!source || !target) {
+      continue;
+    }
+
+    weightedRelationDistance +=
+      Math.hypot(nodeCenterX(source as LayoutNode) - nodeCenterX(target as LayoutNode), nodeCenterY(source as LayoutNode) - nodeCenterY(target as LayoutNode)) *
+      relation.weight;
+    relationWeightSum += relation.weight;
+  }
+
+  let overlapCount = 0;
+  for (let leftIndex = 0; leftIndex < labels.length; leftIndex += 1) {
+    for (let rightIndex = leftIndex + 1; rightIndex < labels.length; rightIndex += 1) {
+      if (overlaps(labels[leftIndex] as LayoutNode, labels[rightIndex] as LayoutNode)) {
+        overlapCount += 1;
+      }
+    }
+  }
+
+  return {
+    weightedRelationDistance: relationWeightSum > 0 ? weightedRelationDistance / relationWeightSum : 0,
+    boundingBoxArea: (maxX - minX) * (maxY - minY),
+    overlapCount,
+  };
+};
+
+const orderLabelFramesForPacking = (ordered: LayoutNode[], relations: LabelRelation[]): LayoutNode[] => {
+  if (relations.length === 0) {
+    return ordered;
+  }
+
+  const labelIds = new Set(ordered.map((label) => label.id));
+  const originalIndexById = new Map(ordered.map((label, index) => [label.id, index]));
+  const labelById = new Map(ordered.map((label) => [label.id, label]));
+  const targetsBySource = new Map<string, LabelRelation[]>();
+  const incomingSourcesByTarget = new Map<string, Set<string>>();
+
+  for (const relation of relations) {
+    if (!labelIds.has(relation.sourceLabelId) || !labelIds.has(relation.targetLabelId)) {
+      continue;
+    }
+    const targets = targetsBySource.get(relation.sourceLabelId) ?? [];
+    targets.push(relation);
+    targetsBySource.set(relation.sourceLabelId, targets);
+
+    const incomingSources = incomingSourcesByTarget.get(relation.targetLabelId) ?? new Set<string>();
+    incomingSources.add(relation.sourceLabelId);
+    incomingSourcesByTarget.set(relation.targetLabelId, incomingSources);
+  }
+
+  const highIncomingHubIds = new Set(
+    [...incomingSourcesByTarget.entries()]
+      .filter(([, sources]) => sources.size >= 4)
+      .map(([targetLabelId]) => targetLabelId),
+  );
+
+  for (const targets of targetsBySource.values()) {
+    targets.sort(
+      (left, right) =>
+        right.weight - left.weight ||
+        (originalIndexById.get(left.targetLabelId) ?? Number.MAX_SAFE_INTEGER) -
+          (originalIndexById.get(right.targetLabelId) ?? Number.MAX_SAFE_INTEGER) ||
+        left.targetLabelId.localeCompare(right.targetLabelId),
+    );
+  }
+
+  const result: LayoutNode[] = [];
+  const emitted = new Set<string>();
+  const visiting = new Set<string>();
+
+  const emitCluster = (label: LayoutNode): void => {
+    if (emitted.has(label.id)) {
+      return;
+    }
+    emitted.add(label.id);
+    result.push(label);
+
+    if (visiting.has(label.id)) {
+      return;
+    }
+    visiting.add(label.id);
+    for (const relation of targetsBySource.get(label.id) ?? []) {
+      if (highIncomingHubIds.has(relation.targetLabelId)) {
+        continue;
+      }
+      const target = labelById.get(relation.targetLabelId);
+      if (target) {
+        emitCluster(target);
+      }
+    }
+    visiting.delete(label.id);
+  };
+
+  for (const component of buildLabelRelationComponents(ordered.map((label) => label.id), relations)) {
+    const componentHubIds = component
+      .filter((labelId) => highIncomingHubIds.has(labelId))
+      .sort(
+        (left, right) =>
+          (originalIndexById.get(left) ?? Number.MAX_SAFE_INTEGER) -
+            (originalIndexById.get(right) ?? Number.MAX_SAFE_INTEGER) ||
+          left.localeCompare(right),
+      );
+    if (componentHubIds.length > 0) {
+      const componentOrder = component.filter((labelId) => !highIncomingHubIds.has(labelId));
+
+      for (const hubId of componentHubIds) {
+        const incomingSourceIndexes = [...(incomingSourcesByTarget.get(hubId) ?? [])]
+          .map((sourceId) => componentOrder.indexOf(sourceId))
+          .filter((index) => index >= 0)
+          .sort((left, right) => left - right);
+        const insertIndex =
+          incomingSourceIndexes.length > 0
+            ? incomingSourceIndexes[Math.floor(incomingSourceIndexes.length / 2)] + 1
+            : componentOrder.length;
+        componentOrder.splice(insertIndex, 0, hubId);
+      }
+
+      for (const labelId of componentOrder) {
+        const label = labelById.get(labelId);
+        if (label) {
+          emitCluster(label);
+        }
+      }
+      continue;
+    }
+
+    for (const labelId of component) {
+      const label = labelById.get(labelId);
+      if (label) {
+        emitCluster(label);
+      }
+    }
+  }
+
+  return result;
+};
+
+const packLabelFramesIntoShelves = (
+  labelSiblings: LayoutNode[],
+  parent: LayoutNode | undefined,
+  ordered: LayoutNode[],
+  componentIds?: string[][],
+): void => {
+  const startX = Math.min(...ordered.map((sibling) => sibling.position.x));
+  let cursorX = startX;
+  let cursorY = Math.min(...ordered.map((sibling) => sibling.position.y));
+  let rowHeight = 0;
+  const maxLabelWidth = Math.max(...ordered.map((sibling) => sibling.width));
+  const totalArea = ordered.reduce((area, sibling) => area + sibling.width * sibling.height, 0);
+  const compactTargetWidth = Math.max(maxLabelWidth * 4 + RELATION_LABEL_FRAME_COLUMN_GAP * 3, Math.sqrt(totalArea * 1.5));
+  const parentAvailableWidth =
+    parent && parent.type !== 'labelFrame'
+      ? Math.max(maxLabelWidth, parent.width - startX - FRAME_PADDING, compactTargetWidth)
+      : compactTargetWidth;
+  const targetWidth = Math.max(
+    maxLabelWidth,
+    Math.min(parentAvailableWidth, compactTargetWidth),
+  );
+  const rightLimit = startX + targetWidth;
+  const orderedIndexById = new Map(ordered.map((sibling, index) => [sibling.id, index]));
+  const siblingById = new Map(ordered.map((sibling) => [sibling.id, sibling]));
+  const componentGroups =
+    componentIds && componentIds.length > 0
+      ? componentIds
+          .map((component) =>
+            component
+              .map((labelId) => siblingById.get(labelId))
+              .filter((sibling): sibling is LayoutNode => !!sibling)
+              .sort(
+                (left, right) =>
+                  (orderedIndexById.get(left.id) ?? Number.MAX_SAFE_INTEGER) -
+                  (orderedIndexById.get(right.id) ?? Number.MAX_SAFE_INTEGER),
+              ),
+          )
+          .filter((component) => component.length > 0)
+      : [ordered];
+
+  const startNextRow = (): void => {
+    if (cursorX > startX || rowHeight > 0) {
+      cursorX = startX;
+      cursorY += rowHeight + RELATION_LABEL_FRAME_ROW_GAP;
+      rowHeight = 0;
+    }
+  };
+
+  for (const [componentIndex, component] of componentGroups.entries()) {
+    if (componentIndex > 0) {
+      startNextRow();
+    }
+
+    for (const sibling of component) {
+      const doesNotFitCurrentRow = cursorX > startX && cursorX + sibling.width > rightLimit;
+      if (doesNotFitCurrentRow) {
+        startNextRow();
+      }
+
+      sibling.position.x = cursorX;
+      sibling.position.y = cursorY;
+      cursorX += sibling.width + RELATION_LABEL_FRAME_COLUMN_GAP;
+      rowHeight = Math.max(rowHeight, sibling.height);
+    }
+  }
+
+  for (let leftIndex = 0; leftIndex < labelSiblings.length; leftIndex += 1) {
+    for (let rightIndex = leftIndex + 1; rightIndex < labelSiblings.length; rightIndex += 1) {
+      const left = labelSiblings[leftIndex];
+      const right = labelSiblings[rightIndex];
+      if (overlapsWithGap(left, right, 0)) {
+        right.position.x = startX;
+        right.position.y = left.position.y + left.height + RELATION_LABEL_FRAME_ROW_GAP;
+      }
+    }
+  }
+};
+
+const applyRelationAwareLabelFrameLayout = (nodes: LayoutNode[], graph: ProjectGraphSnapshot): void => {
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const relationTargetsBySourceLabel = new Map<string, Set<string>>();
+  const relations = buildLabelRelations(graph);
+
+  for (const relation of relations) {
+    const targets = relationTargetsBySourceLabel.get(relation.sourceLabelId) ?? new Set<string>();
+    targets.add(relation.targetLabelId);
+    relationTargetsBySourceLabel.set(relation.sourceLabelId, targets);
   }
 
   const touchedParentIds = new Set<string>();
@@ -626,23 +985,49 @@ const applyRelationAwareLabelFrameLayout = (nodes: LayoutNode[], graph: ProjectG
 
   for (const [parentId, siblings] of childrenByParent.entries()) {
     const labelSiblings = siblings.filter((sibling) => sibling.type === 'labelFrame');
-    if (labelSiblings.length < 2 || !isMostlySingleColumn(labelSiblings)) {
+    const siblingIds = new Set(labelSiblings.map((sibling) => sibling.id));
+    const localRelationCount = labelSiblings.reduce(
+      (count, sibling) =>
+        count +
+        [...(relationTargetsBySourceLabel.get(sibling.id) ?? [])].filter((targetId) => siblingIds.has(targetId)).length,
+      0,
+    );
+
+    if (!shouldAutoPackLabelFrames(labelSiblings, localRelationCount)) {
       continue;
     }
 
-    const siblingIds = new Set(labelSiblings.map((sibling) => sibling.id));
     const hasLocalRelation = labelSiblings.some((sibling) =>
       [...(relationTargetsBySourceLabel.get(sibling.id) ?? [])].some((targetId) => siblingIds.has(targetId)),
     );
-    if (!hasLocalRelation) {
+    if (!hasLocalRelation && labelSiblings.length < 8) {
       continue;
     }
 
     const ordered = [...labelSiblings].sort(compareLayoutSiblings(byId.get(parentId)));
-    const placedIds = new Set<string>();
-    const placedNodes: LayoutNode[] = [];
     const startX = Math.min(...ordered.map((sibling) => sibling.position.x));
     const startY = Math.min(...ordered.map((sibling) => sibling.position.y));
+    const localRelations = relations.filter(
+      (relation) => siblingIds.has(relation.sourceLabelId) && siblingIds.has(relation.targetLabelId),
+    );
+
+    if (!hasLocalRelation || labelSiblings.length >= 8) {
+      const packingOrder = orderLabelFramesForPacking(ordered, localRelations);
+      const relationComponents = hasLocalRelation
+        ? buildLabelRelationComponents(packingOrder.map((label) => label.id), localRelations)
+        : undefined;
+      packLabelFramesIntoShelves(labelSiblings, byId.get(parentId), packingOrder, relationComponents);
+      if (parentId !== '__root__') {
+        const parent = byId.get(parentId);
+        if (parent) {
+          addParentAndAncestors(parent.id, byId, touchedParentIds);
+        }
+      }
+      continue;
+    }
+
+    const placedIds = new Set<string>();
+    const placedNodes: LayoutNode[] = [];
 
     const placeWithoutOverlap = (node: LayoutNode, x: number, y: number): void => {
       node.position.x = x;
@@ -1840,14 +2225,6 @@ const deriveFlowEdges = (nodes: LayoutNode[], graph: ProjectGraphSnapshot): Edge
 export const projectGraphToReactFlow = (graph: ProjectGraphSnapshot): ProjectGraphProjection => {
   const nodes: LayoutNode[] = [];
   const labelsById = new Map(graph.labels.map((label) => [label.id, label]));
-  const scenariosById = new Map(graph.nodes.map((scenario) => [scenario.id, scenario]));
-  const scenarioDragGroups = buildScenarioDragGroups(graph);
-  const menuPromptByParentId = new Map<string, ScenarioNodeSnapshot>();
-  for (const scenario of graph.nodes) {
-    if (isMenuPromptScenario(scenario) && scenario.parent_node_id) {
-      menuPromptByParentId.set(scenario.parent_node_id, scenario);
-    }
-  }
 
   for (const file of [...graph.files].sort((a, b) => a.order.localeCompare(b.order))) {
     const size = normalizeSize(file.visual.size);
@@ -1922,6 +2299,15 @@ export const projectGraphToReactFlow = (graph: ProjectGraphSnapshot): ProjectGra
       width: size.width,
       height: size.height,
     });
+  }
+
+  const scenarioDragGroups = buildScenarioDragGroups(graph);
+  const scenariosById = new Map(graph.nodes.map((scenario) => [scenario.id, scenario]));
+  const menuPromptByParentId = new Map<string, ScenarioNodeSnapshot>();
+  for (const scenario of graph.nodes) {
+    if (isMenuPromptScenario(scenario) && scenario.parent_node_id) {
+      menuPromptByParentId.set(scenario.parent_node_id, scenario);
+    }
   }
 
   for (const scenario of [...graph.nodes].sort(compareSourceOrder)) {

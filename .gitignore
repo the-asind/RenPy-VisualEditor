@@ -3,6 +3,7 @@ venv/
 *.py[cod]
 *.pyo
 *.pyd
+docs/
 *.egg-info/
 dist/
 build/

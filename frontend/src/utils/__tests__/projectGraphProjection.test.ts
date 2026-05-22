@@ -8,10 +8,14 @@ import {
   projectGraphNodeTypes,
 } from '../../components/projectGraph/ProjectGraphCanvas';
 import {
+  buildLabelRelations,
+  buildLabelRelationComponents,
   getAbsoluteNodePosition,
+  measureLabelPackingQuality,
   projectGraphDiagnosticsToProblems,
   projectGraphToReactFlow,
   searchProjectGraph,
+  shouldAutoPackLabelFrames,
   type ProjectGraphSnapshot,
 } from '../projectGraphProjection';
 
@@ -45,6 +49,87 @@ const projectionEdgesByKind = (projection: ReturnType<typeof projectGraphToReact
 
 const labelFrameContentTop = 72;
 
+describe('relation-aware label frame packing helpers', () => {
+  it('builds weighted same-sibling label relations from resolved jump and call edges', () => {
+    const relations = buildLabelRelations(makeRelationGraph());
+    const byPair = new Map(relations.map((relation) => [`${relation.sourceLabelId}->${relation.targetLabelId}`, relation]));
+
+    expect([...byPair.keys()].sort()).toEqual(['label-helper->label-hub', 'label-start->label-helper']);
+    expect(byPair.get('label-start->label-helper')).toMatchObject({
+      sourceLabelId: 'label-start',
+      targetLabelId: 'label-helper',
+      weight: 1.8,
+    });
+    expect([...byPair.get('label-start->label-helper')!.kinds].sort()).toEqual(['call', 'jump']);
+    expect(byPair.get('label-helper->label-hub')).toMatchObject({
+      sourceLabelId: 'label-helper',
+      targetLabelId: 'label-hub',
+      weight: 1,
+    });
+    expect([...byPair.get('label-helper->label-hub')!.kinds]).toEqual(['jump']);
+  });
+
+  it('detects import-like label groups without repacking existing 2D layouts', () => {
+    const singleColumnLabels = Array.from({ length: 10 }, (_, index) =>
+      makeCanvasNode(
+        `label-${index}`,
+        'labelFrame',
+        { x: 48, y: 48 + index * 260 },
+        { width: 320, height: 220 },
+        'file-main',
+      ),
+    );
+    const spreadLabels = singleColumnLabels.map((label, index) => ({
+      ...label,
+      position: { x: 48 + (index % 3) * 380, y: 48 + Math.floor(index / 3) * 260 },
+    }));
+    const manuallyManagedLabels = singleColumnLabels.map((label) => ({
+      ...label,
+      data: { manualPosition: true },
+    }));
+
+    expect(shouldAutoPackLabelFrames(singleColumnLabels, 0)).toBe(true);
+    expect(shouldAutoPackLabelFrames(singleColumnLabels.slice(0, 2), 0)).toBe(false);
+    expect(shouldAutoPackLabelFrames(singleColumnLabels.slice(0, 2), 1)).toBe(true);
+    expect(shouldAutoPackLabelFrames(spreadLabels, 4)).toBe(false);
+    expect(shouldAutoPackLabelFrames(manuallyManagedLabels, 4)).toBe(false);
+  });
+
+  it('splits label relations into deterministic connected components with isolated fallback labels last', () => {
+    const components = buildLabelRelationComponents(
+      ['label-a', 'label-isolated-1', 'label-b', 'label-c', 'label-d', 'label-isolated-2', 'label-e'],
+      [
+        { sourceLabelId: 'label-a', targetLabelId: 'label-b', weight: 1, kinds: new Set(['jump']) },
+        { sourceLabelId: 'label-b', targetLabelId: 'label-c', weight: 1, kinds: new Set(['jump']) },
+        { sourceLabelId: 'label-d', targetLabelId: 'label-e', weight: 0.8, kinds: new Set(['call']) },
+        { sourceLabelId: 'label-a', targetLabelId: 'label-outside', weight: 1, kinds: new Set(['jump']) },
+      ],
+    );
+
+    expect(components).toEqual([
+      ['label-a', 'label-b', 'label-c'],
+      ['label-d', 'label-e'],
+      ['label-isolated-1', 'label-isolated-2'],
+    ]);
+  });
+
+  it('measures relation distance, bounding area and overlaps for packed label groups', () => {
+    const labels = [
+      makeCanvasNode('label-a', 'labelFrame', { x: 0, y: 0 }, { width: 100, height: 100 }),
+      makeCanvasNode('label-b', 'labelFrame', { x: 120, y: 0 }, { width: 100, height: 100 }),
+      makeCanvasNode('label-c', 'labelFrame', { x: 80, y: 60 }, { width: 100, height: 100 }),
+    ];
+    const quality = measureLabelPackingQuality(labels, [
+      { sourceLabelId: 'label-a', targetLabelId: 'label-b', weight: 1, kinds: new Set(['jump']) },
+      { sourceLabelId: 'label-a', targetLabelId: 'label-missing', weight: 1, kinds: new Set(['jump']) },
+    ]);
+
+    expect(quality.weightedRelationDistance).toBe(120);
+    expect(quality.boundingBoxArea).toBe(35200);
+    expect(quality.overlapCount).toBe(2);
+  });
+});
+
 const makeCanvasNode = (
   id: string,
   type: string,
@@ -69,6 +154,372 @@ const nodeRightPaddingInsideParent = (
 
 const nodeCenterX = (node: { position: { x: number }; width?: number }) =>
   node.position.x + Number(node.width ?? 0) / 2;
+
+const distinctRoundedValues = (values: number[], tolerance = 24) => {
+  const distinct: number[] = [];
+  for (const value of [...values].sort((left, right) => left - right)) {
+    if (!distinct.some((seen) => Math.abs(seen - value) <= tolerance)) {
+      distinct.push(value);
+    }
+  }
+  return distinct;
+};
+
+const distanceBetweenNodes = (
+  left: { position: { x: number; y: number }; width?: number; height?: number },
+  right: { position: { x: number; y: number }; width?: number; height?: number },
+) => {
+  const leftCenter = {
+    x: left.position.x + Number(left.width ?? 0) / 2,
+    y: left.position.y + Number(left.height ?? 0) / 2,
+  };
+  const rightCenter = {
+    x: right.position.x + Number(right.width ?? 0) / 2,
+    y: right.position.y + Number(right.height ?? 0) / 2,
+  };
+  return Math.hypot(leftCenter.x - rightCenter.x, leftCenter.y - rightCenter.y);
+};
+
+const makeRelationGraph = (): ProjectGraphSnapshot => {
+  const labels = [
+    ['label-start', 'file-main', null, 'start', 0],
+    ['label-helper', 'file-main', null, 'helper', 10],
+    ['label-hub', 'file-main', null, 'hub', 20],
+    ['label-other-file', 'file-other', null, 'other_file', 0],
+    ['label-local', 'file-main', 'label-start', 'start.local', 5],
+  ] as const;
+
+  return {
+    project_id: 'relation-builder-project',
+    files: [
+      {
+        id: 'file-main',
+        path: 'script.rpy',
+        order: '0000',
+        visual: { position: { x: 0, y: 0 }, size: { width: 1200, height: 900 } },
+      },
+      {
+        id: 'file-other',
+        path: 'other.rpy',
+        order: '0001',
+        visual: { position: { x: 1400, y: 0 }, size: { width: 1200, height: 900 } },
+      },
+    ],
+    labels: labels.map(([id, fileId, parentLabelId, qualifiedName, sourceLine]) => ({
+      id,
+      file_id: fileId,
+      parent_label_id: parentLabelId,
+      name: qualifiedName.split('.').at(-1) ?? qualifiedName,
+      qualified_name: qualifiedName,
+      scope: parentLabelId ? 'local' : 'global',
+      label_start_node_id: `start-${id}`,
+      source_span: { start_line: sourceLine, end_line: sourceLine },
+      visual: { position: { x: 48, y: 48 + sourceLine * 20 }, size: { width: 320, height: 220 } },
+    })),
+    label_starts: labels.map(([id, fileId, , qualifiedName]) => ({
+      id: `start-${id}`,
+      file_id: fileId,
+      label_id: id,
+      qualified_name: qualifiedName,
+      content: `label ${qualifiedName}:`,
+      visual: { position: { x: 32, y: 96 }, size: { width: 280, height: 72 } },
+    })),
+    nodes: [
+      {
+        id: 'node-jump-helper',
+        file_id: 'file-main',
+        label_id: 'label-start',
+        parent_node_id: null,
+        type: 'jump',
+        content: 'jump helper',
+        order: '0000',
+        source_span: { start_line: 1, end_line: 1 },
+        metadata: {},
+        visual: { position: { x: 96, y: 220 }, size: { width: 320, height: 88 } },
+      },
+      {
+        id: 'node-call-helper',
+        file_id: 'file-main',
+        label_id: 'label-start',
+        parent_node_id: null,
+        type: 'call',
+        content: 'call helper',
+        order: '0001',
+        source_span: { start_line: 2, end_line: 2 },
+        metadata: {},
+        visual: { position: { x: 96, y: 340 }, size: { width: 320, height: 88 } },
+      },
+      {
+        id: 'node-jump-hub',
+        file_id: 'file-main',
+        label_id: 'label-helper',
+        parent_node_id: null,
+        type: 'jump',
+        content: 'jump hub',
+        order: '0000',
+        source_span: { start_line: 11, end_line: 11 },
+        metadata: {},
+        visual: { position: { x: 96, y: 220 }, size: { width: 320, height: 88 } },
+      },
+      {
+        id: 'node-self-jump',
+        file_id: 'file-main',
+        label_id: 'label-helper',
+        parent_node_id: null,
+        type: 'jump',
+        content: 'jump helper',
+        order: '0001',
+        source_span: { start_line: 12, end_line: 12 },
+        metadata: {},
+        visual: { position: { x: 96, y: 340 }, size: { width: 320, height: 88 } },
+      },
+      {
+        id: 'node-cross-file-jump',
+        file_id: 'file-main',
+        label_id: 'label-hub',
+        parent_node_id: null,
+        type: 'jump',
+        content: 'jump other_file',
+        order: '0000',
+        source_span: { start_line: 21, end_line: 21 },
+        metadata: {},
+        visual: { position: { x: 96, y: 220 }, size: { width: 320, height: 88 } },
+      },
+      {
+        id: 'node-cross-parent-jump',
+        file_id: 'file-main',
+        label_id: 'label-start',
+        parent_node_id: null,
+        type: 'jump',
+        content: 'jump .local',
+        order: '0002',
+        source_span: { start_line: 3, end_line: 3 },
+        metadata: {},
+        visual: { position: { x: 96, y: 460 }, size: { width: 320, height: 88 } },
+      },
+    ],
+    edges: [
+      {
+        id: 'edge-jump-helper',
+        source_node_id: 'node-jump-helper',
+        target_node_id: 'start-label-helper',
+        kind: 'jump',
+        metadata: { target: 'helper' },
+      },
+      {
+        id: 'edge-call-helper',
+        source_node_id: 'node-call-helper',
+        target_node_id: 'start-label-helper',
+        kind: 'call',
+        metadata: { target: 'helper' },
+      },
+      {
+        id: 'edge-jump-hub',
+        source_node_id: 'node-jump-hub',
+        target_node_id: 'start-label-hub',
+        kind: 'jump',
+        metadata: { target: 'hub' },
+      },
+      {
+        id: 'edge-self-jump',
+        source_node_id: 'node-self-jump',
+        target_node_id: 'start-label-helper',
+        kind: 'jump',
+        metadata: { target: 'helper' },
+      },
+      {
+        id: 'edge-cross-file-jump',
+        source_node_id: 'node-cross-file-jump',
+        target_node_id: 'start-label-other-file',
+        kind: 'jump',
+        metadata: { target: 'other_file' },
+      },
+      {
+        id: 'edge-cross-parent-jump',
+        source_node_id: 'node-cross-parent-jump',
+        target_node_id: 'start-label-local',
+        kind: 'jump',
+        metadata: { target: '.local' },
+      },
+    ],
+    diagnostics: [],
+    source_index: { files: {} },
+  };
+};
+
+const makeManyLabelPackingGraph = (labelCount = 30): ProjectGraphSnapshot => {
+  const labels = Array.from({ length: labelCount }, (_, index) => ({
+    id: `label-helper-${index}`,
+    file_id: 'file-main',
+    parent_label_id: null,
+    name: `helper_${index}`,
+    qualified_name: `helper_${index}`,
+    scope: 'global' as const,
+    label_start_node_id: `start-helper-${index}`,
+    source_span: { start_line: index * 10, end_line: index * 10 },
+    visual: {
+      position: { x: 48, y: 48 + index * 276 },
+      size: { width: 280, height: 180 },
+    },
+  }));
+
+  return {
+    project_id: 'many-label-packing-project',
+    files: [
+      {
+        id: 'file-main',
+        path: 'helpers.rpy',
+        order: '0000',
+        visual: { position: { x: 0, y: 0 }, size: { width: 1600, height: 9000 } },
+      },
+    ],
+    labels,
+    label_starts: labels.map((label) => ({
+      id: label.label_start_node_id,
+      file_id: label.file_id,
+      label_id: label.id,
+      qualified_name: label.qualified_name,
+      content: `label ${label.qualified_name}:`,
+      visual: { position: { x: 32, y: 96 }, size: { width: 220, height: 72 } },
+    })),
+    nodes: [],
+    edges: [],
+    diagnostics: [],
+    source_index: { files: {} },
+  };
+};
+
+const makeLateTargetPackingGraph = (): ProjectGraphSnapshot => {
+  const graph = makeManyLabelPackingGraph(30);
+  graph.nodes = [20, 25, 29].map((targetIndex, relationIndex) => ({
+    id: `node-jump-late-${targetIndex}`,
+    file_id: 'file-main',
+    label_id: 'label-helper-0',
+    parent_node_id: null,
+    type: 'jump',
+    content: `jump helper_${targetIndex}`,
+    order: `${relationIndex}`.padStart(4, '0'),
+    source_span: { start_line: relationIndex + 1, end_line: relationIndex + 1 },
+    metadata: {},
+    visual: { position: { x: 96, y: 220 + relationIndex * 112 }, size: { width: 320, height: 88 } },
+  }));
+  graph.edges = [20, 25, 29].map((targetIndex) => ({
+    id: `edge-jump-late-${targetIndex}`,
+    source_node_id: `node-jump-late-${targetIndex}`,
+    target_node_id: `start-helper-${targetIndex}`,
+    kind: 'jump',
+    metadata: { target: `helper_${targetIndex}` },
+  }));
+  return graph;
+};
+
+const makeRelationComponentPackingGraph = (): ProjectGraphSnapshot => {
+  const graph = makeManyLabelPackingGraph(12);
+  graph.nodes = [8, 9].map((targetIndex, relationIndex) => ({
+    id: `node-jump-component-${targetIndex}`,
+    file_id: 'file-main',
+    label_id: 'label-helper-0',
+    parent_node_id: null,
+    type: 'jump',
+    content: `jump helper_${targetIndex}`,
+    order: `${relationIndex}`.padStart(4, '0'),
+    source_span: { start_line: relationIndex + 1, end_line: relationIndex + 1 },
+    metadata: {},
+    visual: { position: { x: 96, y: 220 + relationIndex * 112 }, size: { width: 320, height: 88 } },
+  }));
+  graph.edges = [8, 9].map((targetIndex) => ({
+    id: `edge-jump-component-${targetIndex}`,
+    source_node_id: `node-jump-component-${targetIndex}`,
+    target_node_id: `start-helper-${targetIndex}`,
+    kind: 'jump',
+    metadata: { target: `helper_${targetIndex}` },
+  }));
+  return graph;
+};
+
+const makeIncomingHubPackingGraph = (): ProjectGraphSnapshot => {
+  const graph = makeManyLabelPackingGraph(30);
+  const sourceIndexes = Array.from({ length: 9 }, (_, index) => index);
+  graph.nodes = sourceIndexes.map((sourceIndex) => ({
+    id: `node-jump-hub-${sourceIndex}`,
+    file_id: 'file-main',
+    label_id: `label-helper-${sourceIndex}`,
+    parent_node_id: null,
+    type: 'jump',
+    content: 'jump helper_29',
+    order: '0000',
+    source_span: { start_line: sourceIndex * 10 + 1, end_line: sourceIndex * 10 + 1 },
+    metadata: {},
+    visual: { position: { x: 96, y: 220 }, size: { width: 320, height: 88 } },
+  }));
+  graph.edges = sourceIndexes.map((sourceIndex) => ({
+    id: `edge-jump-hub-${sourceIndex}`,
+    source_node_id: `node-jump-hub-${sourceIndex}`,
+    target_node_id: 'start-helper-29',
+    kind: 'jump',
+    metadata: { target: 'helper_29' },
+  }));
+  return graph;
+};
+
+const makeMixedSizeRelationPackingGraph = (): ProjectGraphSnapshot => {
+  const graph = makeManyLabelPackingGraph(14);
+  graph.labels = graph.labels.map((label, index) => ({
+    ...label,
+    visual: {
+      ...label.visual,
+      size:
+        index === 0
+          ? { width: 620, height: 460 }
+          : index % 4 === 0
+            ? { width: 420, height: 300 }
+            : { width: 240, height: 150 },
+    },
+  }));
+  graph.nodes = Array.from({ length: 8 }, (_, relationIndex) => ({
+    id: `node-mixed-jump-${relationIndex}`,
+    file_id: 'file-main',
+    label_id: `label-helper-${relationIndex}`,
+    parent_node_id: null,
+    type: 'jump',
+    content: `jump helper_${relationIndex + 1}`,
+    order: '0000',
+    source_span: { start_line: relationIndex * 10 + 1, end_line: relationIndex * 10 + 1 },
+    metadata: {},
+    visual: { position: { x: 96, y: 220 }, size: { width: 320, height: 88 } },
+  }));
+  graph.edges = Array.from({ length: 8 }, (_, relationIndex) => ({
+    id: `edge-mixed-jump-${relationIndex}`,
+    source_node_id: `node-mixed-jump-${relationIndex}`,
+    target_node_id: `start-helper-${relationIndex + 1}`,
+    kind: 'jump',
+    metadata: { target: `helper_${relationIndex + 1}` },
+  }));
+  return graph;
+};
+
+const makeManualTwoDimensionalLabelGraph = (): ProjectGraphSnapshot => {
+  const graph = makeLateTargetPackingGraph();
+  const manualPositions = new Map(
+    graph.labels.map((label, index) => [
+      label.id,
+      {
+        x: 64 + (index % 3) * 700,
+        y: 80 + Math.floor(index / 3) * 700,
+      },
+    ]),
+  );
+
+  graph.labels = graph.labels.map((label) => ({
+    ...label,
+    visual: {
+      ...label.visual,
+      position: manualPositions.get(label.id)!,
+    },
+  }));
+
+  return graph;
+};
 
 const graph: ProjectGraphSnapshot = {
   project_id: 'projection-project',
@@ -2393,6 +2844,110 @@ describe('projectGraphToReactFlow static projection', () => {
     expect(endingLabel.position.x).toBeGreaterThan(d6Label.position.x + Number(d6Label.width));
     expect(rectsOverlap(nodeRect(day6File), nodeRect(scriptFile))).toBe(false);
     expect(scriptFile.position.x).toBeGreaterThanOrEqual(day6File.position.x + Number(day6File.width));
+  });
+
+  it('packs many import-like narrow labels into multiple compact columns', () => {
+    const packingGraph = makeManyLabelPackingGraph(30);
+    const baselineLabels = packingGraph.labels;
+    const baselineTop = Math.min(...baselineLabels.map((label) => label.visual.position.y));
+    const baselineBottom = Math.max(
+      ...baselineLabels.map((label) => label.visual.position.y + label.visual.size.height),
+    );
+    const baselineHeight = baselineBottom - baselineTop;
+
+    const projection = projectGraphToReactFlow(packingGraph);
+    const byId = new Map(projection.nodes.map((node) => [node.id, node]));
+    const labels = packingGraph.labels.map((label) => byId.get(label.id)!);
+    const packedTop = Math.min(...labels.map((label) => label.position.y));
+    const packedBottom = Math.max(...labels.map((label) => label.position.y + Number(label.height)));
+    const packedHeight = packedBottom - packedTop;
+    const distinctColumns = distinctRoundedValues(labels.map(nodeCenterX));
+
+    expect(distinctColumns.length).toBeGreaterThanOrEqual(3);
+    expect(packedHeight).toBeLessThan(baselineHeight * 0.75);
+    for (let leftIndex = 0; leftIndex < labels.length; leftIndex += 1) {
+      for (let rightIndex = leftIndex + 1; rightIndex < labels.length; rightIndex += 1) {
+        expect(rectsOverlap(nodeRect(labels[leftIndex]), nodeRect(labels[rightIndex]))).toBe(false);
+      }
+    }
+    const file = byId.get('file-main')!;
+    expect(labels.every((label) => childFitsParent(label, file))).toBe(true);
+  });
+
+  it('keeps late jump targets near their source label when packing shelves', () => {
+    const packingGraph = makeLateTargetPackingGraph();
+    const sourceLabel = packingGraph.labels.find((label) => label.id === 'label-helper-0')!;
+    const targetLabelIds = ['label-helper-20', 'label-helper-25', 'label-helper-29'];
+    const targetLabels = targetLabelIds.map((labelId) => packingGraph.labels.find((label) => label.id === labelId)!);
+    const baselineAverageDistance =
+      targetLabels.reduce((sum, target) => sum + distanceBetweenNodes(sourceLabel.visual, target.visual), 0) /
+      targetLabels.length;
+
+    const projection = projectGraphToReactFlow(packingGraph);
+    const byId = new Map(projection.nodes.map((node) => [node.id, node]));
+    const source = byId.get('label-helper-0')!;
+    const targets = targetLabelIds.map((labelId) => byId.get(labelId)!);
+    const projectedAverageDistance =
+      targets.reduce((sum, target) => sum + distanceBetweenNodes(source, target), 0) / targets.length;
+
+    expect(distinctRoundedValues([source, ...targets].map((label) => label.position.y)).length).toBe(1);
+    expect(projectedAverageDistance).toBeLessThan(baselineAverageDistance * 0.2);
+    for (let leftIndex = 0; leftIndex < targets.length; leftIndex += 1) {
+      for (let rightIndex = leftIndex + 1; rightIndex < targets.length; rightIndex += 1) {
+        expect(rectsOverlap(nodeRect(targets[leftIndex]), nodeRect(targets[rightIndex]))).toBe(false);
+      }
+    }
+  });
+
+  it('starts isolated fallback labels on a new shelf after connected relation components', () => {
+    const packingGraph = makeRelationComponentPackingGraph();
+    const projection = projectGraphToReactFlow(packingGraph);
+    const byId = new Map(projection.nodes.map((node) => [node.id, node]));
+    const componentLabels = ['label-helper-0', 'label-helper-8', 'label-helper-9'].map((labelId) => byId.get(labelId)!);
+    const firstIsolated = byId.get('label-helper-1')!;
+    const componentBottom = Math.max(...componentLabels.map((label) => label.position.y + Number(label.height)));
+
+    expect(firstIsolated.position.y).toBeGreaterThanOrEqual(componentBottom + 48);
+  });
+
+  it('places high-incoming hub labels near the median incoming source shelf', () => {
+    const packingGraph = makeIncomingHubPackingGraph();
+    const projection = projectGraphToReactFlow(packingGraph);
+    const byId = new Map(projection.nodes.map((node) => [node.id, node]));
+    const sources = Array.from({ length: 9 }, (_, index) => byId.get(`label-helper-${index}`)!);
+    const hub = byId.get('label-helper-29')!;
+    const sourceRows = distinctRoundedValues(sources.map((source) => source.position.y));
+    const medianSourceRow = sourceRows[Math.floor(sourceRows.length / 2)];
+
+    expect(Math.abs(hub.position.y - medianSourceRow)).toBeLessThanOrEqual(24);
+  });
+
+  it('keeps mixed-size relation-packed label frames non-overlapping and contained', () => {
+    const packingGraph = makeMixedSizeRelationPackingGraph();
+    const projection = projectGraphToReactFlow(packingGraph);
+    const byId = new Map(projection.nodes.map((node) => [node.id, node]));
+    const packedLabels = packingGraph.labels.map((label) => byId.get(label.id)!);
+    const file = byId.get('file-main')!;
+    const distinctColumns = distinctRoundedValues(packedLabels.map(nodeCenterX));
+
+    expect(distinctColumns.length).toBeGreaterThanOrEqual(3);
+    for (let leftIndex = 0; leftIndex < packedLabels.length; leftIndex += 1) {
+      for (let rightIndex = leftIndex + 1; rightIndex < packedLabels.length; rightIndex += 1) {
+        expect(rectsOverlap(nodeRect(packedLabels[leftIndex]), nodeRect(packedLabels[rightIndex]))).toBe(false);
+      }
+    }
+    expect(packedLabels.every((label) => childFitsParent(label, file))).toBe(true);
+  });
+
+  it('preserves existing manual 2D label frame layouts during relation-aware packing', () => {
+    const manualGraph = makeManualTwoDimensionalLabelGraph();
+    const projection = projectGraphToReactFlow(manualGraph);
+    const byId = new Map(projection.nodes.map((node) => [node.id, node]));
+
+    for (const label of manualGraph.labels) {
+      const projected = byId.get(label.id)!;
+      expect(projected.position).toEqual(label.visual.position);
+    }
   });
 
   it('projects a complete multi-file MVP 2.0 canvas contract', () => {

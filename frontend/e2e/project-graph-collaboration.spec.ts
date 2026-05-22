@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { WebSocketServer } from 'ws';
+import { createServer, type ViteDevServer } from 'vite';
 
 declare global {
   interface Window {
@@ -65,6 +66,24 @@ const graph = {
   source_index: { files: {} },
 };
 
+let viteServer: ViteDevServer | null = null;
+
+test.beforeAll(async () => {
+  viteServer = await createServer({
+    server: {
+      host: '127.0.0.1',
+      port: 5175,
+      strictPort: true,
+    },
+  });
+  await viteServer.listen();
+});
+
+test.afterAll(async () => {
+  await viteServer?.close();
+  viteServer = null;
+});
+
 test('two browser contexts exchange ProjectGraph CRDT content and drag updates', async ({ browser }) => {
   const relay = await startRelayServer();
   const contextA = await browser.newContext();
@@ -96,6 +115,8 @@ test('two browser contexts exchange ProjectGraph CRDT content and drag updates',
   await expect(pageB.locator('#node-content')).toHaveText('r "Browser A edits and Browser B sees it."');
   await expect(pageB.locator('#label-position')).toHaveText('{"x":144,"y":108}');
 
+  await pageA.evaluate(() => window.projectGraphHarness.close());
+  await pageB.evaluate(() => window.projectGraphHarness.close());
   await contextA.close();
   await contextB.close();
   await relay.close();
@@ -115,6 +136,8 @@ test('canvas export UX shows status, returned filenames, and normalized content'
   await expect(exportResults.getByText('renpy_mouse_day_2.rpy')).toBeVisible();
   await expect(exportResults.getByText('label start:')).toBeVisible();
   await expect(exportResults.getByText('r "RenPy Mouse previews exported files."')).toBeVisible();
+
+  await page.close();
 });
 
 const startRelayServer = async (): Promise<{

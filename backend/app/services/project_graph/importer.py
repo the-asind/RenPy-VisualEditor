@@ -478,7 +478,7 @@ class ProjectGraphImporter:
                         content=prompt_content,
                         order=node_order[0],
                         line_number=leading_start if leading_comments else index,
-                        metadata={"prompt_text": child.strip('"')},
+                        metadata={"prompt_text": self._menu_prompt_text(child)},
                         source_end_line=index,
                     )
                 )
@@ -522,6 +522,8 @@ class ProjectGraphImporter:
                 index=index,
                 end_index=end_index,
                 parent_indent=menu_indent,
+                include_menu_choice=True,
+                include_menu_prompt=True,
             )
             if block_lines:
                 default_title = next((item for item in block_lines if item.strip()), block_lines[0])
@@ -549,6 +551,9 @@ class ProjectGraphImporter:
         index: int,
         end_index: int,
         parent_indent: int,
+        *,
+        include_menu_choice: bool = False,
+        include_menu_prompt: bool = False,
     ) -> tuple[list[str], int, int]:
         block_start = index
         block_lines: list[str] = []
@@ -571,7 +576,11 @@ class ProjectGraphImporter:
             if block_indent is None:
                 block_indent = line_indent
 
-            if line_indent <= block_indent and self._is_control_statement(stripped):
+            if line_indent <= block_indent and (
+                self._is_control_statement(stripped)
+                or (include_menu_choice and self._is_menu_choice_line(stripped))
+                or (include_menu_prompt and self._is_menu_prompt_line(stripped))
+            ):
                 break
 
             if line_indent >= block_indent:
@@ -1026,7 +1035,23 @@ class ProjectGraphImporter:
 
     @staticmethod
     def _is_menu_prompt_line(stripped_line: str) -> bool:
-        return stripped_line.startswith('"') and stripped_line.endswith('"')
+        normalized = ProjectGraphImporter._normalize_statement_colon_spacing(stripped_line)
+        if normalized.endswith(":"):
+            return False
+        return (normalized.startswith('"') and normalized.endswith('"')) or ProjectGraphImporter._is_dialogue_line(normalized)
+
+    @staticmethod
+    def _menu_prompt_text(stripped_line: str) -> str:
+        normalized = ProjectGraphImporter._normalize_statement_colon_spacing(stripped_line)
+        if normalized.startswith('"') and normalized.endswith('"'):
+            return normalized.strip('"')
+
+        first_quote = normalized.find('"')
+        last_quote = normalized.rfind('"')
+        if first_quote != -1 and last_quote > first_quote:
+            return normalized[first_quote + 1:last_quote]
+
+        return normalized
 
     @staticmethod
     def _is_menu_choice_line(stripped_line: str) -> bool:

@@ -625,7 +625,7 @@ const ProjectGraphCanvasInner = ({
       return;
     }
 
-    const viewportKey = `${graph.project_id}:${projection.nodes.length}:${projection.edges.length}`;
+    const viewportKey = `${graph.project_id}:${graph.files.length}:${graph.labels.length}:${graph.nodes.length}:${graph.edges.length}`;
     if (initialViewportKeyRef.current === viewportKey) {
       return;
     }
@@ -651,7 +651,15 @@ const ProjectGraphCanvasInner = ({
       position.y + Number(firstReadableNode.height ?? 0) / 2,
       { zoom: 0.95, duration: 0 },
     );
-  }, [graph.project_id, projection.edges.length, projection.nodes, reactFlowInstance]);
+  }, [
+    graph.edges.length,
+    graph.files.length,
+    graph.labels.length,
+    graph.nodes.length,
+    graph.project_id,
+    projection.nodes,
+    reactFlowInstance,
+  ]);
 
   const focusNode = (nodeId: string) => {
     const node = projection.nodes.find((candidate) => candidate.id === nodeId);
@@ -830,7 +838,10 @@ const ProjectGraphCanvasInner = ({
 
 export const ProjectGraphCanvas = (props: ProjectGraphCanvasProps) => (
   <ReactFlowProvider>
-    <ProjectGraphCanvasInner {...props} />
+    <ProjectGraphCanvasInner
+      key={`${props.graph.project_id}:${props.graph.files.length}:${props.graph.labels.length}:${props.graph.nodes.length}`}
+      {...props}
+    />
   </ReactFlowProvider>
 );
 

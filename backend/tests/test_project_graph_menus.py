@@ -70,6 +70,60 @@ def test_statements_inside_menu_choice_are_child_nodes():
     assert any(node.parent_node_id == duck_choice.id and node.content.startswith("call ask_duck") for node in calls)
 
 
+def test_menu_prompt_say_statement_does_not_absorb_choices(tmp_path):
+    source = tmp_path / "renpy_mouse_menu_say_prompt.rpy"
+    source.write_text(
+        "\n".join(
+            [
+                "label cheese_commit_helpers:",
+                "    $ help_sayori = True",
+                '    r "RenPy Mouse checks which helper knows the cheese maze."',
+                "    menu:",
+                '        m "Just think of the club, okay?"',
+                '        "Natsuki.":',
+                "            call ch3_end_natsuki",
+                '        "Yuri.":',
+                "            call ch3_end_yuri",
+                '        "Monika." if help_monika == None:',
+                "            call ch3_end_monika",
+                "    return",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    graph = ProjectGraphImporter().import_files(
+        project_id="mouse-renpy-menu-say-prompt-project",
+        files=[source],
+    )
+
+    menu = next(node for node in graph.nodes if node.type == "menu")
+    prompt = next(node for node in graph.nodes if node.type == "menu_prompt")
+    choices = [node for node in graph.nodes if node.type == "menu_choice"]
+    calls = [node for node in graph.nodes if node.type == "call"]
+
+    top_level_nodes = [node for node in graph.nodes if node.parent_node_id is None]
+    assert [node.type for node in top_level_nodes] == ["action", "menu", "return"]
+    assert prompt.parent_node_id == menu.id
+    assert prompt.content == 'm "Just think of the club, okay?"'
+    assert {choice.content for choice in choices} == {
+        '"Natsuki.":',
+        '"Yuri.":',
+        '"Monika." if help_monika == None:',
+    }
+    assert all(choice.parent_node_id == menu.id for choice in choices)
+    assert {call.content for call in calls} == {
+        "call ch3_end_natsuki",
+        "call ch3_end_yuri",
+        "call ch3_end_monika",
+    }
+    assert all(call.parent_node_id in {choice.id for choice in choices} for call in calls)
+    assert not any(
+        node.type == "action" and "Natsuki" in node.content and "ch3_end_natsuki" in node.content
+        for node in graph.nodes
+    )
+
+
 def test_menu_nodes_survive_snapshot_roundtrip():
     graph = import_mouse_graph()
     restored = ProjectGraphSnapshotCodec.load(ProjectGraphSnapshotCodec.dump(graph))

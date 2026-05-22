@@ -2,7 +2,94 @@
 
 This file is the short project memory for RenPy Visual Editor 2.0. Keep it current when closing master items, changing decisions, or classifying old code.
 
+## 2026-05-21
+
+### Relation-Aware Label Frame Packing Implementation
+
+Started implementing the focused label-frame layout pass from `docs/relation-aware-label-frame-packing.md`.
+
+Files:
+
+1. `frontend/src/utils/projectGraphProjection.ts`
+2. `frontend/src/utils/__tests__/projectGraphProjection.test.ts`
+3. `docs/relation-aware-label-frame-packing.md`
+4. `docs/editor-2.0-architecture.md`
+5. `UPDATES.md`
+6. `frontend/e2e/project-graph-collaboration.spec.ts`
+7. `frontend/playwright.config.ts`
+
+Result:
+
+1. Added `buildLabelRelations()` for weighted same-sibling `jump/call` relation extraction.
+2. Added `shouldAutoPackLabelFrames()` so compact packing applies to import-like single-column groups but does not overwrite already manual/2D layouts.
+3. Added `buildLabelRelationComponents()` for deterministic connected components with isolated labels in a fallback component.
+4. Added compact shelf packing for large import-like label groups, using multiple columns and expanding parent frames to contain packed labels.
+5. Added relation-aware shelf ordering so late source-order labels directly targeted by `jump/call` are packed near the source label.
+6. Refined shelf packing so connected relation components occupy their own shelf block before isolated fallback labels.
+7. Added full projection coverage proving existing non-overlapping 2D label layouts are preserved instead of being repacked.
+8. Refined high-incoming hub placement so hub target labels are placed near the median incoming source shelf instead of next to only the first source.
+9. Added mixed-size relation component coverage proving a large label plus smaller labels remain non-overlapping, multi-column, and contained in the parent frame.
+10. Added `measureLabelPackingQuality()` so future relation-aware layout changes can be evaluated by weighted relation distance, bounding box area, and overlap count.
+11. Fixed Playwright e2e teardown by moving the Vite test server into the e2e spec lifecycle; the old Playwright `webServer` child process could complete tests but hang during shutdown on Windows.
+
+Checks:
+
+1. Added black-box projection/helper coverage for relation extraction, import-like detection, connected components, compact shelves, no sibling overlaps, parent containment, late target proximity, component shelf boundaries, manual 2D preservation, high-incoming hub placement, mixed-size relation components, and quality metrics.
+2. `npm test -- --run src/utils/__tests__/projectGraphProjection.test.ts` passed with 37 tests.
+3. `npm test -- --run` passed with 63 frontend tests.
+4. `npm run build` passed with known non-blocking Vite/env.js, Browserslist, and large Loro chunk warnings.
+5. `python -m pytest backend/tests -q` passed with 157 tests. Pytest emitted non-blocking Windows temporary-directory cleanup warnings.
+6. `npm run check:mvp-bundle` passed: largest JS chunk `index-DkvVnrpR.js` is 5,314,037 bytes under the 6,000,000 byte MVP budget.
+7. `npm run test:e2e -- --reporter=line --workers=1` passed with 2 Playwright Chromium tests.
+
+### Relation-Aware Label Frame Packing Plan
+
+Added a focused planning artifact for the next label-frame layout pass. The goal is to fix files with many labels that currently appear as a single vertical stack even when a large `FileFrame` has enough free 2D space.
+
+Files:
+
+1. `docs/relation-aware-label-frame-packing.md`
+2. `docs/editor-2.0-architecture.md`
+3. `UPDATES.md`
+
+Result:
+
+1. Documented the current limitation of `applyRelationAwareLabelFrameLayout`: it handles direct `source -> target` placement but not compact packing for large sibling label groups.
+2. Defined the MVP objective as a deterministic component/shelf heuristic, not a full mathematical solver.
+3. Captured the dual optimization target: keep resolved `jump/call` labels close while also minimizing wasted parent-frame space.
+4. Defined guardrails so import-like single-column layouts can be repacked, while already manual 2D layouts are left alone.
+5. Split implementation into atomic TDD actions: relation graph builder, import-like detection, connected components, compact shelf packing, relation-aware ordering, strict anti-overlap, compatibility preservation, and artifact sync.
+
+Checks:
+
+1. Planning/doc-only change. No runtime tests were needed.
+
 ## 2026-05-19
+
+### Menu Say Prompt Import
+
+Fixed an import regression where a valid Ren'Py `menu` prompt written as a say-statement, for example `m "Just think of the club, okay?"`, was imported as an `action` child of the menu. Because action collection did not stop at following menu choices, that action could also absorb all choices and their `call` statements, leaving an empty visible `MENU` node and a detached action block on the canvas.
+
+Files:
+
+1. `backend/app/services/project_graph/importer.py`
+2. `backend/tests/test_project_graph_menus.py`
+3. `docs/editor-2.0-architecture.md`
+4. `UPDATES.md`
+
+Result:
+
+1. Menu prompts now accept both bare strings (`"Question"`) and Ren'Py say-statements (`m "Question"`).
+2. Prompt metadata extracts the spoken prompt text while preserving the original prompt statement in node content.
+3. Action collection inside a menu stops before following `menu_prompt` and `menu_choice` lines, so choices and their `call`/`jump` children keep their semantic nodes.
+4. The reported `ch3_end_sayori` shape now imports as `ACTION -> MENU -> MENU_CHOICE -> CALL`, then `RETURN`, instead of `ACTION(prompt+choices+calls)`, empty `MENU`, `RETURN`.
+
+Checks:
+
+1. Added black-box menu import coverage for a mouse-story version of the reported prompt/choice/call structure.
+2. `python -m pytest backend/tests/test_project_graph_menus.py -q` first failed because no `menu_prompt` was created.
+3. `python -m pytest backend/tests/test_project_graph_menus.py -q` passed with 5 tests after the fix.
+4. `python -m pytest backend/tests/test_project_graph_menus.py backend/tests/test_project_graph_exporter.py backend/tests/test_project_graph_importer.py -q` passed with 18 tests.
 
 ### Explicit True/False If Branch Edges
 
