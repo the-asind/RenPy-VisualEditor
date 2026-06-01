@@ -2,6 +2,268 @@
 
 This file is the short project memory for RenPy Visual Editor 2.0. Keep it current when closing master items, changing decisions, or classifying old code.
 
+## 2026-06-01
+
+### Canvas Interface Sprint 1 Headerless Shell
+
+Started implementing the canvas interface roadmap with Sprint 1.
+
+Files:
+
+1. `frontend/src/assets/logo.svg`
+2. `frontend/src/components/projectGraph/ProjectGraphCanvas.tsx`
+3. `frontend/src/components/projectGraph/ProjectGraphCanvas.css`
+4. `frontend/src/components/EditorPage.tsx`
+5. `frontend/src/components/__tests__/EditorPage.mvp2.test.ts`
+6. `frontend/e2e/project-graph-collaboration.spec.ts`
+7. `UPDATES.md`
+
+Result:
+
+1. Replaced the old top-left full overlay with a compact headerless shell: top-left logo/project name and top-right search icon, participants placeholder, and `Add`.
+2. Replaced the always-visible search input with a search popover opened by the search icon.
+3. Removed export/save status from the upper canvas area.
+4. Kept export available through the temporary `Add -> Export` action until the Sprint 6 Add menu contract is expanded.
+5. Moved export status text into the export results panel instead of the top shell.
+6. Replaced the old placeholder asset with the provided SVG wordmark.
+
+Checks:
+
+1. `npm test -- --run src/components/__tests__/EditorPage.mvp2.test.ts` passed with 3 tests.
+2. `npm run test:e2e -- --grep "canvas export UX"` initially hit a sandbox `EPERM` writing Playwright `test-results/.last-run.json`, then passed after approved rerun.
+3. `npm run build` passed with known non-blocking Vite/env.js, Browserslist, and large Loro chunk warnings.
+4. `npm test -- --run` passed with 68 frontend tests.
+
+### Canvas Interface Sprint 2 Compact Inspector
+
+Continued the canvas interface roadmap with Sprint 2.
+
+Files:
+
+1. `frontend/src/components/projectGraph/ProjectGraphCanvas.tsx`
+2. `frontend/src/components/projectGraph/ProjectGraphCanvas.css`
+3. `frontend/src/components/__tests__/EditorPage.mvp2.test.ts`
+4. `UPDATES.md`
+
+Result:
+
+1. Moved the selected scenario editor to a compact left Inspector position below the brand group.
+2. Added an Inspector header, scenario type pill, and breadcrumb derived from file path and label qualified name.
+3. Preserved the existing typed scenario edit callbacks for content, menu choice condition, and action title metadata.
+4. Kept Problems/export details out of the Inspector default view.
+
+Checks:
+
+1. `npm test -- --run src/components/__tests__/EditorPage.mvp2.test.ts` passed with 4 tests.
+2. `npm test -- --run` passed with 69 frontend tests.
+3. `npm run build` passed with known non-blocking Vite/env.js, Browserslist, and large Loro chunk warnings.
+
+### Canvas Interface Sprint 3 Bottom-right Controls And Minimap Placement
+
+Continued the canvas interface roadmap with Sprint 3 and the minimap placement part of Sprint 4.
+
+Files:
+
+1. `frontend/src/components/projectGraph/ProjectGraphCanvas.tsx`
+2. `frontend/src/components/projectGraph/ProjectGraphCanvas.css`
+3. `frontend/src/components/__tests__/EditorPage.mvp2.test.ts`
+4. `UPDATES.md`
+
+Result:
+
+1. Added a bottom-right canvas control cluster with Problems count, save/connection symbol, `Frames`, zoom out, zoom percent, zoom in, Help, and minimap toggle.
+2. Replaced the always-visible Problems panel with a Problems popover opened from the warning control.
+3. Added a Frames popover that lists file and label frames and focuses the selected frame.
+4. Replaced React Flow's default `Controls` with compact custom zoom controls.
+5. Moved the minimap visually above the bottom-right toolbar and made it toggleable while keeping it rendered inside the React Flow tree.
+6. Fixed a runtime crash found by browser e2e where `saveStatus` was used by the new control cluster but not destructured from props.
+
+Checks:
+
+1. `npm test -- --run src/components/__tests__/EditorPage.mvp2.test.ts` passed with 5 tests.
+2. `npm run build` passed with known non-blocking Vite/env.js, Browserslist, and large Loro chunk warnings.
+3. `npm run test:e2e -- --grep "canvas export UX"` initially exposed the `saveStatus` runtime crash, then passed after the fix.
+4. `npm test -- --run` passed with 70 frontend tests.
+5. Final `npm run build` passed with known non-blocking Vite/env.js, Browserslist, and large Loro chunk warnings.
+
+### Canvas Interface Sprint 5 Collaboration Presence UI
+
+Continued the canvas interface roadmap with Sprint 5.
+
+Files:
+
+1. `frontend/src/utils/projectGraphCollaboration.ts`
+2. `frontend/src/utils/__tests__/projectGraphCollaboration.test.ts`
+3. `frontend/src/components/EditorPage.tsx`
+4. `frontend/src/components/projectGraph/ProjectGraphCanvas.tsx`
+5. `frontend/src/components/projectGraph/ProjectGraphCanvas.css`
+6. `frontend/src/components/__tests__/EditorPage.mvp2.test.ts`
+7. `backend/app/api/routes/websocket.py`
+8. `UPDATES.md`
+
+Result:
+
+1. Added normalized project presence handling for `active_users` JSON messages without treating them as CRDT updates.
+2. Added normalized `cursor_update` JSON handling for remote canvas cursors.
+3. Added `sendJson()` to the project socket handle for ephemeral presence messages while preserving binary CRDT `sendBinary()`.
+4. `EditorPage` now keeps participant and remote cursor state outside ProjectGraph/CRDT state.
+5. `ProjectGraphCanvas` renders participant avatars from presence state and remote cursor overlays from ephemeral cursor state.
+6. Local canvas mouse movement sends throttled `cursor_update` JSON messages.
+7. The project WebSocket route now relays valid `cursor_update` messages to project peers with authenticated user identity and excludes the sender.
+
+Checks:
+
+1. `npm test -- --run src/utils/__tests__/projectGraphCollaboration.test.ts` passed with 14 tests.
+2. `npm test -- --run src/components/__tests__/EditorPage.mvp2.test.ts src/utils/__tests__/projectGraphCollaboration.test.ts` passed with 20 focused tests.
+3. `npm run build` passed with known non-blocking Vite/env.js, Browserslist, and large Loro chunk warnings.
+4. `python -m pytest backend/tests/test_websocket.py -q` passed with 23 tests.
+5. `npm test -- --run` passed with 72 frontend tests.
+6. `npm run test:e2e` passed with 2 Playwright Chromium tests.
+
+### Canvas Interface Top-right And Bottom-control Corrections
+
+Refined the newly implemented canvas interface based on user visual review.
+
+Files:
+
+1. `frontend/src/components/projectGraph/ProjectGraphCanvas.tsx`
+2. `frontend/src/components/projectGraph/ProjectGraphCanvas.css`
+3. `frontend/src/components/EditorPage.tsx`
+4. `frontend/src/components/__tests__/EditorPage.mvp2.test.ts`
+5. `frontend/e2e/project-graph-collaboration.spec.ts`
+6. `UPDATES.md`
+
+Result:
+
+1. Top-right search, participants, and `Add` controls now sit on one shared compact surface, matching the top-left brand surface direction.
+2. `Add` no longer exposes graph/export actions. It opens an invite people popover with username/email input and sends a `share_project` JSON request through the project socket.
+3. Export remains available for the existing export UX contract through a temporary `Ctrl/Cmd+Shift+E` shortcut until a dedicated export location is designed.
+4. Problems and Frames popovers now use viewport-based sizing with a useful minimum height instead of inheriting the small toolbar height.
+5. Minimap was moved higher above the bottom-right toolbar to avoid overlap.
+
+Checks:
+
+1. `npm test -- --run src/components/__tests__/EditorPage.mvp2.test.ts src/utils/__tests__/projectGraphCollaboration.test.ts` passed with 20 focused tests.
+2. `npm run test:e2e -- --grep "canvas export UX"` passed.
+3. `npm run build` passed with known non-blocking Vite/env.js, Browserslist, and large Loro chunk warnings.
+4. `npm test -- --run` passed with 72 frontend tests.
+
+Follow-up:
+
+1. Fixed a minimap overlap regression by targeting React Flow's actual `.react-flow__minimap.project-graph-canvas__minimap` element and anchoring it 92px above the viewport bottom.
+2. Browser probe at 1600x900 confirmed minimap bottom `801px` and toolbar top `846px`, leaving a 45px gap.
+3. `npm test -- --run src/components/__tests__/EditorPage.mvp2.test.ts` passed with 6 tests.
+4. `npm run build` passed with known non-blocking Vite/env.js, Browserslist, and large Loro chunk warnings.
+5. Project title in the top-left brand surface now loads from `projectService.getProject(projectId)` and passes the user-defined `project.name` into `ProjectGraphCanvas`; the UI no longer formats the UUID as `Project <id>`.
+6. Empty or unavailable project names fall back to `Untitled project` instead of exposing the UUID.
+7. `npm test -- --run src/components/__tests__/EditorPage.mvp2.test.ts` passed with 6 tests.
+8. `npm run build` passed with known non-blocking Vite/env.js, Browserslist, and large Loro chunk warnings.
+9. Lowered the minimap from `bottom: 92px` to `bottom: 78px`, keeping it above the bottom-right toolbar with a tighter visual gap.
+10. Added explicit MiniMap node fill/stroke functions so file frames, global/local/nested label frames, label starts, and scenario nodes are distinguishable instead of rendering as only broad frame blocks.
+11. `npm test -- --run src/components/__tests__/EditorPage.mvp2.test.ts` passed with 6 tests.
+12. `npm run build` passed with known non-blocking Vite/env.js, Browserslist, and large Loro chunk warnings.
+13. `npm run test:e2e -- --grep "canvas export UX"` passed.
+
+### Canvas Interface Implementation Plan
+
+Added and expanded a design-only implementation plan for the next ProjectGraph canvas interface pass.
+
+Files:
+
+1. `docs/canvas-interface-implementation-plan.md`
+2. `UPDATES.md`
+
+Result:
+
+1. Captured the headerless canvas UI direction: top-left logo/project name only, top-right search icon, participants, and Add button.
+2. Replaced the permanent Project sidebar with a compact left Inspector.
+3. Moved problems/save/connection affordances into a bottom-right control cluster with Frames, zoom, help, and minimap controls.
+4. Recorded collaboration presence expectations for avatars, hover tooltips, and remote cursors.
+5. Recorded edge-display rules: dashed lines only for `jump`/`call`, and `return` has no outgoing edge by default.
+6. Added a sprint roadmap with atomic tasks for shell cleanup, compact Inspector, bottom-right controls, minimap, collaboration presence, search/Add popovers, edge semantics, and final usability polish.
+
+Checks:
+
+1. Design/documentation-only change. No code was changed and no tests were run.
+
+## 2026-05-25
+
+### Selected-node Dashed Edge Animation
+
+Changed relation-edge animation so dashed ProjectGraph lines stay static by default.
+
+Files:
+
+1. `frontend/src/utils/projectGraphProjection.ts`
+2. `frontend/src/components/projectGraph/ProjectGraphCanvas.tsx`
+3. `frontend/src/utils/__tests__/projectGraphProjection.test.ts`
+4. `UPDATES.md`
+
+Result:
+
+1. Base projection no longer marks `call` relation edges as animated.
+2. The canvas animates a dashed edge only when the selected node is that edge's source or target.
+3. Selecting nothing disables all dashed-edge animation again.
+
+Checks:
+
+1. Added helper coverage for selected-node dashed-edge animation.
+2. Updated relation-edge projection coverage so `jump` and `call` are both static in the base projection.
+3. `npm test -- --run src/utils/__tests__/projectGraphProjection.test.ts` passed with 40 tests.
+4. `npm run build` passed with known non-blocking Vite/env.js, Browserslist, and large Loro chunk warnings.
+
+### Dev-only FPS Metrics
+
+Added browser-visible FPS diagnostics to the ProjectGraph dev overlay without collecting those metrics in normal editor mode.
+
+Files:
+
+1. `frontend/src/components/projectGraph/ProjectGraphCanvas.tsx`
+2. `frontend/src/utils/__tests__/projectGraphProjection.test.ts`
+3. `UPDATES.md`
+
+Result:
+
+1. Opening `/editor?project=<id>&devPerf=1` now samples `requestAnimationFrame` once per second and shows FPS, average frame time, max frame time, and long-frame count.
+2. The FPS sampler, viewport `ResizeObserver`, viewport move tracking, derived-edge counting, animated-edge counting, and projection timing are gated by the `devPerf` query flag.
+3. Normal editor mode still renders with `visibleOnly=1` by default, but does not collect the new FPS diagnostics.
+
+Checks:
+
+1. Added pure helper coverage for frame-sample summarization.
+2. `npm test -- --run src/utils/__tests__/projectGraphProjection.test.ts` passed with 39 tests.
+3. `npm test -- --run src/components/__tests__/EditorPage.mvp2.test.ts` passed with 2 tests.
+4. `npm run build` passed with known non-blocking Vite/env.js, Browserslist, and large Loro chunk warnings.
+
+## 2026-05-23
+
+### Dev Performance Overlay For Large Canvas Diagnosis
+
+Added the first browser-visible performance diagnostics surface for the ProjectGraph canvas.
+
+Files:
+
+1. `frontend/src/components/projectGraph/ProjectGraphCanvas.tsx`
+2. `frontend/src/components/projectGraph/ProjectGraphCanvas.css`
+3. `frontend/src/components/EditorPage.tsx`
+4. `frontend/src/components/editorPageQuery.ts`
+5. `frontend/src/utils/__tests__/projectGraphProjection.test.ts`
+6. `frontend/src/components/__tests__/EditorPage.mvp2.test.ts`
+7. `UPDATES.md`
+
+Result:
+
+1. Opening `/editor?project=<id>&devPerf=1` shows a dark dev overlay directly on the canvas.
+2. The overlay reports ProjectGraph counts, React Flow payload size, visible-node estimate, crossing-edge estimate, projection timing, viewport size/zoom, derived edge count, animated edge count, visible-rendering mode, and MiniMap heaviness.
+3. React Flow `onlyRenderVisibleElements` is now the default editor rendering mode after browser diagnostics showed a large performance improvement; use `visibleOnly=0` only for comparison with full rendering.
+4. Added a pure viewport-metrics helper so empty-viewport lag can be distinguished from actual visible node count and edge crossings.
+5. Import reload navigation preserves `devPerf` and `visibleOnly` query flags.
+
+Checks:
+
+1. Added unit coverage for dev query parsing.
+2. Added projection-helper coverage for viewport metrics and offscreen nodes.
+
 ## 2026-05-21
 
 ### Relation-Aware Label Frame Packing Implementation

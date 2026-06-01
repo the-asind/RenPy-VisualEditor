@@ -73,6 +73,25 @@ async def project_websocket(
                     # Handle different message types
                     if message_type == "ping":
                         await connection_manager.send_personal_message({"type": "pong"}, websocket)
+
+                    elif message_type == "cursor_update":
+                        x = message.get("x")
+                        y = message.get("y")
+                        if not isinstance(x, (int, float)) or not isinstance(y, (int, float)):
+                            continue
+
+                        await connection_manager.broadcast_to_project(
+                            project_id,
+                            {
+                                "type": "cursor_update",
+                                "userId": current_user["id"],
+                                "userName": current_user["username"],
+                                "x": x,
+                                "y": y,
+                                "activity": message.get("activity", "viewing canvas"),
+                            },
+                            exclude_websocket=websocket,
+                        )
                     
                     elif message_type == "share_project":
                         # Process project sharing

@@ -2363,7 +2363,7 @@ export const projectGraphToReactFlow = (graph: ProjectGraphSnapshot): ProjectGra
     source: edge.source_node_id,
     target: edge.target_node_id,
     type: 'smoothstep',
-    animated: edge.kind === 'call',
+    animated: false,
     className: `project-edge project-edge--${edge.kind}`,
     markerEnd: { type: MarkerType.ArrowClosed },
     selectable: false,

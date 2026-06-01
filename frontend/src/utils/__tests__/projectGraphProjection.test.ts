@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
+  applySelectedDashedEdgeAnimation,
   buildNestedDragPreviewNodes,
   buildNearTargetStepPath,
+  calculateProjectGraphViewportMetrics,
   expandAncestorFramesForMovedNodes,
   findProjectGraphNodeAtCanvasPoint,
   getProjectGraphHeaderDragGroupIds,
   projectGraphNodeTypes,
+  summarizeProjectGraphFrameMetrics,
 } from '../../components/projectGraph/ProjectGraphCanvas';
 import {
   buildLabelRelations,
@@ -50,6 +53,95 @@ const projectionEdgesByKind = (projection: ReturnType<typeof projectGraphToReact
 const labelFrameContentTop = 72;
 
 describe('relation-aware label frame packing helpers', () => {
+  it('animates only dashed edges attached to the selected node', () => {
+    const edges = [
+      {
+        id: 'edge-selected-jump',
+        source: 'node-selected',
+        target: 'node-target',
+        animated: false,
+        style: { strokeDasharray: '6 8' },
+      },
+      {
+        id: 'edge-selected-call-target',
+        source: 'node-source',
+        target: 'node-selected',
+        animated: false,
+        style: { strokeDasharray: '5 7' },
+      },
+      {
+        id: 'edge-unselected-call',
+        source: 'node-source',
+        target: 'node-other',
+        animated: false,
+        style: { strokeDasharray: '5 7' },
+      },
+      {
+        id: 'edge-solid-selected',
+        source: 'node-selected',
+        target: 'node-solid-target',
+        animated: true,
+        style: {},
+      },
+    ];
+
+    const selectedEdges = applySelectedDashedEdgeAnimation(edges as never, 'node-selected');
+    expect(selectedEdges.map((edge) => [edge.id, edge.animated])).toEqual([
+      ['edge-selected-jump', true],
+      ['edge-selected-call-target', true],
+      ['edge-unselected-call', false],
+      ['edge-solid-selected', false],
+    ]);
+
+    const unselectedEdges = applySelectedDashedEdgeAnimation(selectedEdges, null);
+    expect(unselectedEdges.every((edge) => edge.animated === false)).toBe(true);
+  });
+
+  it('summarizes dev frame samples as FPS and long-frame metrics', () => {
+    const metrics = summarizeProjectGraphFrameMetrics([16, 18, 50, 32], 116);
+
+    expect(metrics.sampleFrames).toBe(4);
+    expect(metrics.fps).toBeCloseTo(34.48, 2);
+    expect(metrics.averageFrameMs).toBe(29);
+    expect(metrics.maxFrameMs).toBe(50);
+    expect(metrics.longFrameCount).toBe(1);
+  });
+
+  it('calculates viewport dev metrics without treating offscreen nodes as visible', () => {
+    const nodes = [
+      makeCanvasNode('file-main', 'projectFrame', { x: 0, y: 0 }, { width: 1200, height: 900 }),
+      makeCanvasNode('label-visible', 'labelFrame', { x: 40, y: 60 }, { width: 420, height: 260 }, 'file-main'),
+      makeCanvasNode('start-visible', 'labelStart', { x: 32, y: 72 }, { width: 280, height: 72 }, 'label-visible'),
+      makeCanvasNode('label-offscreen', 'labelFrame', { x: 1800, y: 60 }, { width: 420, height: 260 }, 'file-main'),
+      makeCanvasNode('start-offscreen', 'labelStart', { x: 32, y: 72 }, { width: 280, height: 72 }, 'label-offscreen'),
+    ];
+    const edges = [
+      {
+        id: 'edge-visible-offscreen',
+        source: 'start-visible',
+        target: 'start-offscreen',
+      },
+    ];
+
+    const metrics = calculateProjectGraphViewportMetrics(
+      nodes,
+      edges as never,
+      { x: 0, y: 0, zoom: 1 },
+      { width: 800, height: 600 },
+    );
+
+    expect(metrics.totalNodes).toBe(5);
+    expect(metrics.totalEdges).toBe(1);
+    expect(metrics.visibleNodes).toBe(3);
+    expect(metrics.visibleNodeTypes).toMatchObject({
+      projectFrame: 1,
+      labelFrame: 1,
+      labelStart: 1,
+    });
+    expect(metrics.crossingEdges).toBe(1);
+    expect(metrics.flowRect).toEqual({ x: 0, y: 0, width: 800, height: 600 });
+  });
+
   it('builds weighted same-sibling label relations from resolved jump and call edges', () => {
     const relations = buildLabelRelations(makeRelationGraph());
     const byPair = new Map(relations.map((relation) => [`${relation.sourceLabelId}->${relation.targetLabelId}`, relation]));
@@ -1057,7 +1149,7 @@ describe('projectGraphToReactFlow static projection', () => {
         source: 'node-call-local',
         target: 'start-node-shared-nook',
         type: 'smoothstep',
-        animated: true,
+        animated: false,
         className: 'project-edge project-edge--call',
         data: expect.objectContaining({ kind: 'call' }),
         selectable: false,

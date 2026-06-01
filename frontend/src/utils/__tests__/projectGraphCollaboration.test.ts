@@ -518,22 +518,58 @@ describe('ProjectGraph collaboration WebSocket helpers', () => {
 
   it('receives ArrayBuffer binary messages and sends Uint8Array payloads without JSON wrapping', () => {
     const received: Uint8Array[] = [];
+    const presenceUsers: unknown[] = [];
     const socket = connectProjectGraphCollaborationSocket({
       url: 'ws://example.test/ws/project/sprint-7',
       WebSocketImpl: FakeWebSocket,
       onUpdate: (update) => received.push(update),
+      onPresenceUsers: (users) => presenceUsers.push(users),
     });
     const instance = FakeWebSocket.instances[0];
     const outbound = new Uint8Array([9, 8, 7]);
 
     instance.emitMessage(new Uint8Array([1, 2, 3]).buffer);
-    instance.emitMessage('{"type":"active_users","users":[]}');
+    instance.emitMessage('{"type":"active_users","users":[{"id":"u1","username":"Mira","connected_at":"now"}]}');
     socket.sendBinary(outbound);
 
     expect(instance.binaryType).toBe('arraybuffer');
     expect(received).toHaveLength(1);
     expect([...received[0]]).toEqual([1, 2, 3]);
+    expect(presenceUsers).toEqual([[{ id: 'u1', username: 'Mira', connectedAt: 'now' }]]);
     expect(instance.sent).toEqual([outbound]);
+  });
+
+  it('normalizes remote cursor JSON without treating it as a CRDT update', () => {
+    const received: Uint8Array[] = [];
+    const cursors: unknown[] = [];
+    connectProjectGraphCollaborationSocket({
+      url: 'ws://example.test/ws/project/sprint-11-presence',
+      WebSocketImpl: FakeWebSocket,
+      onUpdate: (update) => received.push(update),
+      onRemoteCursor: (cursor) => cursors.push(cursor),
+    });
+    const instance = FakeWebSocket.instances.at(-1)!;
+
+    instance.emitMessage(
+      JSON.stringify({
+        type: 'cursor_update',
+        userId: 'u2',
+        userName: 'Alex',
+        x: 120,
+        y: 240,
+        activity: 'viewing ch3_end_sayori',
+      }),
+    );
+
+    expect(received).toEqual([]);
+    expect(cursors).toEqual([
+      {
+        userId: 'u2',
+        username: 'Alex',
+        activity: 'viewing ch3_end_sayori',
+        position: { x: 120, y: 240 },
+      },
+    ]);
   });
 
   it('relays content and drag CRDT updates between two browser-like project clients', () => {

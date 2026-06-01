@@ -11,13 +11,13 @@ import {
 import {
   Background,
   BaseEdge,
-  Controls,
   Handle,
   MiniMap,
   Position,
   ReactFlow,
   ReactFlowProvider,
   applyNodeChanges,
+  type Edge,
   type EdgeProps,
   type EdgeTypes,
   type ReactFlowInstance,
@@ -25,6 +25,7 @@ import {
   type NodeChange,
   type NodeProps,
   type NodeTypes,
+  type Viewport,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
@@ -36,6 +37,8 @@ import {
   searchProjectGraph,
   type ProjectGraphSnapshot,
 } from '../../utils/projectGraphProjection';
+import type { ProjectGraphPresenceUser, ProjectGraphRemoteCursor } from '../../utils/projectGraphCollaboration';
+import brandLogoUrl from '../../assets/logo.svg';
 import './ProjectGraphCanvas.css';
 
 type HeaderPointerDownHandler = (event: ReactPointerEvent<HTMLDivElement>) => void;
@@ -64,6 +67,50 @@ const DRAG_DEFAULT_TOP_PADDING = 32;
 const DRAG_FRAME_MIN_SIZE_BY_TYPE: Record<string, { width: number; height: number }> = {
   projectFrame: { width: 560, height: 260 },
   labelFrame: { width: 520, height: 180 },
+};
+
+export const getProjectGraphMinimapNodeColor = (node: Node): string => {
+  if (node.type === 'projectFrame') {
+    return 'rgba(226, 232, 240, 0.42)';
+  }
+  if (node.type === 'labelFrame') {
+    if (node.data?.scope === 'local') {
+      return 'rgba(253, 230, 138, 0.64)';
+    }
+    if (node.data?.scope === 'nested') {
+      return 'rgba(221, 214, 254, 0.66)';
+    }
+    return 'rgba(153, 246, 228, 0.58)';
+  }
+  if (node.type === 'labelStart') {
+    return 'rgba(20, 184, 166, 0.9)';
+  }
+  if (node.type === 'scenarioNode') {
+    return 'rgba(148, 163, 184, 0.9)';
+  }
+  return 'rgba(203, 213, 225, 0.72)';
+};
+
+export const getProjectGraphMinimapNodeStrokeColor = (node: Node): string => {
+  if (node.type === 'projectFrame') {
+    return 'rgba(15, 23, 42, 0.18)';
+  }
+  if (node.type === 'labelFrame') {
+    if (node.data?.scope === 'local') {
+      return 'rgba(217, 119, 6, 0.72)';
+    }
+    if (node.data?.scope === 'nested') {
+      return 'rgba(124, 58, 237, 0.7)';
+    }
+    return 'rgba(13, 148, 136, 0.72)';
+  }
+  if (node.type === 'labelStart') {
+    return 'rgba(15, 118, 110, 0.95)';
+  }
+  if (node.type === 'scenarioNode') {
+    return 'rgba(71, 85, 105, 0.8)';
+  }
+  return 'rgba(100, 116, 139, 0.65)';
 };
 
 const cloneNodeForDrag = (node: Node): Node => ({
@@ -257,6 +304,191 @@ export interface ProjectGraphEntityPositionChange {
   manual: boolean;
 }
 
+export interface ProjectGraphViewportMetrics {
+  totalNodes: number;
+  totalEdges: number;
+  visibleNodes: number;
+  crossingEdges: number;
+  visibleNodeTypes: Record<string, number>;
+  flowRect: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+}
+
+export interface ProjectGraphFrameMetrics {
+  fps: number;
+  averageFrameMs: number;
+  maxFrameMs: number;
+  longFrameCount: number;
+  sampleFrames: number;
+  sampleDurationMs: number;
+}
+
+const DEV_FRAME_SAMPLE_MS = 1000;
+const DEV_LONG_FRAME_MS = 50;
+
+const emptyViewportMetrics: ProjectGraphViewportMetrics = {
+  totalNodes: 0,
+  totalEdges: 0,
+  visibleNodes: 0,
+  crossingEdges: 0,
+  visibleNodeTypes: {},
+  flowRect: { x: 0, y: 0, width: 0, height: 0 },
+};
+
+export const summarizeProjectGraphFrameMetrics = (
+  frameDurationsMs: number[],
+  sampleDurationMs: number,
+): ProjectGraphFrameMetrics => {
+  const sampleFrames = frameDurationsMs.length;
+  if (sampleFrames === 0 || sampleDurationMs <= 0) {
+    return {
+      fps: 0,
+      averageFrameMs: 0,
+      maxFrameMs: 0,
+      longFrameCount: 0,
+      sampleFrames: 0,
+      sampleDurationMs: Math.max(0, sampleDurationMs),
+    };
+  }
+
+  const totalFrameMs = frameDurationsMs.reduce((sum, frameMs) => sum + frameMs, 0);
+  return {
+    fps: (sampleFrames * 1000) / sampleDurationMs,
+    averageFrameMs: totalFrameMs / sampleFrames,
+    maxFrameMs: Math.max(...frameDurationsMs),
+    longFrameCount: frameDurationsMs.filter((frameMs) => frameMs >= DEV_LONG_FRAME_MS).length,
+    sampleFrames,
+    sampleDurationMs,
+  };
+};
+
+const rectsIntersect = (
+  left: { x: number; y: number; width: number; height: number },
+  right: { x: number; y: number; width: number; height: number },
+): boolean =>
+  left.x < right.x + right.width &&
+  left.x + left.width > right.x &&
+  left.y < right.y + right.height &&
+  left.y + left.height > right.y;
+
+const buildAbsoluteNodeBounds = (
+  nodes: Node[],
+): Map<string, { x: number; y: number; width: number; height: number }> => {
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const boundsById = new Map<string, { x: number; y: number; width: number; height: number }>();
+  const visiting = new Set<string>();
+
+  const resolve = (node: Node | undefined): { x: number; y: number; width: number; height: number } | null => {
+    if (!node) {
+      return null;
+    }
+    const cached = boundsById.get(node.id);
+    if (cached) {
+      return cached;
+    }
+    if (visiting.has(node.id)) {
+      return null;
+    }
+
+    visiting.add(node.id);
+    const parentBounds = node.parentId ? resolve(byId.get(node.parentId)) : null;
+    visiting.delete(node.id);
+    if (node.parentId && !parentBounds) {
+      return null;
+    }
+
+    const bounds = {
+      x: (parentBounds?.x ?? 0) + node.position.x,
+      y: (parentBounds?.y ?? 0) + node.position.y,
+      width: numericSize(node.width, numericSize(node.style?.width, 0)),
+      height: numericSize(node.height, numericSize(node.style?.height, 0)),
+    };
+    boundsById.set(node.id, bounds);
+    return bounds;
+  };
+
+  for (const node of nodes) {
+    resolve(node);
+  }
+
+  return boundsById;
+};
+
+export const calculateProjectGraphViewportMetrics = (
+  nodes: Node[],
+  edges: Edge[],
+  viewport: Viewport,
+  canvasSize: { width: number; height: number },
+): ProjectGraphViewportMetrics => {
+  const zoom = viewport.zoom > 0 ? viewport.zoom : 1;
+  const normalizeZero = (value: number): number => (Object.is(value, -0) ? 0 : value);
+  const flowRect = {
+    x: normalizeZero(-viewport.x / zoom),
+    y: normalizeZero(-viewport.y / zoom),
+    width: canvasSize.width / zoom,
+    height: canvasSize.height / zoom,
+  };
+  const boundsById = buildAbsoluteNodeBounds(nodes);
+  const visibleNodeTypes: Record<string, number> = {};
+  const visibleNodeIds = new Set<string>();
+
+  for (const node of nodes) {
+    const bounds = boundsById.get(node.id);
+    if (!bounds || !rectsIntersect(bounds, flowRect)) {
+      continue;
+    }
+    visibleNodeIds.add(node.id);
+    const type = node.type ?? 'default';
+    visibleNodeTypes[type] = (visibleNodeTypes[type] ?? 0) + 1;
+  }
+
+  let crossingEdges = 0;
+  for (const edge of edges) {
+    const source = boundsById.get(edge.source);
+    const target = boundsById.get(edge.target);
+    if (!source || !target) {
+      continue;
+    }
+    const sourceCenter = { x: source.x + source.width / 2, y: source.y + source.height / 2 };
+    const targetCenter = { x: target.x + target.width / 2, y: target.y + target.height / 2 };
+    const edgeBounds = {
+      x: Math.min(sourceCenter.x, targetCenter.x),
+      y: Math.min(sourceCenter.y, targetCenter.y),
+      width: Math.abs(sourceCenter.x - targetCenter.x),
+      height: Math.abs(sourceCenter.y - targetCenter.y),
+    };
+
+    if (visibleNodeIds.has(edge.source) || visibleNodeIds.has(edge.target) || rectsIntersect(edgeBounds, flowRect)) {
+      crossingEdges += 1;
+    }
+  }
+
+  return {
+    totalNodes: nodes.length,
+    totalEdges: edges.length,
+    visibleNodes: visibleNodeIds.size,
+    crossingEdges,
+    visibleNodeTypes,
+    flowRect,
+  };
+};
+
+const isDashedProjectGraphEdge = (edge: Edge): boolean =>
+  typeof edge.style?.strokeDasharray === 'string' || typeof edge.style?.strokeDasharray === 'number';
+
+export const applySelectedDashedEdgeAnimation = (edges: Edge[], selectedNodeId: string | null): Edge[] =>
+  edges.map((edge) => {
+    const shouldAnimate =
+      selectedNodeId !== null &&
+      isDashedProjectGraphEdge(edge) &&
+      (edge.source === selectedNodeId || edge.target === selectedNodeId);
+    return edge.animated === shouldAnimate ? edge : { ...edge, animated: shouldAnimate };
+  });
+
 const ProjectFrameNode = memo(({ data }: NodeProps) => (
   <div className="pg-node pg-node--file">
     <div className="pg-node__drag-handle" onPointerDown={getHeaderPointerDownHandler(data)}>
@@ -438,12 +670,19 @@ export const projectGraphEdgeTypes: EdgeTypes = {
 export interface ProjectGraphCanvasProps {
   graph: ProjectGraphSnapshot;
   className?: string;
+  projectName?: string | null;
+  participants?: ProjectGraphPresenceUser[];
+  remoteCursors?: ProjectGraphRemoteCursor[];
+  showDevPerformancePanel?: boolean;
+  onlyRenderVisibleElements?: boolean;
   exportStatus?: string | null;
   exportedFiles?: Record<string, string> | null;
   saveStatus?: string | null;
   onExportProjectGraph?: () => void;
   onEntityPositionChange?: (entityId: string, position: GraphPoint) => void;
   onEntityPositionsChange?: (changes: ProjectGraphEntityPositionChange[]) => void;
+  onCanvasPointerActivity?: (position: GraphPoint) => void;
+  onInviteUser?: (targetUser: string) => void;
   onScenarioContentChange?: (nodeId: string, content: string) => void;
   onScenarioMetadataChange?: (nodeId: string, metadataPatch: Record<string, unknown>) => void;
 }
@@ -471,26 +710,63 @@ const menuChoiceLineWithCondition = (content: string, condition: string): string
 const ProjectGraphCanvasInner = ({
   graph,
   className,
+  projectName,
+  participants = [],
+  remoteCursors = [],
+  showDevPerformancePanel = false,
+  onlyRenderVisibleElements = false,
   exportStatus,
   exportedFiles,
   saveStatus,
   onExportProjectGraph,
   onEntityPositionChange,
   onEntityPositionsChange,
+  onCanvasPointerActivity,
+  onInviteUser,
   onScenarioContentChange,
   onScenarioMetadataChange,
 }: ProjectGraphCanvasProps) => {
   const [reactFlowInstance, setReactFlowInstance] = useState<ReactFlowInstance | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [isInviteOpen, setIsInviteOpen] = useState(false);
+  const [inviteTarget, setInviteTarget] = useState('');
+  const [isProblemsOpen, setIsProblemsOpen] = useState(false);
+  const [isFramesOpen, setIsFramesOpen] = useState(false);
+  const [isMinimapVisible, setIsMinimapVisible] = useState(true);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [viewport, setViewport] = useState<Viewport>({ x: 0, y: 0, zoom: 1 });
+  const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
+  const [frameMetrics, setFrameMetrics] = useState<ProjectGraphFrameMetrics | null>(null);
   const initialViewportKeyRef = useRef<string | null>(null);
   const interactiveNodesRef = useRef<Node[]>([]);
-  const projection = useMemo(() => projectGraphToReactFlow(graph), [graph]);
+  const canvasRef = useRef<HTMLDivElement | null>(null);
+  const projectionSample = useMemo(() => {
+    const start = showDevPerformancePanel ? performance.now() : 0;
+    const nextProjection = projectGraphToReactFlow(graph);
+    return {
+      projection: nextProjection,
+      projectionMs: showDevPerformancePanel ? performance.now() - start : null,
+    };
+  }, [graph, showDevPerformancePanel]);
+  const projection = projectionSample.projection;
+  const displayedEdges = useMemo(
+    () => applySelectedDashedEdgeAnimation(projection.edges, selectedNodeId),
+    [projection.edges, selectedNodeId],
+  );
   const searchResults = useMemo(() => searchProjectGraph(graph, searchQuery), [graph, searchQuery]);
   const problems = useMemo(() => projectGraphDiagnosticsToProblems(graph), [graph]);
   const selectedScenario = useMemo(
     () => graph.nodes.find((node) => node.id === selectedNodeId) ?? null,
     [graph.nodes, selectedNodeId],
+  );
+  const selectedScenarioFile = useMemo(
+    () => (selectedScenario ? graph.files.find((file) => file.id === selectedScenario.file_id) : undefined),
+    [graph.files, selectedScenario],
+  );
+  const selectedScenarioLabel = useMemo(
+    () => (selectedScenario ? graph.labels.find((label) => label.id === selectedScenario.label_id) : undefined),
+    [graph.labels, selectedScenario],
   );
   const handleNodeHeaderPointerDown = useCallback(
     (nodeId: string, event: ReactPointerEvent<HTMLDivElement>) => {
@@ -619,6 +895,137 @@ const ProjectGraphCanvasInner = ({
     () => Object.entries(exportedFiles ?? {}).sort(([pathA], [pathB]) => pathA.localeCompare(pathB)),
     [exportedFiles],
   );
+  const displayedProjectName = projectName?.trim() || 'Untitled project';
+  const participantsToShow = participants.length > 0 ? participants : [{ id: 'local', username: 'You' }];
+  const remoteCursorViews = useMemo(
+    () =>
+      remoteCursors.map((cursor) => ({
+        ...cursor,
+        screenPosition: {
+          x: viewport.x + cursor.position.x * viewport.zoom,
+          y: viewport.y + cursor.position.y * viewport.zoom,
+        },
+      })),
+    [remoteCursors, viewport],
+  );
+  const frameEntries = useMemo(
+    () => [
+      ...graph.files.map((file) => ({
+        id: file.id,
+        title: file.path,
+        kind: 'file',
+      })),
+      ...graph.labels.map((label) => ({
+        id: label.id,
+        title: label.qualified_name,
+        kind: 'label',
+      })),
+    ],
+    [graph.files, graph.labels],
+  );
+  const saveStatusTitle = saveStatus ?? 'Connected';
+  const connectionSymbol = saveStatus?.toLocaleLowerCase().includes('fail') ? '!' : '✓';
+  const devMetrics = useMemo(
+    () =>
+      showDevPerformancePanel
+        ? calculateProjectGraphViewportMetrics(projection.nodes, displayedEdges, viewport, canvasSize)
+        : emptyViewportMetrics,
+    [canvasSize, displayedEdges, projection.nodes, showDevPerformancePanel, viewport],
+  );
+  const derivedEdgeCount = useMemo(
+    () => (showDevPerformancePanel ? displayedEdges.filter((edge) => edge.data?.derived === true).length : 0),
+    [displayedEdges, showDevPerformancePanel],
+  );
+  const animatedEdgeCount = useMemo(
+    () => (showDevPerformancePanel ? displayedEdges.filter((edge) => edge.animated === true).length : 0),
+    [displayedEdges, showDevPerformancePanel],
+  );
+
+  useEffect(() => {
+    if (!showDevPerformancePanel) {
+      setCanvasSize((currentSize) =>
+        currentSize.width === 0 && currentSize.height === 0 ? currentSize : { width: 0, height: 0 },
+      );
+      return undefined;
+    }
+
+    const element = canvasRef.current;
+    if (!element) {
+      return undefined;
+    }
+
+    const updateSize = () =>
+      setCanvasSize({
+        width: element.clientWidth,
+        height: element.clientHeight,
+      });
+    updateSize();
+
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', updateSize);
+      return () => window.removeEventListener('resize', updateSize);
+    }
+
+    const observer = new ResizeObserver(updateSize);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [showDevPerformancePanel]);
+
+  useEffect(() => {
+    if (!showDevPerformancePanel) {
+      setFrameMetrics(null);
+      return undefined;
+    }
+
+    let active = true;
+    let animationFrameId = 0;
+    let sampleStartedAt = performance.now();
+    let lastFrameAt = sampleStartedAt;
+    const frameDurations: number[] = [];
+
+    const sampleFrame = (now: number) => {
+      if (!active) {
+        return;
+      }
+
+      const frameMs = now - lastFrameAt;
+      lastFrameAt = now;
+      if (frameMs > 0) {
+        frameDurations.push(frameMs);
+      }
+
+      const sampleDurationMs = now - sampleStartedAt;
+      if (sampleDurationMs >= DEV_FRAME_SAMPLE_MS) {
+        setFrameMetrics(summarizeProjectGraphFrameMetrics(frameDurations, sampleDurationMs));
+        frameDurations.length = 0;
+        sampleStartedAt = now;
+      }
+
+      animationFrameId = requestAnimationFrame(sampleFrame);
+    };
+
+    animationFrameId = requestAnimationFrame(sampleFrame);
+    return () => {
+      active = false;
+      cancelAnimationFrame(animationFrameId);
+    };
+  }, [showDevPerformancePanel]);
+
+  useEffect(() => {
+    if (!onExportProjectGraph) {
+      return undefined;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLocaleLowerCase() === 'e') {
+        event.preventDefault();
+        onExportProjectGraph();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onExportProjectGraph]);
 
   useEffect(() => {
     if (!reactFlowInstance || projection.nodes.length === 0) {
@@ -671,6 +1078,7 @@ const ProjectGraphCanvasInner = ({
 
     setSelectedNodeId(nodeId);
     setSearchQuery('');
+    setIsSearchOpen(false);
     reactFlowInstance?.setCenter(
       position.x + Number(node.width ?? 0) / 2,
       position.y + Number(node.height ?? 0) / 2,
@@ -690,46 +1098,165 @@ const ProjectGraphCanvasInner = ({
     },
     [reactFlowInstance],
   );
+  const handleCanvasMouseMove = useCallback(
+    (event: ReactMouseEvent<HTMLDivElement>) => {
+      const target = event.target instanceof Element ? event.target : null;
+      if (!reactFlowInstance || target?.closest('.project-graph-canvas__overlay')) {
+        return;
+      }
+      onCanvasPointerActivity?.(
+        reactFlowInstance.screenToFlowPosition({
+          x: event.clientX,
+          y: event.clientY,
+        }),
+      );
+    },
+    [onCanvasPointerActivity, reactFlowInstance],
+  );
 
   return (
-    <div className={className ? `project-graph-canvas ${className}` : 'project-graph-canvas'}>
-      <div className="project-graph-canvas__toolbar">
-        {onExportProjectGraph ? (
-          <button className="project-graph-canvas__command" onClick={onExportProjectGraph} type="button">
-            Export
+    <div
+      className={className ? `project-graph-canvas ${className}` : 'project-graph-canvas'}
+      onMouseMove={handleCanvasMouseMove}
+      ref={canvasRef}
+    >
+      <div className="project-graph-canvas__brand project-graph-canvas__overlay" aria-label="Project">
+        <img alt="" className="project-graph-canvas__brand-logo" src={brandLogoUrl} />
+        <div className="project-graph-canvas__brand-name" title={displayedProjectName}>
+          {displayedProjectName}
+        </div>
+      </div>
+
+      <div className="project-graph-canvas__top-actions project-graph-canvas__overlay">
+        <button
+          aria-label="Open node search"
+          className="project-graph-canvas__icon-button"
+          onClick={() => {
+            setIsSearchOpen((isOpen) => !isOpen);
+            setIsInviteOpen(false);
+          }}
+          type="button"
+        >
+          <span aria-hidden="true">⌕</span>
+        </button>
+        <div className="project-graph-canvas__participant-stack" aria-label="Current participants">
+          {participantsToShow.slice(0, 4).map((participant) => (
+            <div
+              className="project-graph-canvas__participant"
+              key={participant.id}
+              title={`${participant.username} - ${participant.id === 'local' ? 'viewing canvas' : 'connected'}`}
+            >
+              {participant.username
+                .split(/\s+/)
+                .filter(Boolean)
+                .slice(0, 2)
+                .map((part) => part[0]?.toUpperCase())
+                .join('') || '?'}
+            </div>
+          ))}
+        </div>
+        <div className="project-graph-canvas__invite">
+          <button
+            className="project-graph-canvas__invite-button"
+            onClick={() => {
+              setIsInviteOpen((isOpen) => !isOpen);
+              setIsSearchOpen(false);
+            }}
+            type="button"
+          >
+            Add
           </button>
-        ) : null}
-        {exportStatus ? <div className="project-graph-canvas__status">{exportStatus}</div> : null}
-        {saveStatus ? <div className="project-graph-canvas__status">{saveStatus}</div> : null}
-        <input
-          aria-label="Search nodes"
-          className="project-graph-canvas__search"
-          onChange={(event) => setSearchQuery(event.target.value)}
-          placeholder="Search nodes"
-          type="search"
-          value={searchQuery}
-        />
-        {searchQuery.trim() ? (
-          <div className="project-graph-canvas__search-results">
-            {searchResults.map((result) => (
+          {isInviteOpen ? (
+            <div className="project-graph-canvas__invite-popover">
+              <div className="project-graph-canvas__panel-title">Invite people</div>
+              <label className="project-graph-canvas__field">
+                <span>Username or email</span>
+                <input
+                  className="project-graph-canvas__node-editor-line-input"
+                  onChange={(event) => setInviteTarget(event.target.value)}
+                  placeholder="teammate@example.com"
+                  type="text"
+                  value={inviteTarget}
+                />
+              </label>
               <button
-                className="project-graph-canvas__search-result"
-                key={result.nodeId}
-                onClick={() => focusNode(result.nodeId)}
+                className="project-graph-canvas__invite-submit"
+                disabled={!inviteTarget.trim()}
+                onClick={() => {
+                  const target = inviteTarget.trim();
+                  if (!target) {
+                    return;
+                  }
+                  onInviteUser?.(target);
+                  setInviteTarget('');
+                  setIsInviteOpen(false);
+                }}
                 type="button"
               >
-                <span>{result.title}</span>
-                <small>{result.content}</small>
+                Send invite
               </button>
-            ))}
-            {searchResults.length === 0 ? <div className="project-graph-canvas__empty">No matches</div> : null}
+            </div>
+          ) : null}
+        </div>
+      </div>
+
+      {isSearchOpen ? (
+        <div className="project-graph-canvas__search-popover project-graph-canvas__overlay">
+          <input
+            aria-label="Search nodes"
+            autoFocus
+            className="project-graph-canvas__search"
+            onChange={(event) => setSearchQuery(event.target.value)}
+            placeholder="Find nodes"
+            type="search"
+            value={searchQuery}
+          />
+          {searchQuery.trim() ? (
+            <div className="project-graph-canvas__search-results">
+              {searchResults.map((result) => (
+                <button
+                  className="project-graph-canvas__search-result"
+                  key={result.nodeId}
+                  onClick={() => focusNode(result.nodeId)}
+                  type="button"
+                >
+                  <span>{result.title}</span>
+                  <small>{result.content}</small>
+                </button>
+              ))}
+              {searchResults.length === 0 ? <div className="project-graph-canvas__empty">No matches</div> : null}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      <div className="project-graph-canvas__remote-cursors" aria-hidden="true">
+        {remoteCursorViews.map((cursor) => (
+          <div
+            className="project-graph-canvas__remote-cursor"
+            key={cursor.userId}
+            style={{
+              transform: `translate(${cursor.screenPosition.x}px, ${cursor.screenPosition.y}px)`,
+            }}
+          >
+            <span className="project-graph-canvas__remote-cursor-pointer" />
+            <span className="project-graph-canvas__remote-cursor-label">
+              {cursor.username}
+              {cursor.activity ? ` - ${cursor.activity}` : ''}
+            </span>
           </div>
-        ) : null}
+        ))}
       </div>
 
       {selectedScenario ? (
-        <div className="project-graph-canvas__node-editor">
-          <div className="project-graph-canvas__panel-title">{selectedScenario.type}</div>
+        <div className="project-graph-canvas__node-editor project-graph-canvas__overlay">
+          <div className="project-graph-canvas__panel-title">Inspector</div>
+          <div className="project-graph-canvas__inspector-meta">
+            <span className="project-graph-canvas__inspector-type">{selectedScenario.type}</span>
+            <span className="project-graph-canvas__inspector-breadcrumb">
+              {[selectedScenarioFile?.path, selectedScenarioLabel?.qualified_name].filter(Boolean).join(' > ')}
+            </span>
+          </div>
           <label className="project-graph-canvas__field">
             <span>{selectedContentLabel}</span>
             <textarea
@@ -778,26 +1305,10 @@ const ProjectGraphCanvasInner = ({
         </div>
       ) : null}
 
-      {problems.length > 0 ? (
-        <div className="project-graph-canvas__problems">
-          <div className="project-graph-canvas__panel-title">Problems</div>
-          {problems.map((problem) => (
-            <button
-              className={`project-graph-canvas__problem project-graph-canvas__problem--${problem.severity}`}
-              key={problem.id}
-              onClick={() => (problem.nodeId ? focusNode(problem.nodeId) : undefined)}
-              type="button"
-            >
-              <span>{problem.code}</span>
-              <small>{problem.message}</small>
-            </button>
-          ))}
-        </div>
-      ) : null}
-
-      {exportedFileEntries.length > 0 ? (
-        <div className="project-graph-canvas__export-results">
+      {exportStatus || exportedFileEntries.length > 0 ? (
+        <div className="project-graph-canvas__export-results project-graph-canvas__overlay">
           <div className="project-graph-canvas__panel-title">Exported Files</div>
+          {exportStatus ? <div className="project-graph-canvas__status">{exportStatus}</div> : null}
           {exportedFileEntries.map(([path, content]) => (
             <section className="project-graph-canvas__export-file" key={path}>
               <div className="project-graph-canvas__export-file-name">{path}</div>
@@ -807,30 +1318,188 @@ const ProjectGraphCanvasInner = ({
         </div>
       ) : null}
 
+      <div className="project-graph-canvas__control-cluster project-graph-canvas__overlay">
+        {isProblemsOpen ? (
+          <div className="project-graph-canvas__problems-popover">
+            <div className="project-graph-canvas__panel-title">Problems</div>
+            {problems.length > 0 ? (
+              problems.map((problem) => (
+                <button
+                  className={`project-graph-canvas__problem project-graph-canvas__problem--${problem.severity}`}
+                  key={problem.id}
+                  onClick={() => (problem.nodeId ? focusNode(problem.nodeId) : undefined)}
+                  type="button"
+                >
+                  <span>{problem.code}</span>
+                  <small>{problem.message}</small>
+                </button>
+              ))
+            ) : (
+              <div className="project-graph-canvas__empty">No problems</div>
+            )}
+          </div>
+        ) : null}
+        {isFramesOpen ? (
+          <div className="project-graph-canvas__frames-popover">
+            <div className="project-graph-canvas__panel-title">Frames</div>
+            {frameEntries.map((frame) => (
+              <button
+                className="project-graph-canvas__frame-result"
+                key={frame.id}
+                onClick={() => focusNode(frame.id)}
+                type="button"
+              >
+                <span>{frame.title}</span>
+                <small>{frame.kind}</small>
+              </button>
+            ))}
+          </div>
+        ) : null}
+        <div className="project-graph-canvas__control-toolbar" aria-label="Canvas controls">
+          <button
+            aria-label={`Problems: ${problems.length}`}
+            className="project-graph-canvas__control-button project-graph-canvas__control-button--problems"
+            onClick={() => {
+              setIsProblemsOpen((isOpen) => !isOpen);
+              setIsFramesOpen(false);
+            }}
+            type="button"
+          >
+            <span aria-hidden="true">⚠</span>
+            <span>{problems.length}</span>
+          </button>
+          <span className="project-graph-canvas__connection" title={saveStatusTitle}>
+            {connectionSymbol}
+          </span>
+          <button
+            className="project-graph-canvas__frames-button"
+            onClick={() => {
+              setIsFramesOpen((isOpen) => !isOpen);
+              setIsProblemsOpen(false);
+            }}
+            type="button"
+          >
+            Frames
+          </button>
+          <button
+            aria-label="Zoom out"
+            className="project-graph-canvas__control-button"
+            onClick={() => reactFlowInstance?.zoomOut({ duration: 160 })}
+            type="button"
+          >
+            −
+          </button>
+          <span className="project-graph-canvas__zoom-label">{Math.round(viewport.zoom * 100)}%</span>
+          <button
+            aria-label="Zoom in"
+            className="project-graph-canvas__control-button"
+            onClick={() => reactFlowInstance?.zoomIn({ duration: 160 })}
+            type="button"
+          >
+            +
+          </button>
+          <button aria-label="Help" className="project-graph-canvas__control-button" type="button">
+            ?
+          </button>
+          <button
+            aria-label="Toggle minimap"
+            className="project-graph-canvas__control-button"
+            onClick={() => setIsMinimapVisible((isVisible) => !isVisible)}
+            type="button"
+          >
+            ▣
+          </button>
+        </div>
+      </div>
+
+      {showDevPerformancePanel ? (
+        <div className="project-graph-canvas__dev-perf project-graph-canvas__overlay" data-testid="project-graph-dev-perf">
+          <div className="project-graph-canvas__panel-title">Dev Performance</div>
+          <div className="project-graph-canvas__dev-grid">
+            <span>Graph</span>
+            <strong>
+              {graph.files.length} files / {graph.labels.length} labels / {graph.nodes.length} scenario
+            </strong>
+            <span>React Flow payload</span>
+            <strong>
+              {devMetrics.totalNodes} nodes / {devMetrics.totalEdges} edges
+            </strong>
+            <span>Visible estimate</span>
+            <strong>
+              {devMetrics.visibleNodes} nodes / {devMetrics.crossingEdges} crossing edges
+            </strong>
+            <span>FPS</span>
+            <strong>{frameMetrics ? frameMetrics.fps.toFixed(1) : 'sampling...'}</strong>
+            <span>Frame time</span>
+            <strong>
+              {frameMetrics
+                ? `${frameMetrics.averageFrameMs.toFixed(1)} ms avg / ${frameMetrics.maxFrameMs.toFixed(1)} ms max`
+                : 'sampling...'}
+            </strong>
+            <span>Long frames</span>
+            <strong>
+              {frameMetrics
+                ? `${frameMetrics.longFrameCount}/${frameMetrics.sampleFrames} over ${DEV_LONG_FRAME_MS} ms`
+                : 'sampling...'}
+            </strong>
+            <span>Projection</span>
+            <strong>{projectionSample.projectionMs?.toFixed(1) ?? 'off'} ms</strong>
+            <span>Viewport</span>
+            <strong>
+              z {viewport.zoom.toFixed(2)} / {Math.round(devMetrics.flowRect.width)}x{Math.round(devMetrics.flowRect.height)}
+            </strong>
+            <span>Derived edges</span>
+            <strong>{derivedEdgeCount}</strong>
+            <span>Animated edges</span>
+            <strong>{animatedEdgeCount}</strong>
+            <span>Visible rendering</span>
+            <strong>{onlyRenderVisibleElements ? 'on' : 'off'}</strong>
+            <span>MiniMap</span>
+            <strong>{devMetrics.totalNodes > 1000 ? 'heavy' : 'normal'}</strong>
+          </div>
+          <div className="project-graph-canvas__dev-note">
+            Visible rendering is on by default. Open with <code>&amp;visibleOnly=0</code> to compare full rendering.
+          </div>
+          <div className="project-graph-canvas__dev-types">
+            {Object.entries(devMetrics.visibleNodeTypes).map(([type, count]) => (
+              <span key={type}>
+                {type}: {count}
+              </span>
+            ))}
+            {Object.keys(devMetrics.visibleNodeTypes).length === 0 ? <span>empty viewport</span> : null}
+          </div>
+        </div>
+      ) : null}
+
       <ReactFlow
-        edges={projection.edges}
+        edges={displayedEdges}
         elementsSelectable
         maxZoom={2.5}
         minZoom={0.08}
         nodes={interactiveNodes}
         nodesConnectable={false}
         nodesDraggable={false}
+        onlyRenderVisibleElements={onlyRenderVisibleElements}
         edgeTypes={projectGraphEdgeTypes}
         nodeTypes={projectGraphNodeTypes}
         onInit={setReactFlowInstance}
+        onMove={(_, nextViewport) => setViewport(nextViewport)}
         onNodesChange={handleNodesChange}
         onNodeClick={(_, node) => setSelectedNodeId(node.id)}
         onNodeDragStop={(_, node: Node) => onEntityPositionChange?.(node.id, node.position)}
         onPaneClick={handlePaneClick}
       >
         <Background gap={32} size={1} />
-        <MiniMap
-          className="project-graph-canvas__minimap"
-          maskColor="rgba(148, 163, 184, 0.16)"
-          pannable
-          zoomable
-        />
-        <Controls showInteractive={false} />
+        {isMinimapVisible ? (
+          <MiniMap
+            className="project-graph-canvas__minimap"
+            maskColor="rgba(148, 163, 184, 0.16)"
+            nodeColor={getProjectGraphMinimapNodeColor}
+            nodeStrokeColor={getProjectGraphMinimapNodeStrokeColor}
+            pannable
+            zoomable
+          />
+        ) : null}
       </ReactFlow>
     </div>
   );

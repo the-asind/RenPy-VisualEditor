@@ -125,7 +125,7 @@ test('two browser contexts exchange ProjectGraph CRDT content and drag updates',
 test('canvas export UX shows status, returned filenames, and normalized content', async ({ page }) => {
   await page.goto('/e2e/project-graph-export-ux.html');
 
-  await page.getByRole('button', { name: 'Export' }).click();
+  await page.keyboard.press(process.platform === 'darwin' ? 'Meta+Shift+E' : 'Control+Shift+E');
   await expect(page.getByText('Exporting...')).toBeVisible();
 
   await page.evaluate(() => window.resolveExport?.());
