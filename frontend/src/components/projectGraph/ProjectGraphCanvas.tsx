@@ -489,6 +489,8 @@ export const applySelectedDashedEdgeAnimation = (edges: Edge[], selectedNodeId: 
     return edge.animated === shouldAnimate ? edge : { ...edge, animated: shouldAnimate };
   });
 
+export const shouldTrackProjectGraphViewportLive = (remoteCursorCount: number): boolean => remoteCursorCount > 0;
+
 const ProjectFrameNode = memo(({ data }: NodeProps) => (
   <div className="pg-node pg-node--file">
     <div className="pg-node__drag-handle" onPointerDown={getHeaderPointerDownHandler(data)}>
@@ -897,6 +899,7 @@ const ProjectGraphCanvasInner = ({
   );
   const displayedProjectName = projectName?.trim() || 'Untitled project';
   const participantsToShow = participants.length > 0 ? participants : [{ id: 'local', username: 'You' }];
+  const shouldTrackViewportLive = shouldTrackProjectGraphViewportLive(remoteCursors.length);
   const remoteCursorViews = useMemo(
     () =>
       remoteCursors.map((cursor) => ({
@@ -1483,7 +1486,8 @@ const ProjectGraphCanvasInner = ({
         edgeTypes={projectGraphEdgeTypes}
         nodeTypes={projectGraphNodeTypes}
         onInit={setReactFlowInstance}
-        onMove={(_, nextViewport) => setViewport(nextViewport)}
+        onMove={shouldTrackViewportLive ? (_, nextViewport) => setViewport(nextViewport) : undefined}
+        onMoveEnd={(_, nextViewport) => setViewport(nextViewport)}
         onNodesChange={handleNodesChange}
         onNodeClick={(_, node) => setSelectedNodeId(node.id)}
         onNodeDragStop={(_, node: Node) => onEntityPositionChange?.(node.id, node.position)}

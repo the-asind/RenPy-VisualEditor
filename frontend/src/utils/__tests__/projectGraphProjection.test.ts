@@ -8,6 +8,7 @@ import {
   findProjectGraphNodeAtCanvasPoint,
   getProjectGraphHeaderDragGroupIds,
   projectGraphNodeTypes,
+  shouldTrackProjectGraphViewportLive,
   summarizeProjectGraphFrameMetrics,
 } from '../../components/projectGraph/ProjectGraphCanvas';
 import {
@@ -53,6 +54,12 @@ const projectionEdgesByKind = (projection: ReturnType<typeof projectGraphToReact
 const labelFrameContentTop = 72;
 
 describe('relation-aware label frame packing helpers', () => {
+  it('tracks viewport live only when remote cursor projection needs it', () => {
+    expect(shouldTrackProjectGraphViewportLive(0)).toBe(false);
+    expect(shouldTrackProjectGraphViewportLive(1)).toBe(true);
+    expect(shouldTrackProjectGraphViewportLive(4)).toBe(true);
+  });
+
   it('animates only dashed edges attached to the selected node', () => {
     const edges = [
       {

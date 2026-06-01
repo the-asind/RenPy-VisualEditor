@@ -4,6 +4,29 @@ This file is the short project memory for RenPy Visual Editor 2.0. Keep it curre
 
 ## 2026-06-01
 
+### Pan-path Viewport State Throttling
+
+Reduced React work during canvas panning by avoiding live viewport state updates when they are not needed.
+
+Files:
+
+1. `frontend/src/components/projectGraph/ProjectGraphCanvas.tsx`
+2. `frontend/src/utils/__tests__/projectGraphProjection.test.ts`
+3. `UPDATES.md`
+
+Result:
+
+1. React Flow no longer calls `setViewport()` on every `onMove` frame in the common single-user canvas path.
+2. Live viewport tracking remains enabled only when remote cursor projection needs screen-space cursor positions.
+3. The local viewport state still updates on `onMoveEnd`, keeping zoom labels and dev viewport diagnostics correct after interaction finishes.
+
+Checks:
+
+1. Added helper coverage for live viewport tracking decisions.
+2. `npm test -- --run src/utils/__tests__/projectGraphProjection.test.ts` passed with 41 tests.
+3. `npm run build` passed with known non-blocking Vite/env.js, Browserslist, and large Loro chunk warnings.
+4. `npm test -- --run src/components/__tests__/EditorPage.mvp2.test.ts` still has one existing failure for missing `openSearchPopover`/`closeCanvasPopovers` action handler names in the already-committed canvas shell.
+
 ### Canvas Interface Sprint 1 Headerless Shell
 
 Started implementing the canvas interface roadmap with Sprint 1.
