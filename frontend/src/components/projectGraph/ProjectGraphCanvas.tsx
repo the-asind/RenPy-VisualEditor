@@ -491,6 +491,21 @@ export const applySelectedDashedEdgeAnimation = (edges: Edge[], selectedNodeId: 
 
 export const shouldTrackProjectGraphViewportLive = (remoteCursorCount: number): boolean => remoteCursorCount > 0;
 
+export type ProjectGraphLodLevel = 'full' | 'compact' | 'bars' | 'map';
+
+export const getProjectGraphLodLevel = (zoom: number): ProjectGraphLodLevel => {
+  if (zoom >= 0.55) {
+    return 'full';
+  }
+  if (zoom >= 0.25) {
+    return 'compact';
+  }
+  if (zoom >= 0.12) {
+    return 'bars';
+  }
+  return 'map';
+};
+
 const ProjectFrameNode = memo(({ data }: NodeProps) => (
   <div className="pg-node pg-node--file">
     <div className="pg-node__drag-handle" onPointerDown={getHeaderPointerDownHandler(data)}>
@@ -900,6 +915,14 @@ const ProjectGraphCanvasInner = ({
   const displayedProjectName = projectName?.trim() || 'Untitled project';
   const participantsToShow = participants.length > 0 ? participants : [{ id: 'local', username: 'You' }];
   const shouldTrackViewportLive = shouldTrackProjectGraphViewportLive(remoteCursors.length);
+  const lodLevel = getProjectGraphLodLevel(viewport.zoom);
+  const canvasClassName = [
+    'project-graph-canvas',
+    `project-graph-canvas--lod-${lodLevel}`,
+    className,
+  ]
+    .filter(Boolean)
+    .join(' ');
   const remoteCursorViews = useMemo(
     () =>
       remoteCursors.map((cursor) => ({
@@ -1119,7 +1142,7 @@ const ProjectGraphCanvasInner = ({
 
   return (
     <div
-      className={className ? `project-graph-canvas ${className}` : 'project-graph-canvas'}
+      className={canvasClassName}
       onMouseMove={handleCanvasMouseMove}
       ref={canvasRef}
     >
@@ -1451,6 +1474,8 @@ const ProjectGraphCanvasInner = ({
             <strong>
               z {viewport.zoom.toFixed(2)} / {Math.round(devMetrics.flowRect.width)}x{Math.round(devMetrics.flowRect.height)}
             </strong>
+            <span>LOD</span>
+            <strong>{lodLevel}</strong>
             <span>Derived edges</span>
             <strong>{derivedEdgeCount}</strong>
             <span>Animated edges</span>

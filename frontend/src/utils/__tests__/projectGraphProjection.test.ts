@@ -7,6 +7,7 @@ import {
   expandAncestorFramesForMovedNodes,
   findProjectGraphNodeAtCanvasPoint,
   getProjectGraphHeaderDragGroupIds,
+  getProjectGraphLodLevel,
   projectGraphNodeTypes,
   shouldTrackProjectGraphViewportLive,
   summarizeProjectGraphFrameMetrics,
@@ -54,6 +55,16 @@ const projectionEdgesByKind = (projection: ReturnType<typeof projectGraphToReact
 const labelFrameContentTop = 72;
 
 describe('relation-aware label frame packing helpers', () => {
+  it('maps zoom to stable canvas LOD buckets', () => {
+    expect(getProjectGraphLodLevel(0.8)).toBe('full');
+    expect(getProjectGraphLodLevel(0.55)).toBe('full');
+    expect(getProjectGraphLodLevel(0.4)).toBe('compact');
+    expect(getProjectGraphLodLevel(0.25)).toBe('compact');
+    expect(getProjectGraphLodLevel(0.18)).toBe('bars');
+    expect(getProjectGraphLodLevel(0.12)).toBe('bars');
+    expect(getProjectGraphLodLevel(0.08)).toBe('map');
+  });
+
   it('tracks viewport live only when remote cursor projection needs it', () => {
     expect(shouldTrackProjectGraphViewportLive(0)).toBe(false);
     expect(shouldTrackProjectGraphViewportLive(1)).toBe(true);

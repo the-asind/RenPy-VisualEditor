@@ -4,6 +4,30 @@ This file is the short project memory for RenPy Visual Editor 2.0. Keep it curre
 
 ## 2026-06-01
 
+### Zoom LOD Text Simplification
+
+Added zoom-based visual level-of-detail classes for the ProjectGraph canvas.
+
+Files:
+
+1. `frontend/src/components/projectGraph/ProjectGraphCanvas.tsx`
+2. `frontend/src/components/projectGraph/ProjectGraphCanvas.css`
+3. `frontend/src/utils/__tests__/projectGraphProjection.test.ts`
+4. `UPDATES.md`
+
+Result:
+
+1. The canvas now maps zoom to stable LOD buckets: `full`, `compact`, `bars`, and `map`.
+2. The root canvas receives `project-graph-canvas--lod-*` classes so LOD changes are CSS-driven instead of rebuilding ProjectGraph or React Flow nodes.
+3. At lower zoom levels, unreadable node text is replaced with horizontal bar skeletons; at map zoom, node body text is hidden and nodes render as simpler colored blocks.
+4. The dev performance overlay reports the active LOD bucket.
+
+Checks:
+
+1. Added helper coverage for zoom-to-LOD bucket thresholds.
+2. `npm test -- --run src/utils/__tests__/projectGraphProjection.test.ts` passed with 42 tests.
+3. `npm run build` passed with known non-blocking Vite/env.js, Browserslist, and large Loro chunk warnings.
+
 ### Pan-path Viewport State Throttling
 
 Reduced React work during canvas panning by avoiding live viewport state updates when they are not needed.

@@ -238,6 +238,66 @@
   -webkit-line-clamp: 3;
 }
 
+.project-graph-canvas--lod-compact .pg-node--scenario .pg-node__content,
+.project-graph-canvas--lod-compact .pg-node--label-start .pg-node__content,
+.project-graph-canvas--lod-bars .pg-node__title,
+.project-graph-canvas--lod-bars .pg-node__content,
+.project-graph-canvas--lod-map .pg-node__eyebrow,
+.project-graph-canvas--lod-map .pg-node__title,
+.project-graph-canvas--lod-map .pg-node__content {
+  display: block;
+  overflow: hidden;
+  border-radius: 999px;
+  color: transparent;
+  font-size: 0;
+  line-height: 0;
+  text-overflow: clip;
+  white-space: nowrap;
+}
+
+.project-graph-canvas--lod-compact .pg-node--scenario .pg-node__content,
+.project-graph-canvas--lod-compact .pg-node--label-start .pg-node__content {
+  min-height: 30px;
+  background:
+    linear-gradient(90deg, rgba(100, 116, 139, 0.36), rgba(100, 116, 139, 0.2)) 0 2px / 76% 5px no-repeat,
+    linear-gradient(90deg, rgba(100, 116, 139, 0.26), rgba(100, 116, 139, 0.14)) 0 13px / 88% 5px no-repeat,
+    linear-gradient(90deg, rgba(100, 116, 139, 0.2), rgba(100, 116, 139, 0.1)) 0 24px / 52% 5px no-repeat;
+}
+
+.project-graph-canvas--lod-bars .pg-node__title,
+.project-graph-canvas--lod-map .pg-node__title {
+  width: min(80%, 220px);
+  min-height: 9px;
+  background: linear-gradient(90deg, rgba(15, 23, 42, 0.48), rgba(15, 23, 42, 0.24));
+}
+
+.project-graph-canvas--lod-bars .pg-node__content {
+  min-height: 22px;
+  margin-top: 7px;
+  background:
+    linear-gradient(90deg, rgba(100, 116, 139, 0.34), rgba(100, 116, 139, 0.16)) 0 0 / 84% 5px no-repeat,
+    linear-gradient(90deg, rgba(100, 116, 139, 0.24), rgba(100, 116, 139, 0.12)) 0 12px / 58% 5px no-repeat;
+}
+
+.project-graph-canvas--lod-map .pg-node__body {
+  display: none;
+}
+
+.project-graph-canvas--lod-map .pg-node__eyebrow {
+  width: 44px;
+  min-height: 5px;
+  background: rgba(100, 116, 139, 0.38);
+}
+
+.project-graph-canvas--lod-map .pg-node__drag-handle {
+  min-height: 18px;
+  padding: 6px 10px;
+}
+
+.project-graph-canvas--lod-map .pg-node {
+  box-shadow: none;
+}
+
 .pg-node__handle {
   width: 9px;
   height: 9px;
