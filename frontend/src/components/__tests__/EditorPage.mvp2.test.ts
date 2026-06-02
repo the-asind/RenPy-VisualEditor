@@ -90,10 +90,10 @@ describe('EditorPage MVP 2.0 isolation', () => {
     expect(source).toContain('reactFlowInstance?.zoomOut');
     expect(source).toContain('reactFlowInstance?.zoomIn');
     expect(source).toContain('isMinimapVisible');
-    expect(source).toContain('getProjectGraphMinimapNodeColor');
-    expect(source).toContain('getProjectGraphMinimapNodeStrokeColor');
-    expect(source).toContain('nodeColor={getProjectGraphMinimapNodeColor}');
-    expect(source).toContain('nodeStrokeColor={getProjectGraphMinimapNodeStrokeColor}');
+    expect(source).toContain('ProjectGraphStaticMiniMap');
+    expect(source).toContain('buildProjectGraphStaticMiniMapModel');
+    expect(source).toContain('project-graph-canvas__minimap-frame--${frame.type}');
+    expect(styles).toContain('project-graph-canvas__minimap-frame--labelFrame');
     expect(styles).toContain('bottom: 78px;');
     expect(source).not.toContain('<Controls showInteractive={false} />');
   });

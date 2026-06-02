@@ -2,7 +2,141 @@
 
 This file is the short project memory for RenPy Visual Editor 2.0. Keep it current when closing master items, changing decisions, or classifying old code.
 
+## 2026-06-03
+
+### Client-first Scenario Text Editing
+
+Changed the compact Inspector text edit path so local keystrokes appear before the full ProjectGraph projection catches up.
+
+Files:
+
+1. `frontend/src/components/projectGraph/ProjectGraphCanvas.tsx`
+2. `frontend/src/components/EditorPage.tsx`
+3. `frontend/src/utils/__tests__/projectGraphProjection.test.ts`
+4. `UPDATES.md`
+
+Result:
+
+1. Added a local scenario content draft overlay for the selected Inspector field.
+2. The textarea now displays the draft immediately while still sending edits through the existing CRDT-backed `onScenarioContentChange` path.
+3. The draft clears when the authoritative CRDT graph projection catches up or when selection changes.
+4. `EditorPage` applies full graph projection updates in a React transition so canvas re-projection has lower priority than text input.
+5. Server behavior is unchanged: binary Loro updates are still relayed opaquely, and snapshot persistence remains debounced.
+
+Checks:
+
+1. Added helper coverage proving local draft text remains visible before graph projection catch-up.
+2. `npm test -- --run src/utils/__tests__/projectGraphProjection.test.ts` passed with 51 tests.
+3. `npm test -- --run src/components/__tests__/EditorPage.mvp2.test.ts` passed with 7 tests.
+
+### Action Editor Interface Artifact
+
+Added a product and UX artifact for the fullscreen Action node writing room.
+
+Files:
+
+1. `docs/action-editor-interface.md`
+2. `artifacts/action-editor-interface-mockup.jpg`
+3. `UPDATES.md`
+
+Result:
+
+1. Captured the edited mockup direction: large writing surface over the canvas, breadcrumb-integrated editable node title, Writer view / Raw Ren'Py switch, autosave with undo/redo, right-side scene preview, audio state, and Next actions.
+2. Defined ideal behavior for dialogue-first editing, inline Ren'Py text tag toolbar, structured scene/audio command rows, raw mode, autosave, undo/redo, collaboration awareness, keyboard shortcuts, and Next graph-node creation.
+3. Documented MVP and post-MVP boundaries plus a black-box test plan.
+4. Follow-up clarified Raw Ren'Py mode: it uses the full editor body width, hides Scene preview/Audio/Next, preserves cursor location between Writer and Raw modes as closely as possible, and intercepts structural statements such as `menu:`, `if`, `jump`, `call`, and `return` so they become graph nodes instead of hidden Action text.
+5. Code was not changed.
+
+### Collaboration Awareness Proposal
+
+Added a design artifact for improving multiplayer awareness beyond the current remote cursor relay.
+
+Files:
+
+1. `docs/collaboration-awareness-proposal.md`
+2. `UPDATES.md`
+
+Result:
+
+1. Documented that awareness state must remain adjacent to Loro and outside the durable ProjectGraph CRDT document.
+2. Captured the current gap: active users and cursors exist, but there is no first-class awareness lifecycle, typed protocol, selection state, real activity semantics, TTL cleanup, or visual editing presence.
+3. Proposed a typed `presence:*` protocol, backend room awareness state, frontend `projectGraphAwareness` module, UI rules, test plan, and migration sprints.
+4. Code was not changed.
+
+## 2026-06-02
+
+### Soft Jump/Call Relation Curves
+
+Changed `jump`/`call` relation edges from React Flow smooth-step broken lines into a single soft curve.
+
+Files:
+
+1. `frontend/src/components/projectGraph/ProjectGraphCanvas.tsx`
+2. `frontend/src/components/projectGraph/ProjectGraphCanvas.css`
+3. `frontend/src/utils/projectGraphProjection.ts`
+4. `frontend/src/utils/__tests__/projectGraphProjection.test.ts`
+5. `docs/editor-2.0-architecture.md`
+6. `UPDATES.md`
+
+Result:
+
+1. Added `relationCurve` custom edge based on `BaseEdge`.
+2. Added `buildSoftRelationPath()` for one cubic SVG path between relation source and target.
+3. `jump`/`call` relation edges now use `type: "relationCurve"` instead of `smoothstep`.
+4. Relation edges receive `project-edge--relation` and rounded path caps/joins.
+5. Frame nodes project at `zIndex: 0`, relation edges at `zIndex: 2`, and label/scenario nodes at `zIndex: 5`, so dotted relation hints draw above frames but below editable nodes.
+
+Checks:
+
+1. Added black-box coverage for relation edge type/class/z-layer.
+2. Added path coverage proving relation hints are one cubic curve without line segments.
+3. `npm test -- --run src/utils/__tests__/projectGraphProjection.test.ts` passed with 50 tests.
+4. `npm run build` passed with known non-blocking Vite/env.js, Browserslist, and large chunk warnings.
+5. `npm test -- --run` still has 2 existing `EditorPage.mvp2.test.ts` source-contract failures for stale canvas shell expectations (`openSearchPopover` and old minimap color helper names); the focused ProjectGraph relation tests pass.
+
 ## 2026-06-01
+
+### Dev Performance Isolation Controls
+
+Added in-panel dev controls for isolating render bottlenecks during canvas pan and zoom analysis.
+
+Files:
+
+1. `.gitignore`
+2. `frontend/src/components/projectGraph/ProjectGraphCanvas.tsx`
+3. `frontend/src/components/projectGraph/ProjectGraphCanvas.css`
+4. `frontend/src/utils/__tests__/projectGraphProjection.test.ts`
+5. `docs/project-graph-performance-devtools.md`
+6. `UPDATES.md`
+
+Result:
+
+1. The `devPerf=1` overlay now has direct toggles for visible-only rendering, edges, derived edges, MiniMap, background, node body, node effects, and text LOD.
+2. Dev edge toggles alter only the React Flow projection payload used for rendering; ProjectGraph and CRDT state remain unchanged.
+3. FPS diagnostics are split by interaction phase: idle, pan, zoom, and node drag.
+4. The overlay reports active phase, pan FPS, pan long frames, and idle/zoom/drag FPS so pan-specific jank can be measured separately from static FPS.
+5. LOD and `Node body` isolation now replace top node labels such as `ACTION` with simple text-colored bars instead of leaving readable names.
+6. React Flow handle circles are visually hidden to remove their paint cost while keeping handle anchors available for edge routing.
+7. Canvas edges keep their lines and show arrow markers in close LODs; distant `bars`/`map` LODs drop arrow markers and edge hit-test width to reduce SVG pan work without changing ProjectGraph relations.
+8. The canvas now uses a lightweight static SVG minimap that renders only file and label frames instead of React Flow's full node minimap, so minimap rendering no longer subscribes to every React Flow pan frame.
+9. Distant `bars`/`map` LODs now replace full node DOM with a simple same-size rectangle and mock text lines instead of rendering separate header/body text containers.
+10. `devPerf=1` now has an `Auto light` mode that raises a DEV-only adaptive light level during slow pan samples: simple nodes first, then edge marker/hit-width simplification, then derived-edge hiding.
+11. File and label frames are excluded from full simple-node replacement so distant LODs keep only a narrow mock header and do not render phantom body text across frame interiors.
+12. Distant `bars`/`map` edge LOD now hides straight derived sequence edges while preserving branch, relation, and routed edges with turns.
+13. Added `docs/project-graph-performance-devtools.md` as the technical reference for the diagnostics, LOD, minimap, edge, and adaptive-light behavior.
+14. Added a narrow `.gitignore` exception so this new docs artifact is visible to Git even though the repository has a broad `docs/` ignore rule.
+
+Checks:
+
+1. Added helper coverage for dev edge kill switches.
+2. Added helper coverage for per-phase frame metric summarization.
+3. Added helper coverage for LOD-only edge arrow simplification and static frame-only minimap modeling.
+4. Added helper coverage for simple-node LOD selection and DEV adaptive light level progression.
+5. Added coverage that file and label frames do not use simple-node replacement in distant LODs.
+6. Added coverage that distant LOD filters only straight sequence edges.
+7. Documentation-only update for the new artifact after the last code/build pass.
+8. `npm test -- --run src/utils/__tests__/projectGraphProjection.test.ts` passed with 49 tests before the documentation artifact was added.
+9. `npm run build` passed with known non-blocking Vite/env.js, Browserslist, and large Loro chunk warnings before the documentation artifact was added.
 
 ### Zoom LOD Text Simplification
 
@@ -210,6 +344,37 @@ Follow-up:
 11. `npm test -- --run src/components/__tests__/EditorPage.mvp2.test.ts` passed with 6 tests.
 12. `npm run build` passed with known non-blocking Vite/env.js, Browserslist, and large Loro chunk warnings.
 13. `npm run test:e2e -- --grep "canvas export UX"` passed.
+
+### Canvas Interface Sprint 6 Search And Invite Popovers
+
+Continued the canvas interface roadmap with Sprint 6 and a visual polish pass for the top-right collaboration controls.
+
+Files:
+
+1. `frontend/src/components/projectGraph/ProjectGraphCanvas.tsx`
+2. `frontend/src/components/projectGraph/ProjectGraphCanvas.css`
+3. `frontend/src/components/__tests__/EditorPage.mvp2.test.ts`
+4. `frontend/e2e/project-graph-collaboration.spec.ts`
+5. `frontend/src/e2e/project-graph-export-ux.tsx`
+6. `artifacts/canvas-ui-sprint6-top-actions.png`
+7. `UPDATES.md`
+
+Result:
+
+1. Added shared popover behavior for top-right and bottom-right floating panels: Escape closes open panels, outside pointer-down closes open panels, and Ctrl/Cmd+K opens search.
+2. Search and Invite now close competing popovers instead of allowing stacked overlays.
+3. Replaced temporary top-right glyph/text controls with MUI icons for search and invite people.
+4. Replaced temporary bottom toolbar glyphs with MUI icons for warning, connection, zoom, help, and minimap toggle while keeping `Frames` as the explicit text command.
+5. Participant avatars now render as colored initials with white rings and overlap, making current users readable instead of one black character.
+6. Updated the e2e harness to show multiple participants and remote cursors for visual review.
+7. Visual screenshot review confirmed the top-right group reads as one compact surface with search, participants, and invite, and the minimap remains above the toolbar without overlap.
+
+Checks:
+
+1. `npm test -- --run src/components/__tests__/EditorPage.mvp2.test.ts` passed with 7 tests.
+2. `npm run test:e2e -- --grep "canvas top-right actions|canvas export UX"` passed with 2 Playwright tests.
+3. `npm run build` passed with known non-blocking Vite/env.js, Browserslist, and large Loro chunk warnings.
+4. Outside-sandbox Playwright visual check saved `artifacts/canvas-ui-sprint6-top-actions.png`.
 
 ### Canvas Interface Implementation Plan
 

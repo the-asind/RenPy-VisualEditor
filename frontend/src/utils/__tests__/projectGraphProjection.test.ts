@@ -1,15 +1,26 @@
 import { describe, expect, it } from 'vitest';
 import {
+  applyProjectGraphEdgeLod,
   applySelectedDashedEdgeAnimation,
+  buildProjectGraphStaticMiniMapModel,
   buildNestedDragPreviewNodes,
   buildNearTargetStepPath,
+  buildSoftRelationPath,
   calculateProjectGraphViewportMetrics,
   expandAncestorFramesForMovedNodes,
   findProjectGraphNodeAtCanvasPoint,
+  getDefaultProjectGraphDevRenderToggles,
+  getNextProjectGraphAdaptiveLightLevel,
   getProjectGraphHeaderDragGroupIds,
   getProjectGraphLodLevel,
+  getProjectGraphRenderEdges,
+  getProjectGraphScenarioContentEditorValue,
   projectGraphNodeTypes,
+  reconcileProjectGraphScenarioContentDraft,
+  shouldHideProjectGraphEdgeInLod,
   shouldTrackProjectGraphViewportLive,
+  shouldRenderProjectGraphSimpleNodes,
+  summarizeProjectGraphPhaseFrameMetrics,
   summarizeProjectGraphFrameMetrics,
 } from '../../components/projectGraph/ProjectGraphCanvas';
 import {
@@ -55,6 +66,161 @@ const projectionEdgesByKind = (projection: ReturnType<typeof projectGraphToReact
 const labelFrameContentTop = 72;
 
 describe('relation-aware label frame packing helpers', () => {
+  it('keeps scenario editor keystrokes visible before the CRDT graph projection catches up', () => {
+    const draft = {
+      nodeId: 'node-intro',
+      content: 'r "RenPy Mouse sees the typed letter immediately."',
+    };
+
+    expect(getProjectGraphScenarioContentEditorValue('node-intro', 'r "Old projected graph text."', draft)).toBe(
+      'r "RenPy Mouse sees the typed letter immediately."',
+    );
+    expect(getProjectGraphScenarioContentEditorValue('node-other', 'r "Other node authoritative text."', draft)).toBe(
+      'r "Other node authoritative text."',
+    );
+    expect(reconcileProjectGraphScenarioContentDraft('node-intro', draft.content, draft)).toBeNull();
+    expect(reconcileProjectGraphScenarioContentDraft('node-intro', 'r "Old projected graph text."', draft)).toEqual(
+      draft,
+    );
+    expect(reconcileProjectGraphScenarioContentDraft('node-other', 'r "Other node authoritative text."', draft)).toBeNull();
+  });
+
+  it('filters render edges through dev-only kill switches', () => {
+    const edges = [
+      { id: 'derived-sequence', source: 'a', target: 'b', data: { derived: true } },
+      { id: 'relation-jump', source: 'b', target: 'c', data: { derived: false } },
+    ];
+    const toggles = getDefaultProjectGraphDevRenderToggles();
+
+    expect(getProjectGraphRenderEdges(edges as never, { ...toggles, derivedEdges: false }, true).map((edge) => edge.id)).toEqual([
+      'relation-jump',
+    ]);
+    expect(getProjectGraphRenderEdges(edges as never, { ...toggles, edges: false }, true)).toEqual([]);
+    expect(getProjectGraphRenderEdges(edges as never, { ...toggles, edges: false, derivedEdges: false }, false)).toHaveLength(2);
+  });
+
+  it('keeps edge arrow markers until distant LOD hides them', () => {
+    const edges = [
+      { id: 'edge', source: 'a', target: 'b', markerEnd: { type: 'arrowclosed' }, interactionWidth: 10 },
+    ];
+
+    expect(applyProjectGraphEdgeLod(edges as never, 'full')[0]).toBe(edges[0]);
+    expect(applyProjectGraphEdgeLod(edges as never, 'compact')[0]).toBe(edges[0]);
+    expect(applyProjectGraphEdgeLod(edges as never, 'bars')[0]).toMatchObject({
+      markerEnd: undefined,
+      interactionWidth: 0,
+    });
+    expect(applyProjectGraphEdgeLod(edges as never, 'map')[0]).toMatchObject({
+      markerEnd: undefined,
+      interactionWidth: 0,
+    });
+  });
+
+  it('hides straight sequence edges only in distant LODs', () => {
+    const straightSequence = { id: 'straight-sequence', source: 'a', target: 'b', type: 'straight', data: { kind: 'sequence' } };
+    const straightBranch = { id: 'straight-branch', source: 'b', target: 'c', type: 'straight', data: { kind: 'branch' } };
+    const steppedSequence = { id: 'stepped-sequence', source: 'c', target: 'd', type: 'nearTargetStep', data: { kind: 'sequence' } };
+
+    expect(shouldHideProjectGraphEdgeInLod(straightSequence as never, 'compact')).toBe(false);
+    expect(shouldHideProjectGraphEdgeInLod(straightSequence as never, 'bars')).toBe(true);
+    expect(shouldHideProjectGraphEdgeInLod(straightBranch as never, 'bars')).toBe(false);
+    expect(shouldHideProjectGraphEdgeInLod(steppedSequence as never, 'bars')).toBe(false);
+    expect(
+      applyProjectGraphEdgeLod([straightSequence, straightBranch, steppedSequence] as never, 'bars').map((edge) => edge.id),
+    ).toEqual(['straight-branch', 'stepped-sequence']);
+  });
+
+  it('renders simple mock nodes for distant LODs and adaptive light levels', () => {
+    expect(shouldRenderProjectGraphSimpleNodes('full', 0)).toBe(false);
+    expect(shouldRenderProjectGraphSimpleNodes('compact', 0)).toBe(false);
+    expect(shouldRenderProjectGraphSimpleNodes('bars', 0)).toBe(true);
+    expect(shouldRenderProjectGraphSimpleNodes('map', 0)).toBe(true);
+    expect(shouldRenderProjectGraphSimpleNodes('full', 1)).toBe(true);
+    expect(shouldRenderProjectGraphSimpleNodes('bars', 1, 'projectFrame')).toBe(false);
+    expect(shouldRenderProjectGraphSimpleNodes('bars', 1, 'labelFrame')).toBe(false);
+    expect(shouldRenderProjectGraphSimpleNodes('bars', 1, 'scenarioNode')).toBe(true);
+  });
+
+  it('raises dev adaptive light level only when pan frames are slow with enough visible nodes', () => {
+    const slowPan = {
+      fps: 18,
+      averageFrameMs: 55,
+      maxFrameMs: 80,
+      longFrameCount: 4,
+      sampleFrames: 8,
+      sampleDurationMs: 440,
+    };
+    const smoothPan = {
+      fps: 60,
+      averageFrameMs: 16,
+      maxFrameMs: 18,
+      longFrameCount: 0,
+      sampleFrames: 10,
+      sampleDurationMs: 166,
+    };
+
+    expect(getNextProjectGraphAdaptiveLightLevel(0, 'pan', slowPan, 240)).toBe(1);
+    expect(getNextProjectGraphAdaptiveLightLevel(1, 'pan', slowPan, 240)).toBe(2);
+    expect(getNextProjectGraphAdaptiveLightLevel(2, 'pan', slowPan, 240)).toBe(3);
+    expect(getNextProjectGraphAdaptiveLightLevel(3, 'pan', slowPan, 240)).toBe(3);
+    expect(getNextProjectGraphAdaptiveLightLevel(2, 'idle', slowPan, 240)).toBe(2);
+    expect(getNextProjectGraphAdaptiveLightLevel(0, 'pan', slowPan, 40)).toBe(0);
+    expect(getNextProjectGraphAdaptiveLightLevel(2, 'pan', smoothPan, 240)).toBe(1);
+  });
+
+  it('builds a static minimap model from frames and subframes only', () => {
+    const model = buildProjectGraphStaticMiniMapModel(
+      [
+        {
+          id: 'file',
+          type: 'projectFrame',
+          position: { x: 0, y: 0 },
+          width: 600,
+          height: 400,
+          data: {},
+        },
+        {
+          id: 'label',
+          type: 'labelFrame',
+          parentId: 'file',
+          position: { x: 100, y: 80 },
+          width: 260,
+          height: 160,
+          data: {},
+        },
+        {
+          id: 'scenario',
+          type: 'scenarioNode',
+          parentId: 'label',
+          position: { x: 20, y: 40 },
+          width: 200,
+          height: 80,
+          data: {},
+        },
+      ] as never,
+      { x: 0, y: 0, zoom: 1 },
+      { width: 800, height: 600 },
+    );
+
+    expect(model.frames.map((frame) => frame.id)).toEqual(['file', 'label']);
+    expect(model.viewportRect).toEqual(expect.objectContaining({ id: 'viewport', type: 'viewport' }));
+  });
+
+  it('summarizes frame samples by interaction phase', () => {
+    const metrics = summarizeProjectGraphPhaseFrameMetrics({
+      idle: [16, 17],
+      pan: [50, 75],
+      zoom: [33],
+      nodeDrag: [],
+    });
+
+    expect(metrics.idle.fps).toBeCloseTo(60.61, 2);
+    expect(metrics.pan.longFrameCount).toBe(2);
+    expect(metrics.pan.averageFrameMs).toBe(62.5);
+    expect(metrics.zoom.fps).toBeCloseTo(30.3, 1);
+    expect(metrics.nodeDrag.sampleFrames).toBe(0);
+  });
+
   it('maps zoom to stable canvas LOD buckets', () => {
     expect(getProjectGraphLodLevel(0.8)).toBe('full');
     expect(getProjectGraphLodLevel(0.55)).toBe('full');
@@ -1135,6 +1301,10 @@ describe('projectGraphToReactFlow static projection', () => {
         original: expect.objectContaining({ parent_node_id: 'node-menu-choice' }),
       }),
     });
+    expect(byId.get('file-day-1')?.zIndex).toBe(0);
+    expect(byId.get('label-start')?.zIndex).toBe(0);
+    expect(byId.get('start-node-start')?.zIndex).toBe(5);
+    expect(byId.get('node-dialogue-1')?.zIndex).toBe(5);
 
     const frameIds = new Set(
       projection.nodes
@@ -1149,15 +1319,15 @@ describe('projectGraphToReactFlow static projection', () => {
         id: 'edge-dialogue-jump-start',
         source: 'node-dialogue-1',
         target: 'start-node-start',
-        type: 'smoothstep',
+        type: 'relationCurve',
         animated: false,
-        className: 'project-edge project-edge--jump',
+        className: 'project-edge project-edge--relation project-edge--jump',
         data: expect.objectContaining({ kind: 'jump' }),
         markerEnd: { type: 'arrowclosed' },
         selectable: false,
         focusable: false,
         interactionWidth: 10,
-        zIndex: 3,
+        zIndex: 2,
         sourceHandle: 'relation-out',
         targetHandle: 'flow-in',
         style: expect.objectContaining({ opacity: 0.34, strokeWidth: 1.8, strokeDasharray: '6 8' }),
@@ -1166,14 +1336,15 @@ describe('projectGraphToReactFlow static projection', () => {
         id: 'edge-call-local-start',
         source: 'node-call-local',
         target: 'start-node-shared-nook',
-        type: 'smoothstep',
+        type: 'relationCurve',
         animated: false,
-        className: 'project-edge project-edge--call',
+        className: 'project-edge project-edge--relation project-edge--call',
         data: expect.objectContaining({ kind: 'call' }),
+        markerEnd: { type: 'arrowclosed' },
         selectable: false,
         focusable: false,
         interactionWidth: 10,
-        zIndex: 3,
+        zIndex: 2,
         sourceHandle: 'relation-out',
         targetHandle: 'flow-in',
         style: expect.objectContaining({ opacity: 0.38, strokeWidth: 1.8, strokeDasharray: '5 7' }),
@@ -1181,7 +1352,7 @@ describe('projectGraphToReactFlow static projection', () => {
     ]);
   });
 
-  it('projects sequence and branch arrows for conditional story trees', () => {
+  it('projects sequence and branch edges for conditional story trees', () => {
     const conditionalGraph: ProjectGraphSnapshot = {
       ...graph,
       labels: [
@@ -2261,6 +2432,18 @@ describe('projectGraphToReactFlow static projection', () => {
     expect(sourceVerticalPath).toBe('M 120 80 L 120 496 L 640 496 L 640 520');
   });
 
+  it('builds jump and call relation paths as one soft curve', () => {
+    const path = buildSoftRelationPath({
+      sourceX: 120,
+      sourceY: 80,
+      targetX: 640,
+      targetY: 520,
+    });
+
+    expect(path).toBe('M 120 80 C 286.4 80 640 396.8 640 520');
+    expect(path).not.toContain(' L ');
+  });
+
   it('normalizes overlapping layout and expands parent frames around children', () => {
     const overlappingGraph: ProjectGraphSnapshot = {
       project_id: 'overlap-project',
@@ -3318,8 +3501,8 @@ describe('projectGraphToReactFlow static projection', () => {
       }),
     });
     expect(relationEdges.map((edge) => [edge.id, edge.source, edge.target, edge.className])).toEqual([
-      ['edge-call-nook', 'node-call-nook', 'start-node-shared-nook', 'project-edge project-edge--call'],
-      ['edge-jump-day-two', 'node-jump-day-two', 'start-node-day-two', 'project-edge project-edge--jump'],
+      ['edge-call-nook', 'node-call-nook', 'start-node-shared-nook', 'project-edge project-edge--relation project-edge--call'],
+      ['edge-jump-day-two', 'node-jump-day-two', 'start-node-day-two', 'project-edge project-edge--relation project-edge--jump'],
     ]);
 
     expect(searchProjectGraph(fullGraph, 'cheese arrow')).toEqual([

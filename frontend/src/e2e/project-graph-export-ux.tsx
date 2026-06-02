@@ -7,6 +7,7 @@ import type { ProjectGraphSnapshot } from '../utils/projectGraphProjection';
 declare global {
   interface Window {
     resolveExport?: () => void;
+    lastInviteTarget?: string;
   }
 }
 
@@ -86,7 +87,30 @@ const Harness = () => {
       exportedFiles={files}
       exportStatus={status}
       graph={graph}
+      participants={[
+        { id: 'local', username: 'You' },
+        { id: 'u-lena', username: 'Lena Petrova' },
+        { id: 'u-max', username: 'Max Chen' },
+      ]}
+      projectName="RenPy Mouse Project"
+      remoteCursors={[
+        {
+          userId: 'u-lena',
+          username: 'Lena',
+          activity: 'editing start',
+          position: { x: 420, y: 260 },
+        },
+        {
+          userId: 'u-max',
+          username: 'Max',
+          activity: 'viewing dialogue',
+          position: { x: 690, y: 420 },
+        },
+      ]}
       onExportProjectGraph={exportProject}
+      onInviteUser={(target) => {
+        window.lastInviteTarget = target;
+      }}
     />
   );
 };

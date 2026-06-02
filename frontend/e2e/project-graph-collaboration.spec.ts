@@ -11,6 +11,7 @@ declare global {
       move(entityId: string, position: { x: number; y: number }): void;
     };
     resolveExport?: () => void;
+    lastInviteTarget?: string;
   }
 }
 
@@ -136,6 +137,32 @@ test('canvas export UX shows status, returned filenames, and normalized content'
   await expect(exportResults.getByText('renpy_mouse_day_2.rpy')).toBeVisible();
   await expect(exportResults.getByText('label start:')).toBeVisible();
   await expect(exportResults.getByText('r "RenPy Mouse previews exported files."')).toBeVisible();
+
+  await page.close();
+});
+
+test('canvas top-right actions use dismissible search and invite popovers', async ({ page }) => {
+  await page.goto('/e2e/project-graph-export-ux.html');
+
+  const searchButton = page.getByRole('button', { name: 'Open node search' });
+  await expect(searchButton).toBeVisible();
+  await searchButton.click();
+  await expect(page.getByLabel('Search nodes')).toBeVisible();
+
+  await page.keyboard.press('Escape');
+  await expect(page.getByLabel('Search nodes')).toBeHidden();
+
+  await page.getByRole('button', { name: 'Invite people' }).click();
+  await expect(page.getByText('Invite people', { exact: true })).toBeVisible();
+  await page.getByPlaceholder('teammate@example.com').fill('writer@example.com');
+  await page.getByRole('button', { name: 'Send invite' }).click();
+  await expect(page.getByText('Invite people', { exact: true })).toBeHidden();
+  await expect.poll(() => page.evaluate(() => window.lastInviteTarget)).toBe('writer@example.com');
+
+  await page.keyboard.press(process.platform === 'darwin' ? 'Meta+K' : 'Control+K');
+  await expect(page.getByLabel('Search nodes')).toBeVisible();
+  await page.mouse.click(100, 160);
+  await expect(page.getByLabel('Search nodes')).toBeHidden();
 
   await page.close();
 });

@@ -70,7 +70,9 @@
   pointer-events: auto !important;
 }
 
-.project-graph-canvas .react-flow__minimap.project-graph-canvas__minimap {
+.project-graph-canvas__minimap {
+  position: absolute;
+  z-index: 9;
   right: 16px;
   bottom: 78px;
   width: 172px;
@@ -81,6 +83,36 @@
   box-shadow: 0 14px 34px rgba(15, 23, 42, 0.1);
   opacity: 0.86;
   overflow: hidden;
+  pointer-events: none;
+}
+
+.project-graph-canvas__minimap-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.project-graph-canvas__minimap-frame {
+  vector-effect: non-scaling-stroke;
+}
+
+.project-graph-canvas__minimap-frame--projectFrame {
+  fill: rgba(226, 232, 240, 0.48);
+  stroke: rgba(15, 23, 42, 0.18);
+  stroke-width: 1;
+}
+
+.project-graph-canvas__minimap-frame--labelFrame {
+  fill: rgba(153, 246, 228, 0.28);
+  stroke: rgba(13, 148, 136, 0.54);
+  stroke-width: 0.8;
+}
+
+.project-graph-canvas__minimap-viewport {
+  fill: rgba(37, 99, 235, 0.08);
+  stroke: rgba(37, 99, 235, 0.72);
+  stroke-width: 1.2;
+  vector-effect: non-scaling-stroke;
 }
 
 .pg-node {
@@ -120,6 +152,59 @@
   --pg-accent: rgba(100, 116, 139, 0.36);
   border-color: rgba(100, 116, 139, 0.36);
   background: #ffffff;
+}
+
+.pg-node--mock {
+  border-radius: 0;
+  background: #ffffff;
+  box-shadow: none;
+}
+
+.pg-node--mock.pg-node--file {
+  background: #eff6ff;
+}
+
+.pg-node--mock.pg-node--label-frame {
+  background: #f0fdfa;
+}
+
+.pg-node--mock.pg-node--label-start {
+  background: #ecfeff;
+}
+
+.pg-node--mock .pg-node__mock-hit {
+  display: flex;
+  height: 100%;
+  min-height: 100%;
+  flex-direction: column;
+  justify-content: center;
+  gap: 7px;
+  border-bottom: 0;
+  padding: 10px 12px;
+}
+
+.pg-node__mock-line {
+  display: block;
+  height: 5px;
+  border-radius: 0;
+  background: #64748b;
+}
+
+.pg-node__mock-line--title {
+  width: 32%;
+  background: #0f172a;
+}
+
+.pg-node__mock-line--long {
+  width: 72%;
+}
+
+.pg-node__mock-line--short {
+  width: 48%;
+}
+
+.pg-node__frame-mock {
+  display: none;
 }
 
 .pg-node--scenario[data-scenario-type="menu"],
@@ -242,6 +327,7 @@
 .project-graph-canvas--lod-compact .pg-node--label-start .pg-node__content,
 .project-graph-canvas--lod-bars .pg-node__title,
 .project-graph-canvas--lod-bars .pg-node__content,
+.project-graph-canvas--lod-bars .pg-node__eyebrow,
 .project-graph-canvas--lod-map .pg-node__eyebrow,
 .project-graph-canvas--lod-map .pg-node__title,
 .project-graph-canvas--lod-map .pg-node__content {
@@ -253,6 +339,15 @@
   line-height: 0;
   text-overflow: clip;
   white-space: nowrap;
+}
+
+.project-graph-canvas--lod-bars .pg-node__eyebrow,
+.project-graph-canvas--lod-map .pg-node__eyebrow,
+.project-graph-canvas--dev-hide-node-body .pg-node__eyebrow {
+  width: 44px;
+  min-height: 6px;
+  margin-bottom: 0;
+  background: #64748b;
 }
 
 .project-graph-canvas--lod-compact .pg-node--scenario .pg-node__content,
@@ -283,19 +378,79 @@
   display: none;
 }
 
-.project-graph-canvas--lod-map .pg-node__eyebrow {
-  width: 44px;
-  min-height: 5px;
-  background: rgba(100, 116, 139, 0.38);
-}
-
 .project-graph-canvas--lod-map .pg-node__drag-handle {
   min-height: 18px;
   padding: 6px 10px;
 }
 
+.project-graph-canvas--lod-bars .pg-node--file .pg-node__drag-handle,
+.project-graph-canvas--lod-bars .pg-node--label-frame .pg-node__drag-handle,
+.project-graph-canvas--lod-map .pg-node--file .pg-node__drag-handle,
+.project-graph-canvas--lod-map .pg-node--label-frame .pg-node__drag-handle {
+  display: flex;
+  min-height: 18px;
+  align-items: center;
+  gap: 8px;
+  border-bottom-width: 1px;
+  padding: 5px 8px;
+}
+
+.project-graph-canvas--lod-bars .pg-node--file .pg-node__eyebrow,
+.project-graph-canvas--lod-bars .pg-node--label-frame .pg-node__eyebrow,
+.project-graph-canvas--lod-map .pg-node--file .pg-node__eyebrow,
+.project-graph-canvas--lod-map .pg-node--label-frame .pg-node__eyebrow,
+.project-graph-canvas--lod-bars .pg-node--file .pg-node__title,
+.project-graph-canvas--lod-bars .pg-node--label-frame .pg-node__title,
+.project-graph-canvas--lod-map .pg-node--file .pg-node__title,
+.project-graph-canvas--lod-map .pg-node--label-frame .pg-node__title {
+  display: none;
+}
+
+.project-graph-canvas--lod-bars .pg-node--file .pg-node__frame-mock,
+.project-graph-canvas--lod-bars .pg-node--label-frame .pg-node__frame-mock,
+.project-graph-canvas--lod-map .pg-node--file .pg-node__frame-mock,
+.project-graph-canvas--lod-map .pg-node--label-frame .pg-node__frame-mock {
+  display: flex;
+  width: min(170px, 50%);
+  flex-direction: column;
+  gap: 4px;
+}
+
+.project-graph-canvas--lod-bars .pg-node--file .pg-node__frame-mock .pg-node__mock-line,
+.project-graph-canvas--lod-bars .pg-node--label-frame .pg-node__frame-mock .pg-node__mock-line,
+.project-graph-canvas--lod-map .pg-node--file .pg-node__frame-mock .pg-node__mock-line,
+.project-graph-canvas--lod-map .pg-node--label-frame .pg-node__frame-mock .pg-node__mock-line {
+  height: 4px;
+}
+
 .project-graph-canvas--lod-map .pg-node {
   box-shadow: none;
+}
+
+.project-graph-canvas--dev-hide-node-body .pg-node__body {
+  display: none;
+}
+
+.project-graph-canvas--dev-hide-node-body .pg-node__eyebrow,
+.project-graph-canvas--dev-hide-node-body .pg-node__title,
+.project-graph-canvas--dev-hide-node-body .pg-node__content {
+  display: block;
+  overflow: hidden;
+  border-radius: 999px;
+  color: transparent;
+  font-size: 0;
+  line-height: 0;
+  text-overflow: clip;
+  white-space: nowrap;
+}
+
+.project-graph-canvas--dev-flat-nodes .pg-node {
+  box-shadow: none;
+}
+
+.project-graph-canvas--dev-flat-nodes .pg-node__title,
+.project-graph-canvas--dev-flat-nodes .pg-node__content {
+  background: none;
 }
 
 .pg-node__handle {
@@ -303,6 +458,8 @@
   height: 9px;
   border: 2px solid #ffffff;
   background: #2563eb;
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .pg-node__handle--flow {
@@ -333,6 +490,15 @@
   stroke: rgba(100, 116, 139, 0.5);
 }
 
+.project-edge--relation {
+  pointer-events: none;
+}
+
+.project-edge--relation .react-flow__edge-path {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .project-edge--jump .react-flow__edge-path {
   stroke: rgba(37, 99, 235, 0.92);
   pointer-events: none;
@@ -340,6 +506,10 @@
 
 .project-edge--call .react-flow__edge-path {
   stroke: rgba(124, 58, 237, 0.92);
+  pointer-events: none;
+}
+
+.project-edge .react-flow__edge-interaction {
   pointer-events: none;
 }
 
@@ -413,12 +583,12 @@
   right: 16px;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   border: 1px solid rgba(15, 23, 42, 0.1);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.9);
-  padding: 7px;
-  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.1);
+  background: rgba(255, 255, 255, 0.92);
+  padding: 6px;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.11);
   backdrop-filter: blur(10px);
 }
 
@@ -429,45 +599,55 @@
 
 .project-graph-canvas__icon-button,
 .project-graph-canvas__invite-button {
-  height: 36px;
+  display: inline-grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
   border: 0;
-  border-radius: 8px;
+  border-radius: 7px;
   background: transparent;
   color: #0f172a;
   cursor: pointer;
   font: inherit;
-  font-size: 13px;
-  font-weight: 700;
+  line-height: 1;
 }
 
-.project-graph-canvas__icon-button {
-  width: 36px;
-  padding: 0;
-  font-size: 20px;
-  line-height: 1;
+.project-graph-canvas__icon-button svg,
+.project-graph-canvas__invite-button svg,
+.project-graph-canvas__control-button svg,
+.project-graph-canvas__connection svg {
+  width: 18px;
+  height: 18px;
 }
 
 .project-graph-canvas__icon-button:hover,
 .project-graph-canvas__invite-button:hover {
-  background: #f1f5f9;
+  background: rgba(15, 23, 42, 0.06);
 }
 
 .project-graph-canvas__participant-stack {
   display: flex;
   align-items: center;
-  padding-left: 4px;
+  min-width: 36px;
+  padding: 0 4px;
 }
 
 .project-graph-canvas__participant {
   display: grid;
-  width: 32px;
-  height: 32px;
+  width: 30px;
+  height: 30px;
   place-items: center;
+  border: 2px solid rgba(255, 255, 255, 0.96);
   border-radius: 50%;
-  color: #312e81;
-  font-size: 11px;
+  background:
+    radial-gradient(circle at 30% 24%, rgba(255, 255, 255, 0.38), transparent 34%),
+    var(--participant-color, #2563eb);
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.18);
+  color: #ffffff;
+  font-size: 10px;
   font-weight: 800;
   line-height: 1;
+  letter-spacing: 0;
 }
 
 .project-graph-canvas__remote-cursors {
@@ -483,35 +663,54 @@
   left: 0;
   display: flex;
   align-items: flex-start;
-  gap: 6px;
-  color: #6d28d9;
+  gap: 7px;
+  color: var(--remote-cursor-color, #2563eb);
   font-size: 12px;
   font-weight: 750;
   line-height: 1;
+  transform-origin: 0 0;
 }
 
 .project-graph-canvas__remote-cursor-pointer {
-  width: 0;
-  height: 0;
-  border-top: 14px solid #7c3aed;
-  border-right: 9px solid transparent;
-  filter: drop-shadow(0 2px 4px rgba(15, 23, 42, 0.22));
+  display: block;
+  width: 21px;
+  height: 21px;
+  flex: 0 0 auto;
+  margin-top: -1px;
+  margin-left: -1px;
+  color: var(--remote-cursor-color, #2563eb);
+  filter: drop-shadow(0 2px 5px rgba(15, 23, 42, 0.26));
+}
+
+.project-graph-canvas__remote-cursor-pointer svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.project-graph-canvas__remote-cursor-pointer path {
+  fill: currentColor;
+  stroke: #ffffff;
+  stroke-linejoin: round;
+  stroke-width: 2.6;
 }
 
 .project-graph-canvas__remote-cursor-label {
   max-width: 180px;
   overflow: hidden;
-  border: 1px solid rgba(124, 58, 237, 0.18);
+  margin-top: 7px;
+  border: 1px solid color-mix(in srgb, var(--remote-cursor-color, #2563eb) 22%, transparent);
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.94);
-  padding: 5px 8px;
+  padding: 5px 9px;
   box-shadow: 0 8px 18px rgba(15, 23, 42, 0.12);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .project-graph-canvas__participant + .project-graph-canvas__participant {
-  margin-left: -8px;
+  margin-left: -9px;
 }
 
 .project-graph-canvas__invite {
@@ -519,7 +718,7 @@
 }
 
 .project-graph-canvas__invite-button {
-  padding: 0 14px;
+  padding: 0;
 }
 
 .project-graph-canvas__invite-popover {
@@ -555,7 +754,8 @@
 
 .project-graph-canvas__search-popover {
   top: 62px;
-  right: 156px;
+  right: 16px;
+  width: min(320px, calc(100% - 32px));
   max-height: min(340px, calc(100% - 78px));
   padding: 10px;
   overflow: auto;
@@ -597,7 +797,7 @@
 .project-graph-canvas__frames-button,
 .project-graph-canvas__connection {
   display: inline-grid;
-  min-width: 28px;
+  min-width: 30px;
   height: 28px;
   place-items: center;
   border: 0;
@@ -605,7 +805,7 @@
   background: transparent;
   color: #0f172a;
   font: inherit;
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 750;
   line-height: 1;
 }
@@ -622,7 +822,8 @@
 
 .project-graph-canvas__control-button--problems {
   display: inline-flex;
-  gap: 4px;
+  min-width: 44px;
+  gap: 5px;
   color: #b45309;
   font-size: 13px;
 }
@@ -630,6 +831,10 @@
 .project-graph-canvas__connection {
   color: #047857;
   cursor: default;
+}
+
+.project-graph-canvas__connection--error {
+  color: #b45309;
 }
 
 .project-graph-canvas__frames-button {
@@ -723,6 +928,39 @@
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+
+.project-graph-canvas__dev-toggles {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.project-graph-canvas__dev-toggle {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 6px;
+  padding: 5px 7px;
+  background: rgba(15, 23, 42, 0.2);
+  color: #cbd5e1;
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.project-graph-canvas__dev-toggle input {
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  accent-color: #38bdf8;
+}
+
+.project-graph-canvas__dev-toggle span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .project-graph-canvas__dev-types span {

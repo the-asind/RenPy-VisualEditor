@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useTransition } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 
 import {
@@ -35,6 +35,7 @@ const EditorPage = () => {
   const sessionRef = useRef<ProjectGraphCollaborationSession | null>(null);
   const socketRef = useRef<ProjectGraphSocketHandle | null>(null);
   const lastCursorSentAtRef = useRef(0);
+  const [, startGraphTransition] = useTransition();
   const [graph, setGraph] = useState<ProjectGraphSnapshot | null>(null);
   const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
@@ -76,7 +77,7 @@ const EditorPage = () => {
             await saveProjectGraphCrdtSnapshot(projectId, snapshot);
           },
           onPersistenceStatusChange: setSaveStatus,
-          onGraphChange: setGraph,
+          onGraphChange: (updatedGraph) => startGraphTransition(() => setGraph(updatedGraph)),
         });
         sessionRef.current = session;
         setGraph(session.graph);

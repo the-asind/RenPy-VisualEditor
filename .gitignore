@@ -4,6 +4,9 @@ venv/
 *.pyo
 *.pyd
 docs/
+!docs/
+docs/*
+!docs/project-graph-performance-devtools.md
 *.egg-info/
 dist/
 build/
