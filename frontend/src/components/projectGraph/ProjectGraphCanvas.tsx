@@ -46,6 +46,7 @@ import {
   type ProjectGraphSnapshot,
 } from '../../utils/projectGraphProjection';
 import type { ProjectGraphPresenceUser, ProjectGraphRemoteCursor } from '../../utils/projectGraphCollaboration';
+import { ActionEditorOverlay } from '../actionEditor/ActionEditorOverlay';
 import brandLogoUrl from '../../assets/logo.svg';
 import './ProjectGraphCanvas.css';
 
@@ -1030,6 +1031,13 @@ export interface ProjectGraphScenarioContentDraft {
   content: string;
 }
 
+export interface ProjectGraphPendingScenarioContentCommit {
+  nodeId: string;
+  content: string;
+}
+
+export const SCENARIO_CONTENT_COMMIT_DEBOUNCE_MS = 120;
+
 export const getProjectGraphScenarioContentEditorValue = (
   nodeId: string,
   authoritativeContent: string,
@@ -1046,6 +1054,11 @@ export const reconcileProjectGraphScenarioContentDraft = (
   }
   return draft;
 };
+
+export const shouldFlushProjectGraphScenarioContentCommitForSelection = (
+  pendingCommit: ProjectGraphPendingScenarioContentCommit | null,
+  nextSelectedNodeId: string | null,
+): boolean => pendingCommit !== null && pendingCommit.nodeId !== nextSelectedNodeId;
 
 const participantAccentColors = [
   '#0072B2',
@@ -1127,6 +1140,7 @@ const ProjectGraphCanvasInner = ({
   const [isProblemsOpen, setIsProblemsOpen] = useState(false);
   const [isFramesOpen, setIsFramesOpen] = useState(false);
   const [isMinimapVisible, setIsMinimapVisible] = useState(true);
+  const [isActionEditorOpen, setIsActionEditorOpen] = useState(false);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [scenarioContentDraft, setScenarioContentDraft] = useState<ProjectGraphScenarioContentDraft | null>(null);
   const [viewport, setViewport] = useState<Viewport>({ x: 0, y: 0, zoom: 1 });
@@ -1148,6 +1162,8 @@ const ProjectGraphCanvasInner = ({
   const moveViewportRef = useRef<Viewport>({ x: 0, y: 0, zoom: 1 });
   const devAdaptiveLightLevelRef = useRef<ProjectGraphAdaptiveLightLevel>(0);
   const devVisibleNodeCountRef = useRef(0);
+  const scenarioContentCommitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingScenarioContentCommitRef = useRef<ProjectGraphPendingScenarioContentCommit | null>(null);
   const projectionSample = useMemo(() => {
     const start = showDevPerformancePanel ? performance.now() : 0;
     const nextProjection = projectGraphToReactFlow(graph);
@@ -1314,6 +1330,43 @@ const ProjectGraphCanvasInner = ({
   const handleNodesChange = useCallback((changes: NodeChange[]) => {
     setInteractiveNodes((currentNodes) => applyNodeChanges(changes, currentNodes));
   }, []);
+  const flushScenarioContentCommit = useCallback(() => {
+    const pendingCommit = pendingScenarioContentCommitRef.current;
+    if (!pendingCommit) {
+      return;
+    }
+
+    pendingScenarioContentCommitRef.current = null;
+    if (scenarioContentCommitTimerRef.current) {
+      clearTimeout(scenarioContentCommitTimerRef.current);
+      scenarioContentCommitTimerRef.current = null;
+    }
+    onScenarioContentChange?.(pendingCommit.nodeId, pendingCommit.content);
+  }, [onScenarioContentChange]);
+  const scheduleScenarioContentCommit = useCallback(
+    (nodeId: string, content: string) => {
+      pendingScenarioContentCommitRef.current = { nodeId, content };
+      if (scenarioContentCommitTimerRef.current) {
+        clearTimeout(scenarioContentCommitTimerRef.current);
+      }
+      scenarioContentCommitTimerRef.current = setTimeout(() => {
+        scenarioContentCommitTimerRef.current = null;
+        flushScenarioContentCommit();
+      }, SCENARIO_CONTENT_COMMIT_DEBOUNCE_MS);
+    },
+    [flushScenarioContentCommit],
+  );
+  const setScenarioContentDraftAndScheduleCommit = useCallback(
+    (nodeId: string, content: string) => {
+      setScenarioContentDraft({ nodeId, content });
+      scheduleScenarioContentCommit(nodeId, content);
+    },
+    [scheduleScenarioContentCommit],
+  );
+  const handleExportProjectGraph = useCallback(() => {
+    flushScenarioContentCommit();
+    onExportProjectGraph?.();
+  }, [flushScenarioContentCommit, onExportProjectGraph]);
   const selectedContentLabel = selectedScenario
     ? (contentEditorLabelByType.get(selectedScenario.type) ?? 'Scenario content')
     : 'Scenario content';
@@ -1325,10 +1378,27 @@ const ProjectGraphCanvasInner = ({
   const displayedScenarioContent = selectedScenario
     ? getProjectGraphScenarioContentEditorValue(selectedScenario.id, selectedScenario.content, scenarioContentDraft)
     : '';
+  const selectedActionEditorNode = useMemo(
+    () =>
+      selectedScenario?.type === 'action'
+        ? {
+            ...selectedScenario,
+            content: displayedScenarioContent,
+          }
+        : null,
+    [displayedScenarioContent, selectedScenario],
+  );
   const exportedFileEntries = useMemo(
     () => Object.entries(exportedFiles ?? {}).sort(([pathA], [pathB]) => pathA.localeCompare(pathB)),
     [exportedFiles],
   );
+  useEffect(() => {
+    const pendingCommit = pendingScenarioContentCommitRef.current;
+    if (shouldFlushProjectGraphScenarioContentCommitForSelection(pendingCommit, selectedNodeId)) {
+      flushScenarioContentCommit();
+    }
+  }, [flushScenarioContentCommit, selectedNodeId]);
+  useEffect(() => () => flushScenarioContentCommit(), [flushScenarioContentCommit]);
   useEffect(() => {
     setScenarioContentDraft((currentDraft) =>
       selectedScenario
@@ -1336,6 +1406,9 @@ const ProjectGraphCanvasInner = ({
         : null,
     );
   }, [selectedScenario?.content, selectedScenario?.id]);
+  useEffect(() => {
+    setIsActionEditorOpen(false);
+  }, [selectedScenario?.id]);
   const displayedProjectName = projectName?.trim() || 'Untitled project';
   const participantsToShow = participants.length > 0 ? participants : [{ id: 'local', username: 'You' }];
   const shouldTrackViewportLive = shouldTrackProjectGraphViewportLive(remoteCursors.length);
@@ -1540,13 +1613,13 @@ const ProjectGraphCanvasInner = ({
     const handleKeyDown = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLocaleLowerCase() === 'e') {
         event.preventDefault();
-        onExportProjectGraph();
+        handleExportProjectGraph();
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onExportProjectGraph]);
+  }, [handleExportProjectGraph, onExportProjectGraph]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -1842,9 +1915,9 @@ const ProjectGraphCanvasInner = ({
               className="project-graph-canvas__node-editor-input"
               onChange={(event) => {
                 const content = event.target.value;
-                setScenarioContentDraft({ nodeId: selectedScenario.id, content });
-                onScenarioContentChange?.(selectedScenario.id, content);
+                setScenarioContentDraftAndScheduleCommit(selectedScenario.id, content);
               }}
+              onBlur={flushScenarioContentCommit}
               value={displayedScenarioContent}
             />
           </label>
@@ -1857,33 +1930,65 @@ const ProjectGraphCanvasInner = ({
                 onChange={(event) => {
                   const condition = event.target.value;
                   const content = menuChoiceLineWithCondition(displayedScenarioContent, condition);
-                  setScenarioContentDraft({ nodeId: selectedScenario.id, content });
-                  onScenarioContentChange?.(selectedScenario.id, content);
+                  setScenarioContentDraftAndScheduleCommit(selectedScenario.id, content);
                   onScenarioMetadataChange?.(selectedScenario.id, {
                     condition: condition.trim() ? condition.trim() : null,
                   });
                 }}
+                onBlur={flushScenarioContentCommit}
                 value={selectedChoiceCondition}
               />
             </label>
           ) : null}
           {selectedScenario.type === 'action' ? (
-            <label className="project-graph-canvas__field">
-              <span>Action title</span>
-              <input
-                aria-label="Edit action block title"
-                className="project-graph-canvas__node-editor-line-input"
-                onChange={(event) => {
-                  const title = event.target.value.trim();
-                  onScenarioMetadataChange?.(selectedScenario.id, {
-                    title: title ? title : null,
-                  });
+            <>
+              <label className="project-graph-canvas__field">
+                <span>Action title</span>
+                <input
+                  aria-label="Edit action block title"
+                  className="project-graph-canvas__node-editor-line-input"
+                  onChange={(event) => {
+                    const title = event.target.value.trim();
+                    onScenarioMetadataChange?.(selectedScenario.id, {
+                      title: title ? title : null,
+                    });
+                  }}
+                  value={selectedActionTitle}
+                />
+              </label>
+              <button
+                aria-label="Open fullscreen action editor"
+                className="project-graph-canvas__node-editor-open-action"
+                onClick={() => {
+                  flushScenarioContentCommit();
+                  setIsActionEditorOpen(true);
                 }}
-                value={selectedActionTitle}
-              />
-            </label>
+                type="button"
+              >
+                Open writing room
+              </button>
+            </>
           ) : null}
         </div>
+      ) : null}
+
+      {isActionEditorOpen && selectedActionEditorNode ? (
+        <ActionEditorOverlay
+          filePath={selectedScenarioFile?.path ?? 'Unknown file'}
+          labelPath={selectedScenarioLabel?.qualified_name ?? 'Unknown label'}
+          node={selectedActionEditorNode}
+          onClose={() => {
+            flushScenarioContentCommit();
+            setIsActionEditorOpen(false);
+          }}
+          onContentChange={(content) => setScenarioContentDraftAndScheduleCommit(selectedActionEditorNode.id, content)}
+          onTitleChange={(title) =>
+            onScenarioMetadataChange?.(selectedActionEditorNode.id, {
+              title: title.trim() ? title.trim() : null,
+            })
+          }
+          saveStatus={saveStatus}
+        />
       ) : null}
 
       {exportStatus || exportedFileEntries.length > 0 ? (

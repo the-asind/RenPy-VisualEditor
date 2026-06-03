@@ -4,6 +4,305 @@ This file is the short project memory for RenPy Visual Editor 2.0. Keep it curre
 
 ## 2026-06-03
 
+### Action Editor Emergency Usability Sprint Artifact
+
+Added an urgent corrective sprint artifact for Action editor usability and mockup fidelity defects found during visual review.
+
+Files:
+
+1. `docs/action-editor-emergency-usability-sprint.md`
+2. `UPDATES.md`
+
+Result:
+
+1. Captured the current Action editor defects as mandatory Sprint 6.5 work before graph-node creation:
+   - long dialogue blocks must be scrollable;
+   - row density must improve;
+   - speakers need stable distinct accents;
+   - Scene preview must use Ren'Py-like labeled missing-asset rectangles instead of fake people;
+   - row handles must be real six-dot handles instead of rotated `::` text;
+   - inline toolbar actions must use the actual textarea selection;
+   - header controls must match the mockup structure more closely.
+2. Split the urgent work into MVP Actions 6.5.1-6.5.7, each with a black-box expectation, atomic TDD tasks, artifact updates, and a final "consider next action" step.
+3. Marked Action Editor graph-node creation Sprints 7-12 as blocked until this urgent usability sprint closes.
+
+### Action Editor Visual Mockup Verification
+
+Verified and tightened the Action editor interface against `artifacts/action-editor-interface-mockup.jpg`.
+
+Files:
+
+1. `frontend/public/e2e/action-editor-visual.html`
+2. `frontend/src/e2e/action-editor-visual.tsx`
+3. `frontend/src/components/actionEditor/actionEditorModel.ts`
+4. `frontend/src/components/actionEditor/ActionEditorWriter.tsx`
+5. `frontend/src/components/actionEditor/ActionEditorSidebar.tsx`
+6. `frontend/src/components/actionEditor/ActionEditorOverlay.css`
+7. `frontend/src/components/actionEditor/__tests__/actionEditorModel.test.ts`
+8. `frontend/src/components/actionEditor/__tests__/ActionEditorWriter.test.tsx`
+9. `frontend/src/components/actionEditor/__tests__/ActionEditorSidebar.test.tsx`
+10. `artifacts/action-editor-visual-check.png`
+11. `UPDATES.md`
+
+Result:
+
+1. Added a local visual harness that opens the Action editor directly with the mockup scene content.
+2. Expanded the inline text toolbar to match the mockup grouping more closely: base text styles, color, size, CPS, pause, wait, and no-wait controls.
+3. Added normalized Ren'Py text tag behavior for `color`, `size`, and `cps`.
+4. Filled the Scene preview panel with stable scene-art layers so the sidebar matches the mockup composition instead of rendering as an empty placeholder.
+5. Captured the visual check screenshot at `artifacts/action-editor-visual-check.png`.
+
+Checks:
+
+1. `npm test -- --run src/components/actionEditor/__tests__/actionEditorModel.test.ts src/components/actionEditor/__tests__/ActionEditorWriter.test.tsx src/components/actionEditor/__tests__/ActionEditorSidebar.test.tsx` passed with 15 tests.
+2. `npm run build` passed with known non-blocking Vite/env.js, Browserslist, and large chunk warnings.
+3. The in-app Browser client blocked local `localhost`/`127.0.0.1` navigation with `ERR_BLOCKED_BY_CLIENT`, so the visual screenshot was captured through local Playwright against the same Vite URL.
+
+### Action Editor Graph Node Creation Artifact
+
+Added a detailed planning artifact for the next Action Editor domain stage.
+
+Files:
+
+1. `docs/action-editor-graph-node-creation.md`
+2. `UPDATES.md`
+
+Result:
+
+1. Defined the next step after Raw structural review: CRDT-backed ProjectGraph node creation from the Action editor.
+2. Documented operation contracts for generic scenario append, Player Choice, Conditional Path, Go to Label, Call Sub-scene, and Return.
+3. Captured ID, order, visual placement, edge, and raw structural review policies.
+4. Split implementation into TDD sprints with atomic tasks, each ending by considering the next sprint.
+5. Recorded the test matrix and failure modes to guard before UI wiring.
+6. Code was not changed.
+
+### Action Editor Sprint 6 Raw Structural Review
+
+Added the first Raw Ren'Py structural statement detection layer.
+
+Files:
+
+1. `frontend/src/components/actionEditor/actionEditorModel.ts`
+2. `frontend/src/components/actionEditor/ActionEditorOverlay.tsx`
+3. `frontend/src/components/actionEditor/ActionEditorOverlay.css`
+4. `frontend/src/components/actionEditor/__tests__/actionEditorModel.test.ts`
+5. `frontend/src/components/actionEditor/__tests__/ActionEditorOverlay.test.tsx`
+6. `UPDATES.md`
+
+Result:
+
+1. Added a pure detector for structural Ren'Py statements in Raw mode: `menu`, `if`/`elif`/`else`, `jump`, `call`, `return`, and `label`.
+2. Ordinary action statements such as `scene`, `show`, `play music`, and dialogue/narration are not intercepted.
+3. Raw mode now shows a review panel when structural text appears inside an Action node.
+4. The review panel offers the correct user-facing creation intent, for example `Create Player Choice from menu`, plus a `Keep as raw text` escape path.
+5. Actual graph-node creation remains a later CRDT/domain operation sprint.
+
+Checks:
+
+1. `npm test -- --run src/components/actionEditor/__tests__/actionEditorModel.test.ts src/components/actionEditor/__tests__/ActionEditorOverlay.test.tsx` passed with 14 tests.
+2. `npm test -- --run src/components/actionEditor/__tests__/actionEditorModel.test.ts src/components/actionEditor/__tests__/ActionEditorOverlay.test.tsx src/components/actionEditor/__tests__/ActionEditorWriter.test.tsx src/components/actionEditor/__tests__/ActionEditorSidebar.test.tsx` passed with 19 tests.
+3. `npm test -- --run src/components/__tests__/EditorPage.mvp2.test.ts` passed with 7 tests.
+4. `npm run build` passed with known non-blocking Vite/env.js, Browserslist, and large chunk warnings.
+
+### Action Editor Sprint 5 Raw Mode Layout
+
+Closed the first Raw Ren'Py mode layout contract for the fullscreen Action editor.
+
+Files:
+
+1. `frontend/src/components/actionEditor/ActionEditorOverlay.tsx`
+2. `frontend/src/components/actionEditor/__tests__/ActionEditorOverlay.test.tsx`
+3. `UPDATES.md`
+
+Result:
+
+1. Added an `initialMode` entry point so Raw Ren'Py mode can be tested and opened directly.
+2. Raw mode keeps the same header but switches the body to a full-width raw content editor.
+3. Raw mode hides Writer rows, Scene preview, Audio, and Next panels.
+4. Raw content edits still use the same `onContentChange` path as Writer view.
+
+Checks:
+
+1. `npm test -- --run src/components/actionEditor/__tests__/ActionEditorOverlay.test.tsx` passed with 4 tests.
+2. `npm test -- --run src/components/actionEditor/__tests__/actionEditorModel.test.ts src/components/actionEditor/__tests__/ActionEditorOverlay.test.tsx src/components/actionEditor/__tests__/ActionEditorWriter.test.tsx src/components/actionEditor/__tests__/ActionEditorSidebar.test.tsx` passed with 16 tests.
+
+### Action Editor Sprint 4 Inline Text Tags
+
+Added the first inline Ren'Py text tag controls to dialogue rows.
+
+Files:
+
+1. `frontend/src/components/actionEditor/actionEditorModel.ts`
+2. `frontend/src/components/actionEditor/ActionEditorWriter.tsx`
+3. `frontend/src/components/actionEditor/ActionEditorOverlay.css`
+4. `frontend/src/components/actionEditor/__tests__/actionEditorModel.test.ts`
+5. `frontend/src/components/actionEditor/__tests__/ActionEditorWriter.test.tsx`
+6. `UPDATES.md`
+
+Result:
+
+1. Added pure text tag helpers for selected text and caret insertion.
+2. Supported `{b}`, `{i}`, `{u}`, `{s}`, `{w}`, `{p}`, and `{nw}` in the model layer.
+3. Added inline toolbar controls inside dialogue/narration rows.
+4. Toolbar is local to focused dialogue rows through CSS `focus-within`, not a permanent global toolbar.
+5. Toolbar edits still serialize back into the same Action node content path.
+
+Checks:
+
+1. `npm test -- --run src/components/actionEditor/__tests__/actionEditorModel.test.ts src/components/actionEditor/__tests__/ActionEditorWriter.test.tsx` passed with 10 tests.
+2. `npm test -- --run src/components/actionEditor/__tests__/actionEditorModel.test.ts src/components/actionEditor/__tests__/ActionEditorOverlay.test.tsx src/components/actionEditor/__tests__/ActionEditorWriter.test.tsx src/components/actionEditor/__tests__/ActionEditorSidebar.test.tsx` passed with 15 tests.
+
+### Action Editor Sprint 3 Sidebar Writing Aids
+
+Added modular right-side writing aids for the fullscreen Action editor.
+
+Files:
+
+1. `frontend/src/components/actionEditor/ActionEditorSidebar.tsx`
+2. `frontend/src/components/actionEditor/ActionEditorOverlay.tsx`
+3. `frontend/src/components/actionEditor/ActionEditorOverlay.css`
+4. `frontend/src/components/actionEditor/__tests__/ActionEditorSidebar.test.tsx`
+5. `UPDATES.md`
+
+Result:
+
+1. Added `ActionEditorSidebar` as a separate module for Scene preview, Audio, and Next actions.
+2. Scene preview derives a current-node estimate from action command rows, including current background and visible `show` images.
+3. Audio panel derives current music/sound state from action command rows.
+4. Next panel renders writer-friendly structural actions: Player Choice, Conditional Path, Go to Label, Call Sub-scene, and Return.
+5. The sidebar remains UI projection only and does not write structural Ren'Py text into the Action node.
+
+Checks:
+
+1. `npm test -- --run src/components/actionEditor/__tests__/ActionEditorSidebar.test.tsx` passed with 2 tests.
+2. `npm test -- --run src/components/actionEditor/__tests__/actionEditorModel.test.ts src/components/actionEditor/__tests__/ActionEditorOverlay.test.tsx src/components/actionEditor/__tests__/ActionEditorWriter.test.tsx src/components/actionEditor/__tests__/ActionEditorSidebar.test.tsx` passed with 12 tests.
+3. `npm test -- --run src/components/__tests__/EditorPage.mvp2.test.ts` passed with 7 tests.
+4. `npm run build` passed with known non-blocking Vite/env.js, Browserslist, and large chunk warnings.
+
+### Action Editor Sprint 2 Writer Rows
+
+Connected the fullscreen Action editor shell to writer rows parsed from Action node content.
+
+Files:
+
+1. `frontend/src/components/actionEditor/ActionEditorWriter.tsx`
+2. `frontend/src/components/actionEditor/ActionEditorOverlay.css`
+3. `frontend/src/components/actionEditor/actionEditorModel.ts`
+4. `frontend/src/components/actionEditor/__tests__/ActionEditorWriter.test.tsx`
+5. `frontend/src/components/actionEditor/__tests__/ActionEditorOverlay.test.tsx`
+6. `frontend/src/components/actionEditor/__tests__/actionEditorModel.test.ts`
+7. `frontend/src/components/actionEditor/ActionEditorOverlay.tsx`
+8. `UPDATES.md`
+
+Result:
+
+1. Added modular writer row rendering for dialogue, narration, scene/show/hide/music/sound/transition command rows, and raw fallback rows.
+2. Replaced the fullscreen overlay writer placeholder with real `ActionEditorWriter` output.
+3. Added row text update helper that clears stale source text before serializing edits back to Ren'Py action content.
+4. Styled writer rows toward the reference mockup: speaker selector on the left, large text field on the right, compact command rows, row menus, and visible drag handles.
+5. Added the first inter-sprint connectivity test proving Sprint 1 overlay renders Sprint 0/2 parsed writer rows from the selected Action node.
+
+Checks:
+
+1. `npm test -- --run src/components/actionEditor/__tests__/actionEditorModel.test.ts src/components/actionEditor/__tests__/ActionEditorWriter.test.tsx` passed with 7 tests.
+2. `npm test -- --run src/components/actionEditor/__tests__/actionEditorModel.test.ts src/components/actionEditor/__tests__/ActionEditorOverlay.test.tsx src/components/actionEditor/__tests__/ActionEditorWriter.test.tsx` passed with 10 tests.
+
+### Action Editor Sprint 1 Fullscreen Header Shell
+
+Added the first fullscreen writing-room surface for Action nodes.
+
+Files:
+
+1. `frontend/src/components/actionEditor/ActionEditorOverlay.tsx`
+2. `frontend/src/components/actionEditor/ActionEditorOverlay.css`
+3. `frontend/src/components/actionEditor/__tests__/ActionEditorOverlay.test.tsx`
+4. `frontend/src/components/projectGraph/ProjectGraphCanvas.tsx`
+5. `frontend/src/components/projectGraph/ProjectGraphCanvas.css`
+6. `UPDATES.md`
+
+Result:
+
+1. Added a modular `ActionEditorOverlay` component with fullscreen dialog semantics.
+2. Header shows file breadcrumb, label breadcrumb, editable title, Writer view / Raw Ren'Py switch, undo/redo controls, save status, and close action.
+3. Action-node Inspector now exposes `Open writing room`.
+4. The overlay receives current draft content through the existing deferred content path and writes title changes to scenario metadata only.
+5. Writer body/sidebar are intentionally placeholder shells for the next sprint.
+
+Checks:
+
+1. `npm test -- --run src/components/actionEditor/__tests__/ActionEditorOverlay.test.tsx` passed with 2 tests.
+2. `npm test -- --run src/components/actionEditor/__tests__/actionEditorModel.test.ts src/components/actionEditor/__tests__/ActionEditorOverlay.test.tsx` passed with 6 tests.
+
+### Action Editor Sprint 0 Content Model
+
+Started the fullscreen Action editor implementation with a focused content model layer.
+
+Files:
+
+1. `frontend/src/components/actionEditor/actionEditorModel.ts`
+2. `frontend/src/components/actionEditor/__tests__/actionEditorModel.test.ts`
+3. `UPDATES.md`
+
+Result:
+
+1. Added a pure UI projection model for Action node writer rows.
+2. Parsed narration, character dialogue, scene/show/hide/music/sound/transition command rows, and safe raw fallback rows from `ScenarioNode.content`.
+3. Serialized writer rows back to normalized Ren'Py action text while preserving blank-line gaps from the source projection.
+4. Added user-facing Action editor title derivation from metadata or first meaningful content line, avoiding the internal `ACTION` label.
+5. No durable ProjectGraph schema changes were introduced.
+
+Checks:
+
+1. `npm test -- --run src/components/actionEditor/__tests__/actionEditorModel.test.ts` passed with 4 tests.
+
+### Deferred Scenario Text Commits
+
+Changed the Inspector scenario text path from per-keystroke CRDT commits to local draft edits with coalesced CRDT commits.
+
+Files:
+
+1. `frontend/src/components/projectGraph/ProjectGraphCanvas.tsx`
+2. `frontend/src/utils/__tests__/projectGraphProjection.test.ts`
+3. `UPDATES.md`
+
+Result:
+
+1. The scenario textarea updates local React draft state immediately on every keypress.
+2. CRDT writes now happen after a short debounce instead of inside every textarea `onChange`.
+3. Pending text is flushed when the textarea blurs, when selection leaves the edited node, or when export is triggered by the canvas hotkey.
+4. This keeps the client-first display path independent from the heavier Loro update, update encoding, graph decode, and React Flow projection path.
+
+Checks:
+
+1. Added helper coverage proving pending scenario text commits flush when selection leaves the edited node.
+
+### Scenario Content LoroText Storage
+
+Moved scenario node content from Loro map string values to dedicated LoroText containers.
+
+Files:
+
+1. `frontend/src/utils/projectGraphCrdt.ts`
+2. `frontend/src/utils/__tests__/projectGraphCrdt.test.ts`
+3. `frontend/scripts/project-graph-snapshot-cli.mjs`
+4. `docs/editor-2.0-architecture.md`
+5. `UPDATES.md`
+
+Result:
+
+1. Scenario tree-node metadata now stores a stable `content_text_key`.
+2. Scenario text lives in `LoroText` containers keyed by scenario ID.
+3. `projectGraphFromCrdtDoc()` still returns normal `ScenarioNode.content` strings for projection/export.
+4. `updateScenarioNodeContent()` updates the LoroText container instead of overwriting one whole map string.
+5. The Node snapshot bridge used by backend import now encodes and decodes the same LoroText-backed schema.
+6. Backward compatibility with older scenario `content` map-string snapshots was intentionally not added for this planning branch.
+
+Checks:
+
+1. Added a black-box convergence test proving concurrent edits inside one scenario content field preserve both clients' inserted phrases.
+2. `npm test -- --run src/utils/__tests__/projectGraphCrdt.test.ts src/utils/__tests__/projectGraphCollaboration.test.ts src/services/__tests__/api.test.ts` passed with 27 tests.
+3. `python -m pytest backend/tests/test_project_graph_import_route.py -q` passed with 5 tests.
+
 ### Client-first Scenario Text Editing
 
 Changed the compact Inspector text edit path so local keystrokes appear before the full ProjectGraph projection catches up.

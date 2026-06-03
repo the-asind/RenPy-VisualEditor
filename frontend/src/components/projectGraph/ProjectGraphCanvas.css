@@ -1043,6 +1043,22 @@
   background: #eff6ff;
 }
 
+.project-graph-canvas__node-editor-open-action {
+  min-height: 36px;
+  border: 1px solid rgba(37, 99, 235, 0.28);
+  border-radius: 8px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.project-graph-canvas__node-editor-open-action:hover {
+  background: #dbeafe;
+}
+
 .project-graph-canvas__status {
   color: #475569;
   font-size: 12px;

@@ -7,6 +7,8 @@ docs/
 !docs/
 docs/*
 !docs/project-graph-performance-devtools.md
+!docs/action-editor-graph-node-creation.md
+!docs/action-editor-emergency-usability-sprint.md
 *.egg-info/
 dist/
 build/
