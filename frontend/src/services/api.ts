@@ -6,6 +6,7 @@ import {
   projectGraphFromCrdtDoc,
 } from '../utils/projectGraphCrdt';
 import type { ProjectGraphSnapshot } from '../utils/projectGraphProjection';
+import type { ProjectAssetCatalogPayload } from '../utils/localRenpyDirectory';
 
 export interface ParsedScriptResponse {
   script_id: string;
@@ -51,6 +52,15 @@ export interface ProjectGraphImportResult {
   edge_count: number;
   diagnostics: ProjectGraphDiagnosticsSummary;
   snapshot_available: boolean;
+  catalog_entry_count?: number;
+}
+
+export interface ProjectAssetCatalogResponse {
+  project_id: string;
+  catalog: ProjectAssetCatalogPayload;
+  revision: number;
+  updated_by: string;
+  updated_at: string | null;
 }
 
 const runtimeConfig = typeof window !== 'undefined' ? (window as any).RUNTIME_CONFIG : undefined;
@@ -325,10 +335,22 @@ export const loadProjectGraphCrdtDocument = async (projectId: string): Promise<P
 export const importProjectGraphFiles = async (
   projectId: string,
   files: File[],
+  options?: {
+    filePaths?: string[];
+    assetCatalog?: ProjectAssetCatalogPayload;
+  },
 ): Promise<ProjectGraphImportResult> => {
   const formData = new FormData();
   for (const file of files) {
     formData.append('files', file);
+  }
+  if (options?.filePaths) {
+    for (const filePath of options.filePaths) {
+      formData.append('file_paths', filePath);
+    }
+  }
+  if (options?.assetCatalog) {
+    formData.append('asset_catalog', JSON.stringify(options.assetCatalog));
   }
 
   const targetUrl = `${apiClient.defaults.baseURL}/projects/${projectId}/graph-import`;
@@ -362,6 +384,32 @@ export const importProjectGraphFiles = async (
     }
 
     throw axiosError.response?.data || new Error(`Failed to import ProjectGraph. Status: ${axiosError.response?.status || 'unknown'}. ${axiosError.message}`);
+  }
+};
+
+export const getProjectAssetCatalog = async (projectId: string): Promise<ProjectAssetCatalogResponse | null> => {
+  try {
+    const response = await apiClient.get<ProjectAssetCatalogResponse>(`/projects/${projectId}/asset-catalog`);
+    return response.data;
+  } catch (error) {
+    const axiosError = error as AxiosError;
+    if (axiosError.response?.status === 404) {
+      return null;
+    }
+    throw axiosError.response?.data || error;
+  }
+};
+
+export const updateProjectAssetCatalog = async (
+  projectId: string,
+  assetCatalog: ProjectAssetCatalogPayload,
+): Promise<ProjectAssetCatalogResponse> => {
+  try {
+    const response = await apiClient.put<ProjectAssetCatalogResponse>(`/projects/${projectId}/asset-catalog`, assetCatalog);
+    return response.data;
+  } catch (error) {
+    const axiosError = error as AxiosError;
+    throw axiosError.response?.data || error;
   }
 };
 

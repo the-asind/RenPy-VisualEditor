@@ -77,6 +77,8 @@ const sourceSpanOrNull = (value: unknown): SourceSpan | null => {
 const recordOrEmpty = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' && !Array.isArray(value) ? { ...(value as Record<string, unknown>) } : {};
 
+const scenarioContentTextKey = (nodeId: string): string => `scenario_content:${nodeId}`;
+
 const writeCommonEntityData = (
   node: LoroTreeNode,
   kind: ProjectGraphEntityKind,
@@ -113,16 +115,18 @@ const writeLabelStartData = (node: LoroTreeNode, start: LabelStartNodeSnapshot):
   node.data.set('content', start.content);
 };
 
-const writeScenarioData = (node: LoroTreeNode, scenario: ScenarioNodeSnapshot): void => {
+const writeScenarioData = (doc: LoroDoc, node: LoroTreeNode, scenario: ScenarioNodeSnapshot): void => {
   writeCommonEntityData(node, 'scenario', scenario.id, scenario.visual);
+  const contentTextKey = scenarioContentTextKey(scenario.id);
   node.data.set('file_id', scenario.file_id);
   node.data.set('label_id', scenario.label_id);
   node.data.set('parent_node_id', scenario.parent_node_id);
   node.data.set('type', scenario.type);
-  node.data.set('content', scenario.content);
+  node.data.set('content_text_key', contentTextKey);
   node.data.set('order', scenario.order);
   node.data.set('source_span', scenario.source_span);
   node.data.set('metadata', scenario.metadata);
+  doc.getText(contentTextKey).update(scenario.content);
 };
 
 const createIndexedTreeNode = (
@@ -205,7 +209,11 @@ export const createProjectGraphCrdtDoc = (
     (scenario) => scenario.id,
     (scenario) => scenario.parent_node_id ?? scenario.label_id,
     (scenario) =>
-      writeScenarioData(createIndexedTreeNode(doc, scenario.id, scenario.parent_node_id ?? scenario.label_id), scenario),
+      writeScenarioData(
+        doc,
+        createIndexedTreeNode(doc, scenario.id, scenario.parent_node_id ?? scenario.label_id),
+        scenario,
+      ),
   );
 
   doc.commit({ origin: 'project-graph-import', message: 'Import ProjectGraph snapshot into Loro' });
@@ -244,7 +252,9 @@ export const updateScenarioNodeContent = (doc: LoroDoc, nodeId: string, content:
   if (node.data.get('kind') !== 'scenario') {
     throw new Error(`Entity is not a scenario node: ${nodeId}`);
   }
-  node.data.set('content', content);
+  const contentTextKey = String(node.data.get('content_text_key') ?? scenarioContentTextKey(nodeId));
+  node.data.set('content_text_key', contentTextKey);
+  doc.getText(contentTextKey).update(content);
   doc.commit({ origin: 'project-graph-content', message: `Update scenario ${nodeId} content` });
 };
 
@@ -330,7 +340,12 @@ export const reparentScenarioNode = (doc: LoroDoc, nodeId: string, parentEntityI
   doc.commit({ origin: 'project-graph-containment', message: `Reparent scenario ${nodeId}` });
 };
 
-const collectTreeEntities = (nodes: ProjectGraphTreeJsonNode[]) => {
+const getScenarioContent = (doc: LoroDoc, meta: Record<string, unknown>): string => {
+  const contentTextKey = String(meta.content_text_key ?? scenarioContentTextKey(String(meta.entity_id)));
+  return doc.getText(contentTextKey).toString();
+};
+
+const collectTreeEntities = (doc: LoroDoc, nodes: ProjectGraphTreeJsonNode[]) => {
   const files: FileFrameSnapshot[] = [];
   const labels: LabelFrameSnapshot[] = [];
   const labelStarts: LabelStartNodeSnapshot[] = [];
@@ -375,7 +390,7 @@ const collectTreeEntities = (nodes: ProjectGraphTreeJsonNode[]) => {
         label_id: String(meta.label_id),
         parent_node_id: meta.parent_node_id === null ? null : String(meta.parent_node_id),
         type: String(meta.type),
-        content: String(meta.content),
+        content: getScenarioContent(doc, meta),
         order: String(meta.order),
         source_span: sourceSpanOrNull(meta.source_span),
         metadata: recordOrEmpty(meta.metadata),
@@ -398,7 +413,7 @@ const collectTreeEntities = (nodes: ProjectGraphTreeJsonNode[]) => {
 export const projectGraphFromCrdtDoc = (doc: LoroDoc): ProjectGraphSnapshot => {
   const meta = doc.getMap(META_CONTAINER);
   const treeJson = doc.getTree(TREE_CONTAINER).toJSON() as ProjectGraphTreeJsonNode[];
-  const { files, labels, labelStarts, scenarios } = collectTreeEntities(treeJson);
+  const { files, labels, labelStarts, scenarios } = collectTreeEntities(doc, treeJson);
   const fileOrder = new Map(files.map((file, index) => [file.id, `${file.order}:${index}`]));
   const labelOrder = new Map(
     labels

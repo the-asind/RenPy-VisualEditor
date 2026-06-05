@@ -30,14 +30,23 @@ class ProjectGraphImporter:
     DEFAULT_NODE_WIDTH = 320.0
     DEFAULT_NODE_HEIGHT = 88.0
 
-    def import_files(self, project_id: str, files: Iterable[str | Path]) -> ProjectGraph:
+    def import_files(
+        self,
+        project_id: str,
+        files: Iterable[str | Path],
+        file_paths: Iterable[str] | None = None,
+    ) -> ProjectGraph:
         paths = [Path(file) for file in files]
+        display_paths = list(file_paths) if file_paths is not None else [path.name for path in paths]
 
         if not project_id or not project_id.strip():
             raise ValueError("project_id is required")
 
         if not paths:
             raise ValueError("At least one .rpy file is required")
+
+        if len(display_paths) != len(paths):
+            raise ValueError("file_paths must match imported files")
 
         file_frames: list[FileFrame] = []
         label_frames: list[LabelFrame] = []
@@ -56,10 +65,12 @@ class ProjectGraphImporter:
             file_id = str(uuid4())
             order = f"{index:04d}"
 
+            display_path = display_paths[index]
+
             file_frames.append(
                 FileFrame(
                     id=file_id,
-                    path=path.name,
+                    path=display_path,
                     order=order,
                     visual=FrameVisual(
                         position=FramePosition(
@@ -74,7 +85,7 @@ class ProjectGraphImporter:
                 )
             )
             source_files[file_id] = {
-                "path": path.name,
+                "path": display_path,
                 "content": content,
             }
 

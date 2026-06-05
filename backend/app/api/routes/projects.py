@@ -1,7 +1,9 @@
+import json
+import re
 import tempfile
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Body, Request, Response, File, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, Body, Request, Response, File, UploadFile, Form
 from typing import List, Dict, Any, Optional
 from ...services.database import DatabaseService
 from ...services.project_graph.crdt_bridge import ProjectGraphCrdtSnapshotBridge
@@ -35,6 +37,128 @@ def _get_accessible_project(project_id: str, user: Dict) -> Dict:
 def _ensure_project_editor(project: Dict) -> None:
     if project.get("role") not in ["Owner", "Editor"]:
         raise HTTPException(status_code=403, detail="You don't have permission to edit this project")
+
+
+def _ensure_project_catalog_updater(project: Dict) -> None:
+    if project.get("role") != "Owner":
+        raise HTTPException(status_code=403, detail="You don't have permission to update this project's asset catalog")
+
+
+def _normalize_project_file_path(raw_path: str) -> str:
+    candidate = (raw_path or "").strip().replace("\\", "/")
+    if (
+        not candidate
+        or candidate.startswith("/")
+        or re.match(r"^[A-Za-z]:", candidate)
+    ):
+        raise HTTPException(status_code=400, detail=f"Unsafe project file path: {raw_path}")
+
+    parts = [part for part in candidate.split("/") if part]
+    if not parts or any(part in {".", ".."} for part in parts):
+        raise HTTPException(status_code=400, detail=f"Unsafe project file path: {raw_path}")
+
+    return "/".join(parts)
+
+
+def _catalog_entry_kind(path: str) -> str:
+    extension = Path(path).suffix.lower()
+    if extension == ".rpy":
+        return "script"
+    if extension in {".png", ".jpg", ".jpeg", ".webp", ".gif", ".avif", ".bmp", ".svg"}:
+        return "image"
+    if extension in {".ogg", ".oga", ".mp3", ".wav", ".flac", ".opus", ".m4a"}:
+        return "audio"
+    if extension in {".webm", ".mp4", ".ogv", ".mov"}:
+        return "video"
+    if extension in {".ttf", ".otf", ".woff", ".woff2"}:
+        return "font"
+    if extension in {".rpa", ".zip", ".tar", ".gz", ".7z"}:
+        return "archive"
+    return "other"
+
+
+def _normalize_catalog_entry_renpy_names(raw_entry: Dict[str, Any]) -> list[str]:
+    raw_names = raw_entry.get("renpyNames")
+    if raw_names is None:
+        return []
+    if not isinstance(raw_names, list):
+        raise HTTPException(status_code=400, detail="asset_catalog.entries[].renpyNames must be a list")
+
+    normalized_names: list[str] = []
+    seen_names: set[str] = set()
+    for raw_name in raw_names:
+        name = re.sub(r"\s+", " ", str(raw_name).strip())
+        key = name.lower()
+        if name and key not in seen_names:
+            normalized_names.append(name)
+            seen_names.add(key)
+    return normalized_names
+
+
+def _normalize_asset_catalog_character_images(raw_catalog: Dict[str, Any]) -> Dict[str, str]:
+    raw_character_images = raw_catalog.get("characterImages")
+    if raw_character_images is None:
+        return {}
+    if not isinstance(raw_character_images, dict):
+        raise HTTPException(status_code=400, detail="asset_catalog.characterImages must be an object")
+
+    normalized_character_images: Dict[str, str] = {}
+    for raw_character, raw_image_tag in raw_character_images.items():
+        character = str(raw_character).strip()
+        image_tag = re.sub(r"\s+", " ", str(raw_image_tag).strip())
+        if character and image_tag:
+            normalized_character_images[character] = image_tag
+    return normalized_character_images
+
+
+def _normalize_asset_catalog(raw_catalog: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(raw_catalog, dict):
+        raise HTTPException(status_code=400, detail="asset_catalog must be an object")
+
+    entries = raw_catalog.get("entries")
+    if entries is None:
+        entries = []
+    if not isinstance(entries, list):
+        raise HTTPException(status_code=400, detail="asset_catalog.entries must be a list")
+
+    normalized_entries: list[Dict[str, Any]] = []
+    for raw_entry in entries:
+        if not isinstance(raw_entry, dict):
+            raise HTTPException(status_code=400, detail="asset_catalog.entries items must be objects")
+        path = _normalize_project_file_path(str(raw_entry.get("path") or ""))
+        extension = Path(path).suffix.lower()
+        normalized_entry = {
+            "path": path,
+            "name": Path(path).name,
+            "extension": extension,
+            "kind": str(raw_entry.get("kind") or _catalog_entry_kind(path)),
+            "size": raw_entry.get("size"),
+            "lastModified": raw_entry.get("lastModified"),
+        }
+        renpy_names = _normalize_catalog_entry_renpy_names(raw_entry)
+        if renpy_names:
+            normalized_entry["renpyNames"] = renpy_names
+        normalized_entries.append(normalized_entry)
+
+    normalized_entries.sort(key=lambda entry: entry["path"].lower())
+    normalized_catalog = {
+        "root_kind": str(raw_catalog.get("root_kind") or "renpy-game-root"),
+        "game_directory": str(raw_catalog.get("game_directory") or "game"),
+        "entries": normalized_entries,
+    }
+    character_images = _normalize_asset_catalog_character_images(raw_catalog)
+    if character_images:
+        normalized_catalog["characterImages"] = character_images
+    return normalized_catalog
+
+
+def _parse_asset_catalog(asset_catalog: Optional[str]) -> Optional[Dict[str, Any]]:
+    if asset_catalog is None or not asset_catalog.strip():
+        return None
+    try:
+        return _normalize_asset_catalog(json.loads(asset_catalog))
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail="asset_catalog must be valid JSON") from exc
 
 
 def _project_graph_diagnostics_summary(graph_snapshot) -> Dict[str, int]:
@@ -170,6 +294,8 @@ async def save_project_graph_snapshot(
 async def import_project_graph(
     project_id: str,
     files: List[UploadFile] = File(...),
+    file_paths: Optional[List[str]] = Form(None),
+    asset_catalog: Optional[str] = Form(None),
     user: Dict = Depends(get_current_user),
 ) -> Dict[str, Any]:
     """Import uploaded Ren'Py files into one ProjectGraph and persist its Loro snapshot."""
@@ -180,28 +306,45 @@ async def import_project_graph(
         if not files:
             raise HTTPException(status_code=400, detail="At least one .rpy file is required")
 
+        normalized_file_paths: list[str] = []
+        if file_paths is not None:
+            if len(file_paths) != len(files):
+                raise HTTPException(status_code=400, detail="file_paths must match uploaded files")
+            normalized_file_paths = [_normalize_project_file_path(path) for path in file_paths]
+
+        normalized_catalog = _parse_asset_catalog(asset_catalog)
+
         with tempfile.TemporaryDirectory(prefix="renpy-graph-import-") as temp_dir:
             temp_paths: list[Path] = []
-            for upload in files:
+            for index, upload in enumerate(files):
                 filename = Path(upload.filename or "").name
                 if not filename:
                     raise HTTPException(status_code=400, detail="Uploaded file must have a filename")
-                if Path(filename).suffix.lower() != ".rpy":
+
+                project_file_path = normalized_file_paths[index] if normalized_file_paths else filename
+                if Path(project_file_path).suffix.lower() != ".rpy":
                     raise HTTPException(status_code=400, detail="Only .rpy files can be imported")
 
                 content = await upload.read()
                 if not content:
-                    raise HTTPException(status_code=400, detail=f"Uploaded file is empty: {filename}")
+                    raise HTTPException(status_code=400, detail=f"Uploaded file is empty: {project_file_path}")
 
-                temp_path = Path(temp_dir) / filename
+                temp_path = Path(temp_dir) / project_file_path
+                temp_path.parent.mkdir(parents=True, exist_ok=True)
                 temp_path.write_bytes(content)
                 temp_paths.append(temp_path)
 
-            imported_graph = ProjectGraphImporter().import_files(project_id=project_id, files=temp_paths)
+            imported_graph = ProjectGraphImporter().import_files(
+                project_id=project_id,
+                files=temp_paths,
+                file_paths=normalized_file_paths if normalized_file_paths else None,
+            )
             graph = ProjectGraphResolver().resolve(imported_graph)
 
         snapshot = ProjectGraphCrdtSnapshotBridge().export_snapshot(graph)
         db_service.save_project_crdt_snapshot(project_id, snapshot)
+        if normalized_catalog is not None:
+            db_service.save_project_asset_catalog(project_id, normalized_catalog, updated_by=user["id"])
 
         return {
             "project_id": project_id,
@@ -212,11 +355,56 @@ async def import_project_graph(
             "edge_count": len(graph.edges),
             "diagnostics": _project_graph_diagnostics_summary(graph),
             "snapshot_available": db_service.get_project_crdt_snapshot(project_id) is not None,
+            "catalog_entry_count": len(normalized_catalog["entries"]) if normalized_catalog is not None else 0,
         }
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to import project graph: {str(e)}")
+
+
+@projects_router.get("/{project_id}/asset-catalog")
+async def get_project_asset_catalog(
+    project_id: str,
+    user: Dict = Depends(get_current_user),
+) -> Dict[str, Any]:
+    """Return the latest text-only local Ren'Py asset catalog for a project."""
+    try:
+        _get_accessible_project(project_id, user)
+        catalog = db_service.get_project_asset_catalog(project_id)
+        if catalog is None:
+            raise HTTPException(status_code=404, detail="Project asset catalog not found")
+        return catalog
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get project asset catalog: {str(e)}")
+
+
+@projects_router.put("/{project_id}/asset-catalog")
+async def update_project_asset_catalog(
+    project_id: str,
+    catalog: Dict[str, Any] = Body(...),
+    user: Dict = Depends(get_current_user),
+) -> Dict[str, Any]:
+    """Replace the latest text-only local Ren'Py asset catalog for a project."""
+    try:
+        project = _get_accessible_project(project_id, user)
+        _ensure_project_catalog_updater(project)
+        normalized_catalog = _normalize_asset_catalog(catalog)
+        db_service.save_project_asset_catalog(project_id, normalized_catalog, updated_by=user["id"])
+        saved_catalog = db_service.get_project_asset_catalog(project_id)
+        return saved_catalog or {
+            "project_id": project_id,
+            "catalog": normalized_catalog,
+            "revision": 1,
+            "updated_by": user["id"],
+            "updated_at": None,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update project asset catalog: {str(e)}")
 
 
 @projects_router.post("/{project_id}/graph-export")

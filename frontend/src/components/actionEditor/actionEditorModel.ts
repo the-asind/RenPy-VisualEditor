@@ -8,6 +8,7 @@ export interface ActionEditorDialogueRow {
   id: string;
   kind: 'dialogue';
   speaker: string;
+  imageAttributes?: string[];
   text: string;
   source?: string;
 }
@@ -26,6 +27,8 @@ export interface ActionEditorCommandRow {
   command: string;
   primary: string;
   suffix: string;
+  extraClauses?: string;
+  clauses?: ActionEditorCommandClauses;
   source?: string;
 }
 
@@ -48,9 +51,16 @@ export type ActionEditorTextTag =
   | 'pause'
   | 'noWait';
 
+export type ActionEditorCommandClauseName = 'at' | 'with';
+export type ActionEditorCommandClauses = Partial<Record<ActionEditorCommandClauseName, string>>;
+
 export interface ActionEditorTextSelection {
   start: number;
   end: number;
+}
+
+export interface ActionEditorTextTagSettings {
+  value?: string;
 }
 
 export type ActionEditorStructuralStatementKind = 'menu' | 'conditional' | 'jump' | 'call' | 'return' | 'label';
@@ -60,11 +70,63 @@ export interface ActionEditorStructuralStatement {
   statement: string;
 }
 
+const speakerAccentPalette = ['#2563eb', '#db2777', '#7c3aed', '#16a34a', '#ea580c', '#0891b2', '#4f46e5', '#be123c'];
+
+const knownSpeakerAccents = new Map<string, string>([
+  ['narrator', '#64748b'],
+  ['m', '#16a34a'],
+  ['monika', '#16a34a'],
+  ['n', '#db2777'],
+  ['natsuki', '#db2777'],
+  ['y', '#7c3aed'],
+  ['yuri', '#7c3aed'],
+  ['s', '#2563eb'],
+  ['sayori', '#2563eb'],
+  ['mc', '#ea580c'],
+]);
+
+export const actionEditorDraftCardKinds = [
+  'dialogue',
+  'scene',
+  'show',
+  'hide',
+  'music',
+  'sound',
+  'transition',
+] as const;
+
+export type ActionEditorDraftCardKind = (typeof actionEditorDraftCardKinds)[number];
+
+export const speakerAccentForId = (speakerId: string): string => {
+  const normalized = speakerId.trim().toLowerCase();
+  const knownAccent = knownSpeakerAccents.get(normalized);
+  if (knownAccent) {
+    return knownAccent;
+  }
+
+  let hash = 0;
+  for (const character of normalized || 'speaker') {
+    hash = (hash * 31 + character.charCodeAt(0)) >>> 0;
+  }
+  return speakerAccentPalette[hash % speakerAccentPalette.length];
+};
+
 const rowId = (lineIndex: number): string => `row-${String(lineIndex).padStart(4, '0')}`;
 
 const lineIndexFromRowId = (id: string): number | null => {
   const match = id.match(/^row-(\d+)$/);
   return match ? Number.parseInt(match[1], 10) : null;
+};
+
+const uniqueInsertedRowId = (rows: ActionEditorRow[], baseRowId: string): string => {
+  const usedIds = new Set(rows.map((row) => row.id));
+  let candidate = `${baseRowId}-split`;
+  let counter = 2;
+  while (usedIds.has(candidate)) {
+    candidate = `${baseRowId}-split-${counter}`;
+    counter += 1;
+  }
+  return candidate;
 };
 
 const unescapeRenpyString = (value: string): string =>
@@ -78,12 +140,13 @@ const parseQuotedText = (line: string): string | null => {
   return match ? unescapeRenpyString(match[1]) : null;
 };
 
-const parseDialogueLine = (line: string): { speaker: string; text: string } | null => {
-  const match = line.match(/^([A-Za-z_][A-Za-z0-9_.]*)\s+"((?:\\.|[^"\\])*)"$/);
+const parseDialogueLine = (line: string): { speaker: string; imageAttributes: string[]; text: string } | null => {
+  const match = line.match(/^([A-Za-z_][A-Za-z0-9_.]*)(?:\s+([^"].*?))?\s+"((?:\\.|[^"\\])*)"$/);
   return match
     ? {
         speaker: match[1],
-        text: unescapeRenpyString(match[2]),
+        imageAttributes: match[2]?.trim().split(/\s+/).filter(Boolean) ?? [],
+        text: unescapeRenpyString(match[3]),
       }
     : null;
 };
@@ -100,23 +163,81 @@ const splitPrimaryAndSuffix = (value: string, suffixPattern: RegExp): { primary:
   };
 };
 
+const suffixFromClauses = (clauses?: ActionEditorCommandClauses, extraClauses?: string): string =>
+  [
+    extraClauses?.trim() ?? '',
+    clauses?.at?.trim() ? `at ${clauses.at.trim()}` : '',
+    clauses?.with?.trim() ? `with ${clauses.with.trim()}` : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+const splitExtraImageClauses = (body: string): { primary: string; extraClauses: string } => {
+  const match = body.match(/\s+(?:onlayer|behind|zorder)\s+/);
+  if (!match || typeof match.index !== 'number') {
+    return { primary: body.trim(), extraClauses: '' };
+  }
+
+  return {
+    primary: body.slice(0, match.index).trim(),
+    extraClauses: body.slice(match.index).trim(),
+  };
+};
+
+const parseImageCommandClauses = (body: string, enabledClauses: ActionEditorCommandClauseName[]) => {
+  const clauses: ActionEditorCommandClauses = {};
+  let primary = body.trim();
+  let extraClauses = '';
+
+  if (enabledClauses.includes('with')) {
+    const withMatch = primary.match(/\s+with\s+/);
+    if (withMatch && typeof withMatch.index === 'number') {
+      clauses.with = primary.slice(withMatch.index + withMatch[0].length).trim();
+      primary = primary.slice(0, withMatch.index).trim();
+    }
+  }
+
+  if (enabledClauses.includes('at')) {
+    const atMatch = primary.match(/\s+at\s+/);
+    if (atMatch && typeof atMatch.index === 'number') {
+      clauses.at = primary.slice(atMatch.index + atMatch[0].length).trim();
+      primary = primary.slice(0, atMatch.index).trim();
+    }
+  }
+
+  const extraSplit = splitExtraImageClauses(primary);
+  primary = extraSplit.primary;
+  extraClauses = extraSplit.extraClauses;
+
+  const cleanClauses = Object.fromEntries(
+    Object.entries(clauses).filter(([, value]) => value.trim()),
+  ) as ActionEditorCommandClauses;
+
+  return {
+    clauses: cleanClauses,
+    extraClauses,
+    primary,
+    suffix: suffixFromClauses(cleanClauses, extraClauses),
+  };
+};
+
 const parseCommandLine = (line: string, id: string): ActionEditorCommandRow | null => {
   if (line.startsWith('scene ')) {
     const body = line.slice('scene '.length).trim();
-    const parts = splitPrimaryAndSuffix(body, /\s+with\s+/);
-    return { id, kind: 'scene', command: 'scene', primary: parts.primary, suffix: parts.suffix, source: line };
+    const parts = parseImageCommandClauses(body, ['with']);
+    return { id, kind: 'scene', command: 'scene', primary: parts.primary, suffix: parts.suffix, ...(parts.extraClauses ? { extraClauses: parts.extraClauses } : {}), clauses: parts.clauses, source: line };
   }
 
   if (line.startsWith('show ')) {
     const body = line.slice('show '.length).trim();
-    const parts = splitPrimaryAndSuffix(body, /\s+(?:at|with|onlayer|behind|zorder)\s+/);
-    return { id, kind: 'show', command: 'show', primary: parts.primary, suffix: parts.suffix, source: line };
+    const parts = parseImageCommandClauses(body, ['at', 'with']);
+    return { id, kind: 'show', command: 'show', primary: parts.primary, suffix: parts.suffix, ...(parts.extraClauses ? { extraClauses: parts.extraClauses } : {}), clauses: parts.clauses, source: line };
   }
 
   if (line.startsWith('hide ')) {
     const body = line.slice('hide '.length).trim();
-    const parts = splitPrimaryAndSuffix(body, /\s+(?:with|onlayer)\s+/);
-    return { id, kind: 'hide', command: 'hide', primary: parts.primary, suffix: parts.suffix, source: line };
+    const parts = parseImageCommandClauses(body, ['with']);
+    return { id, kind: 'hide', command: 'hide', primary: parts.primary, suffix: parts.suffix, ...(parts.extraClauses ? { extraClauses: parts.extraClauses } : {}), clauses: parts.clauses, source: line };
   }
 
   if (line.startsWith('play music ')) {
@@ -177,6 +298,7 @@ export const parseActionEditorContent = (content: string): ActionEditorRow[] =>
           id,
           kind: 'dialogue',
           speaker: dialogue.speaker,
+          ...(dialogue.imageAttributes.length ? { imageAttributes: dialogue.imageAttributes } : {}),
           text: dialogue.text,
           source: trimmedLine,
         };
@@ -196,7 +318,8 @@ const serializeCommandRow = (row: ActionEditorCommandRow): string => {
     return row.source;
   }
 
-  const parts = [row.primary.trim(), row.suffix.trim()].filter(Boolean).join(' ');
+  const clauseSuffix = row.clauses ? suffixFromClauses(row.clauses, row.extraClauses) : row.suffix.trim();
+  const parts = [row.primary.trim(), clauseSuffix].filter(Boolean).join(' ');
   if (row.kind === 'music') {
     return `play music ${parts}`.trimEnd();
   }
@@ -208,16 +331,12 @@ const serializeCommandRow = (row: ActionEditorCommandRow): string => {
 
 const serializeRow = (row: ActionEditorRow): string | null => {
   if (row.kind === 'dialogue') {
-    if (!row.text.trim()) {
-      return null;
-    }
-    return row.source ?? `${row.speaker} "${escapeRenpyString(row.text)}"`;
+    const imageAttributes = row.imageAttributes?.filter(Boolean).join(' ') ?? '';
+    const speakerAndAttributes = [row.speaker, imageAttributes].filter(Boolean).join(' ');
+    return row.source ?? `${speakerAndAttributes} "${escapeRenpyString(row.text)}"`;
   }
 
   if (row.kind === 'narration') {
-    if (!row.text.trim()) {
-      return null;
-    }
     return row.source ?? `"${escapeRenpyString(row.text)}"`;
   }
 
@@ -283,6 +402,254 @@ export const updateActionEditorRowText = (
     };
   });
 
+export const updateActionEditorCommandPrimary = (
+  rows: ActionEditorRow[],
+  rowIdToUpdate: string,
+  primary: string,
+): ActionEditorRow[] =>
+  rows.map((row) => {
+    if (row.id !== rowIdToUpdate || row.kind === 'dialogue' || row.kind === 'narration' || row.kind === 'rawLine') {
+      return row;
+    }
+
+    const clauses = row.clauses ? { ...row.clauses } : undefined;
+    return {
+      ...row,
+      primary,
+      suffix: suffixFromClauses(clauses, row.extraClauses) || row.suffix,
+      source: undefined,
+    };
+  });
+
+export const updateActionEditorCommandClause = (
+  rows: ActionEditorRow[],
+  rowIdToUpdate: string,
+  clauseName: ActionEditorCommandClauseName,
+  value: string,
+): ActionEditorRow[] =>
+  rows.map((row) => {
+    if (row.id !== rowIdToUpdate || row.kind === 'dialogue' || row.kind === 'narration' || row.kind === 'rawLine') {
+      return row;
+    }
+
+    const clauses = {
+      ...(row.clauses ?? {}),
+      [clauseName]: value.trim(),
+    };
+    if (!clauses[clauseName]) {
+      delete clauses[clauseName];
+    }
+
+    return {
+      ...row,
+      clauses,
+      suffix: suffixFromClauses(clauses, row.extraClauses),
+      source: undefined,
+    };
+  });
+
+export const updateActionEditorCommandExtraClauses = (
+  rows: ActionEditorRow[],
+  rowIdToUpdate: string,
+  extraClauses: string,
+): ActionEditorRow[] =>
+  rows.map((row) => {
+    if (row.id !== rowIdToUpdate || row.kind === 'dialogue' || row.kind === 'narration' || row.kind === 'rawLine') {
+      return row;
+    }
+
+    const trimmedExtraClauses = extraClauses.trim();
+    return {
+      ...row,
+      ...(trimmedExtraClauses ? { extraClauses: trimmedExtraClauses } : { extraClauses: undefined }),
+      suffix: suffixFromClauses(row.clauses, trimmedExtraClauses),
+      source: undefined,
+    };
+  });
+
+export const updateActionEditorCommandSuffix = (
+  rows: ActionEditorRow[],
+  rowIdToUpdate: string,
+  suffix: string,
+): ActionEditorRow[] =>
+  rows.map((row) => {
+    if (row.id !== rowIdToUpdate || row.kind === 'dialogue' || row.kind === 'narration' || row.kind === 'rawLine') {
+      return row;
+    }
+
+    return {
+      ...row,
+      suffix: suffix.trim(),
+      source: undefined,
+    };
+  });
+
+export const deriveActionEditorSpeakerPool = (rows: ActionEditorRow[]): string[] => {
+  const speakers: string[] = [];
+  for (const row of rows) {
+    if (row.kind !== 'dialogue' && row.kind !== 'narration') {
+      continue;
+    }
+    const speaker = row.kind === 'narration' ? 'Narrator' : row.speaker;
+    if (!speakers.includes(speaker)) {
+      speakers.push(speaker);
+    }
+  }
+
+  return speakers.length ? speakers : ['Narrator'];
+};
+
+export const splitActionEditorTextRow = (
+  rows: ActionEditorRow[],
+  rowIdToSplit: string,
+  selection: ActionEditorTextSelection,
+): ActionEditorRow[] => {
+  const targetIndex = rows.findIndex((row) => row.id === rowIdToSplit);
+  const targetRow = rows[targetIndex];
+  if (targetIndex === -1 || !targetRow || (targetRow.kind !== 'dialogue' && targetRow.kind !== 'narration')) {
+    return rows;
+  }
+
+  const splitStart = Math.max(0, Math.min(selection.start, targetRow.text.length));
+  const splitEnd = Math.max(splitStart, Math.min(selection.end, targetRow.text.length));
+  const before = targetRow.text.slice(0, splitStart);
+  const after = targetRow.text.slice(splitEnd);
+  const nextExistingRow = rows[targetIndex + 1];
+  const targetSpeaker = targetRow.kind === 'narration' ? 'Narrator' : targetRow.speaker;
+  const nextSpeaker =
+    nextExistingRow?.kind === 'narration' ? 'Narrator' : nextExistingRow?.kind === 'dialogue' ? nextExistingRow.speaker : null;
+  if (!after && nextExistingRow && (nextExistingRow.kind === 'dialogue' || nextExistingRow.kind === 'narration')) {
+    if (!nextExistingRow.text.trim() && nextSpeaker === targetSpeaker) {
+      return rows;
+    }
+  }
+
+  const nextRow =
+    targetRow.kind === 'dialogue'
+      ? {
+          id: uniqueInsertedRowId(rows, targetRow.id),
+          kind: 'dialogue' as const,
+          speaker: targetRow.speaker,
+          ...(targetRow.imageAttributes?.length ? { imageAttributes: [...targetRow.imageAttributes] } : {}),
+          text: after,
+        }
+      : {
+          id: uniqueInsertedRowId(rows, targetRow.id),
+          kind: 'narration' as const,
+          speaker: 'Narrator' as const,
+          text: after,
+        };
+
+  return [
+    ...rows.slice(0, targetIndex),
+    {
+      ...targetRow,
+      text: before,
+      source: undefined,
+    },
+    nextRow,
+    ...rows.slice(targetIndex + 1),
+  ];
+};
+
+export const changeActionEditorEmptyRowSpeaker = (
+  rows: ActionEditorRow[],
+  rowIdToUpdate: string,
+  direction: -1 | 1,
+  speakerPool: string[],
+): ActionEditorRow[] => {
+  const normalizedPool = speakerPool.length ? speakerPool : deriveActionEditorSpeakerPool(rows);
+
+  return rows.map((row) => {
+    if (row.id !== rowIdToUpdate || (row.kind !== 'dialogue' && row.kind !== 'narration') || row.text.trim()) {
+      return row;
+    }
+
+    const currentSpeaker = row.kind === 'narration' ? 'Narrator' : row.speaker;
+    const currentIndex = Math.max(0, normalizedPool.indexOf(currentSpeaker));
+    const nextSpeaker = normalizedPool[(currentIndex + direction + normalizedPool.length) % normalizedPool.length];
+
+    if (nextSpeaker === 'Narrator') {
+      return {
+        id: row.id,
+        kind: 'narration',
+        speaker: 'Narrator',
+        text: '',
+      };
+    }
+
+    return {
+      id: row.id,
+      kind: 'dialogue',
+      speaker: nextSpeaker,
+      text: '',
+    };
+  });
+};
+
+const firstConcreteSpeaker = (rows: ActionEditorRow[]): string => {
+  const dialogue = rows.find((row): row is ActionEditorDialogueRow => row.kind === 'dialogue');
+  return dialogue?.speaker ?? 'm';
+};
+
+const draftCommandForKind = (
+  rows: ActionEditorRow[],
+  rowIdToUpdate: string,
+  kind: Exclude<ActionEditorDraftCardKind, 'dialogue'>,
+): ActionEditorCommandRow => {
+  const speaker = firstConcreteSpeaker(rows);
+  if (kind === 'scene') {
+    return { id: rowIdToUpdate, kind, command: 'scene', primary: 'black', suffix: '' };
+  }
+  if (kind === 'show') {
+    return { id: rowIdToUpdate, kind, command: 'show', primary: speaker, suffix: '' };
+  }
+  if (kind === 'hide') {
+    return { id: rowIdToUpdate, kind, command: 'hide', primary: speaker, suffix: '' };
+  }
+  if (kind === 'music') {
+    return { id: rowIdToUpdate, kind, command: 'music', primary: 'none', suffix: '' };
+  }
+  if (kind === 'sound') {
+    return { id: rowIdToUpdate, kind, command: 'sound', primary: 'none', suffix: '' };
+  }
+  return { id: rowIdToUpdate, kind, command: 'with', primary: 'dissolve', suffix: '' };
+};
+
+export const commitActionEditorEmptyRowDraft = (
+  rows: ActionEditorRow[],
+  rowIdToUpdate: string,
+  draftKind: ActionEditorDraftCardKind,
+): ActionEditorRow[] =>
+  rows.map((row) => {
+    if (row.id !== rowIdToUpdate || (row.kind !== 'dialogue' && row.kind !== 'narration') || row.text.trim()) {
+      return row;
+    }
+
+    if (draftKind === 'dialogue') {
+      return row;
+    }
+
+    return draftCommandForKind(rows, rowIdToUpdate, draftKind);
+  });
+
+export const updateActionEditorDialogueImageAttributes = (
+  rows: ActionEditorRow[],
+  rowIdToUpdate: string,
+  imageAttributes: string[],
+): ActionEditorRow[] =>
+  rows.map((row) => {
+    if (row.id !== rowIdToUpdate || row.kind !== 'dialogue') {
+      return row;
+    }
+
+    return {
+      ...row,
+      imageAttributes: imageAttributes.map((attribute) => attribute.trim()).filter(Boolean),
+      source: undefined,
+    };
+  });
+
 const pairedTextTags: Partial<Record<ActionEditorTextTag, { open: string; close: string }>> = {
   bold: { open: '{b}', close: '{/b}' },
   italic: { open: '{i}', close: '{/i}' },
@@ -293,16 +660,43 @@ const pairedTextTags: Partial<Record<ActionEditorTextTag, { open: string; close:
   cps: { open: '{cps=28}', close: '{/cps}' },
 };
 
+const parameterizedTextTag = (
+  tag: ActionEditorTextTag,
+  settings?: ActionEditorTextTagSettings,
+): { open: string; close: string } | null => {
+  if (!settings?.value?.trim()) {
+    return null;
+  }
+
+  const value = settings.value.trim();
+  if (tag === 'color') {
+    return { open: `{color=${value}}`, close: '{/color}' };
+  }
+  if (tag === 'size') {
+    return { open: `{size=${value}}`, close: '{/size}' };
+  }
+  if (tag === 'cps') {
+    return { open: `{cps=${value}}`, close: '{/cps}' };
+  }
+
+  return null;
+};
+
 const insertionTextTags: Partial<Record<ActionEditorTextTag, string>> = {
   wait: '{w}',
   pause: '{p}',
   noWait: '{nw}',
 };
 
-const applyTagToText = (text: string, selection: ActionEditorTextSelection, tag: ActionEditorTextTag): string => {
+const applyTagToText = (
+  text: string,
+  selection: ActionEditorTextSelection,
+  tag: ActionEditorTextTag,
+  settings?: ActionEditorTextTagSettings,
+): string => {
   const start = Math.max(0, Math.min(selection.start, text.length));
   const end = Math.max(start, Math.min(selection.end, text.length));
-  const pairedTag = pairedTextTags[tag];
+  const pairedTag = parameterizedTextTag(tag, settings) ?? pairedTextTags[tag];
   if (pairedTag) {
     const selectedText = text.slice(start, end);
     return `${text.slice(0, start)}${pairedTag.open}${selectedText}${pairedTag.close}${text.slice(end)}`;
@@ -321,6 +715,7 @@ export const applyActionEditorTextTag = (
   rowIdToUpdate: string,
   selection: ActionEditorTextSelection,
   tag: ActionEditorTextTag,
+  settings?: ActionEditorTextTagSettings,
 ): ActionEditorRow[] =>
   rows.map((row) => {
     if (row.id !== rowIdToUpdate || (row.kind !== 'dialogue' && row.kind !== 'narration')) {
@@ -329,7 +724,7 @@ export const applyActionEditorTextTag = (
 
     return {
       ...row,
-      text: applyTagToText(row.text, selection, tag),
+      text: applyTagToText(row.text, selection, tag, settings),
       source: undefined,
     };
   });

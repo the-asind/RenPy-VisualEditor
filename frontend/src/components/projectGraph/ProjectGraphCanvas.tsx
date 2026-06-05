@@ -46,6 +46,7 @@ import {
   type ProjectGraphSnapshot,
 } from '../../utils/projectGraphProjection';
 import type { ProjectGraphPresenceUser, ProjectGraphRemoteCursor } from '../../utils/projectGraphCollaboration';
+import type { ProjectAssetCatalogPayload } from '../../utils/localRenpyDirectory';
 import { ActionEditorOverlay } from '../actionEditor/ActionEditorOverlay';
 import brandLogoUrl from '../../assets/logo.svg';
 import './ProjectGraphCanvas.css';
@@ -987,6 +988,7 @@ export const projectGraphEdgeTypes: EdgeTypes = {
 };
 
 export interface ProjectGraphCanvasProps {
+  assetCatalog?: ProjectAssetCatalogPayload | null;
   graph: ProjectGraphSnapshot;
   className?: string;
   projectName?: string | null;
@@ -996,6 +998,7 @@ export interface ProjectGraphCanvasProps {
   onlyRenderVisibleElements?: boolean;
   exportStatus?: string | null;
   exportedFiles?: Record<string, string> | null;
+  localAssetUrls?: Record<string, string>;
   saveStatus?: string | null;
   onExportProjectGraph?: () => void;
   onEntityPositionChange?: (entityId: string, position: GraphPoint) => void;
@@ -1060,6 +1063,50 @@ export const shouldFlushProjectGraphScenarioContentCommitForSelection = (
   nextSelectedNodeId: string | null,
 ): boolean => pendingCommit !== null && pendingCommit.nodeId !== nextSelectedNodeId;
 
+interface ProjectGraphScenarioContentEditorProps {
+  content: string;
+  nodeId: string;
+  onBlur: () => void;
+  onContentChange: (nodeId: string, content: string) => void;
+}
+
+const ProjectGraphScenarioContentEditor = memo(function ProjectGraphScenarioContentEditor({
+  content,
+  nodeId,
+  onBlur,
+  onContentChange,
+}: ProjectGraphScenarioContentEditorProps) {
+  const [draft, setDraft] = useState<ProjectGraphScenarioContentDraft>({ nodeId, content });
+  const value = draft.nodeId === nodeId ? draft.content : content;
+
+  useEffect(() => {
+    setDraft((currentDraft) => {
+      if (currentDraft.nodeId === nodeId && currentDraft.content === content) {
+        return currentDraft;
+      }
+      return { nodeId, content };
+    });
+  }, [content, nodeId]);
+
+  return (
+    <textarea
+      aria-label="Edit scenario node content"
+      className="project-graph-canvas__node-editor-input"
+      autoCapitalize="off"
+      autoComplete="off"
+      autoCorrect="off"
+      onChange={(event) => {
+        const nextContent = event.target.value;
+        setDraft({ nodeId, content: nextContent });
+        onContentChange(nodeId, nextContent);
+      }}
+      onBlur={onBlur}
+      spellCheck={false}
+      value={value}
+    />
+  );
+});
+
 const participantAccentColors = [
   '#0072B2',
   '#D55E00',
@@ -1114,6 +1161,7 @@ const getParticipantInitials = (participant: Pick<ProjectGraphPresenceUser, 'id'
 };
 
 const ProjectGraphCanvasInner = ({
+  assetCatalog,
   graph,
   className,
   projectName,
@@ -1123,6 +1171,7 @@ const ProjectGraphCanvasInner = ({
   onlyRenderVisibleElements = false,
   exportStatus,
   exportedFiles,
+  localAssetUrls,
   saveStatus,
   onExportProjectGraph,
   onEntityPositionChange,
@@ -1341,6 +1390,7 @@ const ProjectGraphCanvasInner = ({
       clearTimeout(scenarioContentCommitTimerRef.current);
       scenarioContentCommitTimerRef.current = null;
     }
+    setScenarioContentDraft({ nodeId: pendingCommit.nodeId, content: pendingCommit.content });
     onScenarioContentChange?.(pendingCommit.nodeId, pendingCommit.content);
   }, [onScenarioContentChange]);
   const scheduleScenarioContentCommit = useCallback(
@@ -1378,6 +1428,10 @@ const ProjectGraphCanvasInner = ({
   const displayedScenarioContent = selectedScenario
     ? getProjectGraphScenarioContentEditorValue(selectedScenario.id, selectedScenario.content, scenarioContentDraft)
     : '';
+  const getLatestDisplayedScenarioContent = useCallback(() => {
+    const pendingCommit = pendingScenarioContentCommitRef.current;
+    return pendingCommit?.nodeId === selectedScenario?.id ? pendingCommit.content : displayedScenarioContent;
+  }, [displayedScenarioContent, selectedScenario?.id]);
   const selectedActionEditorNode = useMemo(
     () =>
       selectedScenario?.type === 'action'
@@ -1387,6 +1441,27 @@ const ProjectGraphCanvasInner = ({
           }
         : null,
     [displayedScenarioContent, selectedScenario],
+  );
+  const selectedActionEditorNodeId = selectedActionEditorNode?.id ?? null;
+  const handleActionEditorContentChange = useCallback(
+    (content: string) => {
+      if (!selectedActionEditorNodeId) {
+        return;
+      }
+      scheduleScenarioContentCommit(selectedActionEditorNodeId, content);
+    },
+    [scheduleScenarioContentCommit, selectedActionEditorNodeId],
+  );
+  const handleActionEditorTitleChange = useCallback(
+    (title: string) => {
+      if (!selectedActionEditorNodeId) {
+        return;
+      }
+      onScenarioMetadataChange?.(selectedActionEditorNodeId, {
+        title: title.trim() ? title.trim() : null,
+      });
+    },
+    [onScenarioMetadataChange, selectedActionEditorNodeId],
   );
   const exportedFileEntries = useMemo(
     () => Object.entries(exportedFiles ?? {}).sort(([pathA], [pathB]) => pathA.localeCompare(pathB)),
@@ -1910,15 +1985,11 @@ const ProjectGraphCanvasInner = ({
           </div>
           <label className="project-graph-canvas__field">
             <span>{selectedContentLabel}</span>
-            <textarea
-              aria-label="Edit scenario node content"
-              className="project-graph-canvas__node-editor-input"
-              onChange={(event) => {
-                const content = event.target.value;
-                setScenarioContentDraftAndScheduleCommit(selectedScenario.id, content);
-              }}
+            <ProjectGraphScenarioContentEditor
+              content={displayedScenarioContent}
+              nodeId={selectedScenario.id}
               onBlur={flushScenarioContentCommit}
-              value={displayedScenarioContent}
+              onContentChange={scheduleScenarioContentCommit}
             />
           </label>
           {selectedScenario.type === 'menu_choice' ? (
@@ -1927,15 +1998,19 @@ const ProjectGraphCanvasInner = ({
               <input
                 aria-label="Edit menu choice condition"
                 className="project-graph-canvas__node-editor-line-input"
+                autoCapitalize="off"
+                autoComplete="off"
+                autoCorrect="off"
                 onChange={(event) => {
                   const condition = event.target.value;
-                  const content = menuChoiceLineWithCondition(displayedScenarioContent, condition);
+                  const content = menuChoiceLineWithCondition(getLatestDisplayedScenarioContent(), condition);
                   setScenarioContentDraftAndScheduleCommit(selectedScenario.id, content);
                   onScenarioMetadataChange?.(selectedScenario.id, {
                     condition: condition.trim() ? condition.trim() : null,
                   });
                 }}
                 onBlur={flushScenarioContentCommit}
+                spellCheck={false}
                 value={selectedChoiceCondition}
               />
             </label>
@@ -1974,19 +2049,17 @@ const ProjectGraphCanvasInner = ({
 
       {isActionEditorOpen && selectedActionEditorNode ? (
         <ActionEditorOverlay
+          assetCatalog={assetCatalog}
           filePath={selectedScenarioFile?.path ?? 'Unknown file'}
           labelPath={selectedScenarioLabel?.qualified_name ?? 'Unknown label'}
+          localAssetUrls={localAssetUrls}
           node={selectedActionEditorNode}
           onClose={() => {
             flushScenarioContentCommit();
             setIsActionEditorOpen(false);
           }}
-          onContentChange={(content) => setScenarioContentDraftAndScheduleCommit(selectedActionEditorNode.id, content)}
-          onTitleChange={(title) =>
-            onScenarioMetadataChange?.(selectedActionEditorNode.id, {
-              title: title.trim() ? title.trim() : null,
-            })
-          }
+          onContentChange={handleActionEditorContentChange}
+          onTitleChange={handleActionEditorTitleChange}
           saveStatus={saveStatus}
         />
       ) : null}

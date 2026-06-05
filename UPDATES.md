@@ -2,7 +2,728 @@
 
 This file is the short project memory for RenPy Visual Editor 2.0. Keep it current when closing master items, changing decisions, or classifying old code.
 
+## 2026-06-05
+
+### Action Editor Character Image Preview And Audio Toggle
+
+Closed a focused Action Editor preview correction for local Ren'Py game assets.
+
+Files:
+
+1. `frontend/src/utils/localRenpyDirectory.ts`
+2. `frontend/src/utils/assetCatalogResolver.ts`
+3. `frontend/src/components/actionEditor/ActionEditorSidebar.tsx`
+4. `frontend/src/components/actionEditor/ActionEditorOverlay.tsx`
+5. `frontend/src/utils/__tests__/localRenpyDirectory.test.ts`
+6. `frontend/src/utils/__tests__/assetCatalogResolver.test.ts`
+7. `frontend/src/components/actionEditor/__tests__/ActionEditorSidebar.test.tsx`
+8. `frontend/e2e/action-editor-usability.spec.ts`
+9. `backend/app/api/routes/projects.py`
+10. `backend/tests/test_project_graph_import_route.py`
+11. `UPDATES.md`
+
+Result:
+
+1. Local directory scan now extracts `define s = Character(..., image="sayori")` and `DynamicCharacter(..., image="...")` into catalog `characterImages`.
+2. Backend catalog normalization now preserves validated `characterImages` mappings during import and refresh.
+3. Scene preview now tracks shown sprites by Ren'Py image tag, so a later `show natsuki ...` replaces the previous `natsuki` image instead of adding a duplicate.
+4. Say image attributes such as `s 2x "..."` now use the `Character(image="sayori")` mapping and update the visible `sayori` sprite in the preview.
+5. Local audio preview is now single-active: starting another preview stops the previous one, and clicking the same URL again stops and rewinds it.
+6. Action Editor no longer drops the active writer row on every content update, so command-field edits keep the Sidebar preview scoped to the focused row.
+
+Checks:
+
+1. Red frontend tests confirmed Character image mappings were not extracted, say image attributes did not affect preview state, and local audio previews could overlap.
+2. Red backend route test confirmed `characterImages` were dropped by server catalog normalization.
+3. `npm test -- --run src/utils/__tests__/assetCatalogResolver.test.ts src/utils/__tests__/localRenpyDirectory.test.ts src/components/actionEditor/__tests__/ActionEditorSidebar.test.tsx` passed with 14 tests.
+4. `npm test -- --run` passed with 147 frontend tests.
+5. `npm run build` passed with known non-blocking `/env.js`, Browserslist, and large chunk warnings.
+6. `npm run check:mvp-bundle` passed under the existing 6 MB MVP bundle limit.
+7. `npm run test:e2e -- action-editor-usability.spec.ts` passed with 16 Playwright tests.
+8. `python -m pytest backend/tests -q` passed with 162 tests and Windows temp cleanup warnings.
+
+### Local RenPy Asset Alias Diagnostics Fix
+
+Closed a follow-up debugging pass for local image/audio preview failures after connecting a full Ren'Py game folder.
+
+Files:
+
+1. `frontend/src/utils/localRenpyDirectory.ts`
+2. `frontend/src/utils/assetCatalogResolver.ts`
+3. `frontend/src/components/EditorPage.tsx`
+4. `frontend/src/components/actionEditor/ActionEditorSidebar.tsx`
+5. `frontend/src/utils/__tests__/localRenpyDirectory.test.ts`
+6. `frontend/src/utils/__tests__/assetCatalogResolver.test.ts`
+7. `backend/app/api/routes/projects.py`
+8. `backend/tests/test_project_graph_import_route.py`
+9. `UPDATES.md`
+
+Result:
+
+1. Local directory scan now extracts Ren'Py asset aliases from `.rpy` files.
+2. `define audio.t3 = "bgm/3.ogg"` adds `t3` and `audio.t3` aliases to the matching audio catalog entry.
+3. `image bg residential_day = "bg/residential_day.png"` adds `bg residential_day` to the matching image catalog entry.
+4. Multiline image definitions such as `image sayori = ConditionSwitch(... "images/sayori/1l.png" ...)` attach the same image alias to the referenced image files.
+5. Action Editor asset resolution now checks `renpyNames`, filename, basename, and path candidates, so `play music t3` can resolve to `bgm/3.ogg`.
+6. Backend catalog normalization now preserves validated `renpyNames` arrays during import and refresh.
+7. DevTools diagnostics now report local object URL creation counts, catalog entries that cannot be read locally, image/audio names with no catalog match, catalog matches without local object URLs, failed local image renders, and failed local audio playback.
+
+Checks:
+
+1. Red frontend tests confirmed `t3` and multiline `image sayori` aliases were not extracted or resolved.
+2. Red backend route test confirmed `renpyNames` were dropped by server catalog normalization.
+3. `npm test -- --run src/utils/__tests__/localRenpyDirectory.test.ts src/utils/__tests__/assetCatalogResolver.test.ts` passed with 7 tests.
+4. `python -m pytest backend/tests/test_project_graph_import_route.py::test_project_graph_import_route_preserves_directory_paths_and_catalog -q` passed.
+
+## 2026-06-04
+
+### Local RenPy Directory And Asset Catalog Implementation
+
+Closed the Chromium-only local Ren'Py game root import and asset catalog MVP.
+
+Files:
+
+1. `docs/local-renpy-directory-assets.md`
+2. `docs/editor-2.0-architecture.md`
+3. `backend/app/api/routes/projects.py`
+4. `backend/app/services/database.py`
+5. `backend/app/services/project_graph/importer.py`
+6. `backend/database/schema.sql`
+7. `backend/tests/test_project_asset_catalog_persistence.py`
+8. `backend/tests/test_project_graph_import_route.py`
+9. `frontend/src/utils/localRenpyDirectory.ts`
+10. `frontend/src/utils/assetCatalogResolver.ts`
+11. `frontend/src/services/api.ts`
+12. `frontend/src/components/EditorPage.tsx`
+13. `frontend/src/components/projectGraph/ProjectGraphCanvas.tsx`
+14. `frontend/src/components/actionEditor/ActionEditorOverlay.tsx`
+15. `frontend/src/components/actionEditor/ActionEditorSidebar.tsx`
+16. `frontend/src/components/actionEditor/ActionEditorWriter.tsx`
+17. `frontend/e2e/project-graph-collaboration.spec.ts`
+18. `frontend/e2e/action-editor-usability.spec.ts`
+
+Result:
+
+1. The user-facing flow now asks for the Ren'Py game root, then initializes and scans only the nested `game` directory.
+2. Directory import sends `.rpy` file bodies plus `file_paths` and a text-only asset catalog; binary image/audio/video/font/archive assets remain local.
+3. Project graph import preserves nested `.rpy` relative paths instead of flattening uploads by basename.
+4. A server-side `project_asset_catalogs` table stores catalog JSON and supports owner-only catalog writes for MVP.
+5. The local directory module ignores dot folders, cache/save/lib folders, `*.rpyc`, and backup files while keeping all allowed path names and hierarchy.
+6. Action Editor receives server catalog suggestions for image/audio command fields even when the local folder is not connected.
+7. When a collaborator connects the same local root, Action Editor resolves scene backgrounds, shown sprites, and music to local object URLs without uploading binaries.
+8. The Audio preview button now plays local audio object URLs through the browser `Audio` API when the matching local file is connected.
+9. Local `.rpy` export write-back is explicit and separate from autosave, using the already granted directory handle.
+10. The Playwright E2E harness now falls back from busy port `5175` and navigates to the actual Vite URL, avoiding Windows `TIME_WAIT` failures.
+
+Checks:
+
+1. Red backend tests first failed for missing catalog persistence, missing route behavior, unsafe paths, and missing catalog counts.
+2. Red frontend tests first failed for missing local directory helpers, missing import `file_paths`, and missing local audio playback helper.
+3. `python -m pytest backend/tests/test_project_asset_catalog_persistence.py backend/tests/test_project_graph_import_route.py -q` passed with 10 tests.
+4. `python -m pytest backend/tests -q` passed with 162 tests and Windows temp cleanup warnings.
+5. `npm test -- --run src/utils/__tests__/localRenpyDirectory.test.ts src/services/__tests__/api.test.ts` passed with 10 tests.
+6. `npm test -- --run src/utils/__tests__/assetCatalogResolver.test.ts src/components/actionEditor/__tests__/ActionEditorSidebar.test.tsx` passed with 8 tests.
+7. `npm test -- --run` passed with 143 frontend tests.
+8. `npm run build` passed with known non-blocking `/env.js`, Browserslist, and large chunk warnings.
+9. `npm run check:mvp-bundle` passed under the existing 6 MB MVP bundle limit.
+10. `npm run test:e2e` passed with 19 Playwright tests.
+
+### Local RenPy Directory And Asset Catalog Plan
+
+Started the local Ren'Py game directory and server-side asset catalog workstream.
+
+Files:
+
+1. `docs/local-renpy-directory-assets.md`
+2. `docs/editor-2.0-architecture.md`
+3. `UPDATES.md`
+
+Result:
+
+1. Added a detailed architecture and TDD artifact for Chromium-only local Ren'Py root selection.
+2. Fixed the user-facing folder model: the user chooses the game root, while the editor initializes and scans only the nested `game` folder.
+3. Established that server import stores `.rpy` content plus a text-only catalog of allowed file paths, never binary image/audio/video asset bodies.
+4. Established owner-only catalog updates for MVP with a separable permission check for future granular roles.
+5. Established explicit local `.rpy` write-back only, keeping autosave and local filesystem writes as separate modules.
+6. Established periodic/prompted rescan as the browser-compatible checkup mechanism for newly added local assets.
+7. Added File System Access, File API, Ren'Py image/audio/dialogue official references to the architecture source list.
+
+Checks:
+
+1. Documentation-only step; implementation tests will be added in the backend and frontend TDD sprints described in `docs/local-renpy-directory-assets.md`.
+
+## 2026-06-04
+
+### Action Editor And Compact Text Input Hot Path
+
+Closed a focused performance correction for keyboard input latency in fullscreen Action editor and compact node editing.
+
+Files:
+
+1. `frontend/src/components/actionEditor/ActionEditorOverlay.css`
+2. `frontend/src/components/actionEditor/ActionEditorOverlay.tsx`
+3. `frontend/src/components/actionEditor/ActionEditorWriter.tsx`
+4. `frontend/src/components/actionEditor/__tests__/ActionEditorOverlay.test.tsx`
+5. `frontend/src/components/actionEditor/__tests__/ActionEditorWriter.test.tsx`
+6. `frontend/src/components/projectGraph/ProjectGraphCanvas.tsx`
+7. `UPDATES.md`
+
+Result:
+
+1. Fullscreen Action editor text rows now keep per-row local drafts and debounce parent content commits, so normal typing does not reparse/re-render the whole writer surface on every key.
+2. Compact ProjectGraph inspector text editing now uses a local memoized textarea component and only schedules debounced scenario content commits.
+3. Ren'Py text inputs now disable browser spellcheck, autocorrect, autocomplete, and autocapitalization across Writer, Raw mode, and compact inspector fields.
+4. The fullscreen Action editor overlay no longer uses full-viewport `backdrop-filter: blur(...)`, which browser Event Timing isolated as the main presentation-delay source.
+5. Empty-row focus after Enter split now runs through a React focus request on the inserted empty row instead of a timing-sensitive global query.
+
+Checks:
+
+1. Browser Event Timing on `textarea.action-editor-writer__dialogue-input` before removing the overlay blur showed keydown duration around 104-113 ms with processing around 0.2 ms, proving the remaining lag was presentation/compositing, not server/network waiting.
+2. Disabling only `.action-editor { backdrop-filter: none }` reduced the same keydown duration to about 19 ms.
+3. After the CSS change, fullscreen writer measurement showed keydown duration average 19.64 ms, p95 24 ms, and paint-after-input p95 31.9 ms.
+4. Compact inspector measurement showed keydown duration 16 ms and paint-after-input p95 30.9 ms after moving the textarea draft local.
+5. `npm test -- --run` passed with 139 frontend tests.
+6. `npm run build` passed with known non-blocking `/env.js`, Browserslist, and large chunk warnings.
+7. `npm run test:e2e -- action-editor-usability.spec.ts` passed with 16 Playwright tests.
+8. `python -m pytest backend/tests -q` passed with 157 tests and Windows temp cleanup warnings.
+
+### Action Editor Raw Mode Integration Gate
+
+Closed a final Action editor integration gate for Writer/Raw mode layout behavior.
+
+Files:
+
+1. `frontend/src/components/actionEditor/ActionEditorOverlay.css`
+2. `frontend/e2e/action-editor-usability.spec.ts`
+3. `UPDATES.md`
+
+Result:
+
+1. Raw Ren'Py mode now removes the Writer-mode body padding so the raw editor occupies the full editor body width.
+2. A browser integration test verifies Writer view starts with Sidebar aids, switching to Raw Ren'Py hides Scene preview, Audio, and Next, and the raw editor spans the full body.
+
+Checks:
+
+1. Red step confirmed the raw column still had a 16px left inset relative to the raw body.
+2. `npm run test:e2e -- action-editor-usability.spec.ts --grep "raw mode hides writer aids"` passed.
+3. Final browser QA saved `artifacts/action-editor-final-browser-writer.png` and `artifacts/action-editor-final-browser-raw.png`.
+4. The browser QA verified the writer scroll container, fixed Sidebar, one-column drag handles, missing-asset rectangles, Audio option preview, and full-width Raw mode with Writer edits preserved.
+
+### Action Editor Audio Options Preview Integration
+
+Closed a focused integration step connecting command option editing, focused Sidebar preview, and Raw Ren'Py mode.
+
+Files:
+
+1. `frontend/src/components/actionEditor/ActionEditorSidebar.tsx`
+2. `frontend/src/components/actionEditor/ActionEditorOverlay.css`
+3. `frontend/src/components/actionEditor/__tests__/ActionEditorSidebar.test.tsx`
+4. `frontend/e2e/action-editor-usability.spec.ts`
+5. `UPDATES.md`
+
+Result:
+
+1. The Audio panel now preserves and displays the latest focused `play music` and `play sound` options, such as `fadein 2.0 loop` and `noloop`.
+2. Writer command fields, Sidebar preview/audio state, and Raw Ren'Py mode now have one browser integration test covering the same edit path.
+3. Audio option text is rendered as compact secondary metadata under the filename, so the mockup-style audio block stays dense.
+
+Checks:
+
+1. Red steps confirmed Sidebar previously dropped `music` and `sound` suffix options while Raw Ren'Py retained them.
+2. `npm test -- --run src/components/actionEditor/__tests__/ActionEditorSidebar.test.tsx` passed with 4 tests.
+3. `npm run test:e2e -- action-editor-usability.spec.ts --grep "syncs writer command edits"` passed.
+
+### Action Editor Custom Text Tag Menu Values
+
+Closed a focused Action editor TDD step for custom Ren'Py text tag values in inline toolbar menus.
+
+Files:
+
+1. `frontend/src/components/actionEditor/ActionEditorWriter.tsx`
+2. `frontend/src/components/actionEditor/ActionEditorOverlay.css`
+3. `frontend/e2e/action-editor-usability.spec.ts`
+4. `UPDATES.md`
+
+Result:
+
+1. `Color`, `Size`, and `CPS` toolbar menus now include custom value inputs in addition to preset menu items.
+2. Custom values apply through the same model path as presets, so arbitrary values such as `#f97316` and `+12` serialize as valid Ren'Py text tags.
+3. Disabled apply buttons prevent empty custom values from producing malformed tags.
+4. The custom menu layout was visually checked and fits within the compact inline toolbar popover.
+
+Checks:
+
+1. Red step confirmed the custom color field did not exist.
+2. `npm run test:e2e -- action-editor-usability.spec.ts --grep "custom RenPy text tag values"` passed.
+3. `npm test -- --run src/components/actionEditor/__tests__/actionEditorModel.test.ts src/components/actionEditor/__tests__/ActionEditorOverlay.test.tsx src/components/actionEditor/__tests__/ActionEditorWriter.test.tsx src/components/actionEditor/__tests__/ActionEditorSidebar.test.tsx` passed with 46 tests.
+4. `npm run test:e2e -- action-editor-usability.spec.ts` passed with 14 Playwright tests.
+5. `npm run build` passed with known non-blocking `/env.js`, Browserslist, and large chunk warnings.
+6. `ACTION_EDITOR_VISUAL_CHECK=1 npm run test:e2e -- action-editor-usability.spec.ts --grep "custom RenPy text tag values"` captured `artifacts/action-editor-toolbar-custom-menu-visual-check.png`.
+
+### Action Editor Seamless Autosave Draft Path
+
+Closed a focused performance/UX correction for fullscreen Action editor typing during autosave status changes.
+
+Files:
+
+1. `frontend/src/components/actionEditor/ActionEditorOverlay.tsx`
+2. `frontend/src/components/actionEditor/ActionEditorWriter.tsx`
+3. `frontend/src/components/actionEditor/ActionEditorSidebar.tsx`
+4. `frontend/src/components/actionEditor/__tests__/ActionEditorOverlay.test.tsx`
+5. `frontend/src/components/projectGraph/ProjectGraphCanvas.tsx`
+6. `frontend/src/components/EditorPage.tsx`
+7. `UPDATES.md`
+
+Result:
+
+1. Fullscreen Action editor content now lives in a local overlay draft while the writing room is open.
+2. `ProjectGraphCanvas` no longer updates React draft state on every fullscreen Action editor keystroke; it only schedules the existing debounced CRDT commit.
+3. Writer and Sidebar are memoized, and their parsed row models are memoized by content, so `Saving...` status updates do not reparse/rerender the writing surface.
+4. Autosave status updates are scheduled through a React transition, keeping them lower priority than input.
+5. Pending fullscreen edits still flush through the existing canvas close/selection/export paths.
+
+Checks:
+
+1. Added source-level coverage proving fullscreen Action editor text is local while canvas only schedules CRDT commits.
+2. `npm test -- --run src/components/actionEditor/__tests__/ActionEditorOverlay.test.tsx src/components/actionEditor/__tests__/ActionEditorWriter.test.tsx src/components/actionEditor/__tests__/ActionEditorSidebar.test.tsx src/utils/__tests__/projectGraphProjection.test.ts` passed with 76 tests.
+
+### Action Editor Command Modifiers And Audio Options
+
+Closed a focused Action editor TDD step for command-specific suffix editing after the inline command field work.
+
+Files:
+
+1. `frontend/src/components/actionEditor/actionEditorModel.ts`
+2. `frontend/src/components/actionEditor/ActionEditorWriter.tsx`
+3. `frontend/src/components/actionEditor/__tests__/actionEditorModel.test.ts`
+4. `frontend/src/components/actionEditor/__tests__/ActionEditorWriter.test.tsx`
+5. `frontend/e2e/action-editor-usability.spec.ts`
+6. `UPDATES.md`
+
+Result:
+
+1. `show` rows now expose editable `mods` fields for visual modifiers such as `zorder`, `behind`, and `onlayer`.
+2. `mods` remains separate from the image name, so `show monika 1 zorder 2 at t21` keeps `monika 1` as the image value.
+3. `music` and `sound` rows now expose editable `options` fields after the filename for values such as `fadein`, `fadeout`, `loop`, and `noloop`.
+4. Editing modifiers and audio options clears stale source text and serializes back to normalized Ren'Py action lines.
+5. The browser visual check confirms the new `mods/options` fields fit inside the dense mockup-style row layout.
+
+Checks:
+
+1. Red steps covered missing model updater functions, missing SSR fields, and missing browser editability.
+2. `npm test -- --run src/components/actionEditor/__tests__/actionEditorModel.test.ts` passed with 22 tests.
+3. `npm test -- --run src/components/actionEditor/__tests__/ActionEditorWriter.test.tsx` passed with 13 tests.
+4. `npm test -- --run src/components/actionEditor/__tests__/actionEditorModel.test.ts src/components/actionEditor/__tests__/ActionEditorOverlay.test.tsx src/components/actionEditor/__tests__/ActionEditorWriter.test.tsx src/components/actionEditor/__tests__/ActionEditorSidebar.test.tsx` passed with 45 tests.
+5. `npm run test:e2e -- action-editor-usability.spec.ts` passed with 13 Playwright tests.
+6. `npm run build` passed with known non-blocking `/env.js`, Browserslist, and large chunk warnings.
+7. `ACTION_EDITOR_VISUAL_CHECK=1 npm run test:e2e -- action-editor-usability.spec.ts --grep "modifiers and audio options"` captured `artifacts/action-editor-command-options-visual-check.png`.
+
+### Action Editor Focused Preview State
+
+Closed a focused Action editor behavior step for Scene preview and Audio panels following the currently focused writer row.
+
+Files:
+
+1. `frontend/src/components/actionEditor/ActionEditorOverlay.tsx`
+2. `frontend/src/components/actionEditor/ActionEditorWriter.tsx`
+3. `frontend/src/components/actionEditor/ActionEditorSidebar.tsx`
+4. `frontend/src/components/actionEditor/__tests__/ActionEditorSidebar.test.tsx`
+5. `frontend/e2e/action-editor-usability.spec.ts`
+6. `UPDATES.md`
+
+Result:
+
+1. `ActionEditorOverlay` now tracks the active writer row id.
+2. Dialogue, narration, sprite-attribute, raw-line, and command row menu focus report the active row to the overlay.
+3. `ActionEditorSidebar` derives Scene preview and Audio state from command rows up to the active row.
+4. If no active row is known yet, Sidebar preserves the old end-of-action-block behavior.
+
+Checks:
+
+1. Red steps confirmed Sidebar previously used the end of the action block after focusing an earlier writer row.
+2. `npm test -- --run src/components/actionEditor/__tests__/ActionEditorSidebar.test.tsx -t "active writer row"` passed.
+3. `npm run test:e2e -- action-editor-usability.spec.ts --grep "preview follows"` passed.
+4. `npm run build` passed with known non-blocking `/env.js`, Browserslist, and large chunk warnings.
+5. A broader Action editor test run in the current dirty worktree still fails on unrelated existing red expectations for editable command clauses and configurable toolbar menus.
+
+## 2026-06-04
+
+### Action Editor Command Inline Fields And Tag Menus
+
+Closed a focused Action editor TDD step for editable non-dialogue command rows and configurable inline text-tag tools.
+
+Files:
+
+1. `frontend/src/components/actionEditor/actionEditorModel.ts`
+2. `frontend/src/components/actionEditor/ActionEditorWriter.tsx`
+3. `frontend/src/components/actionEditor/ActionEditorOverlay.css`
+4. `frontend/src/components/actionEditor/__tests__/actionEditorModel.test.ts`
+5. `frontend/src/components/actionEditor/__tests__/ActionEditorWriter.test.tsx`
+6. `frontend/e2e/action-editor-usability.spec.ts`
+7. `UPDATES.md`
+
+Result:
+
+1. `scene`, `show`, and `hide` rows now render their primary command value as editable translucent inline fields.
+2. `show` rows expose editable `at` and `with` clause fields; `scene` and `hide` expose editable `with` fields where applicable.
+3. Empty command clause fields stay visually translucent and become fully opaque after the user enters a value.
+4. Command serialization omits empty `at`/`with` clauses instead of exporting placeholder text.
+5. Existing display modifiers such as `zorder 2` remain suffix metadata instead of being folded into the image name.
+6. `Color`, `Size`, and `CPS` inline toolbar buttons now open parameter menus and apply the chosen Ren'Py text-tag value to the current textarea selection.
+7. As a proactive UX fix, pressing Escape closes an open inline toolbar menu.
+
+Checks:
+
+1. Red steps covered missing command clauses, missing command update helpers, fixed text-tag defaults, static command row markup, missing menu button semantics, command edit browser behavior, and Escape menu close behavior.
+2. `npm test -- --run src/components/actionEditor/__tests__/actionEditorModel.test.ts` passed with 20 tests.
+3. `npm test -- --run src/components/actionEditor/__tests__/ActionEditorWriter.test.tsx` passed with 12 tests.
+4. `npm test -- --run src/components/actionEditor/__tests__/actionEditorModel.test.ts src/components/actionEditor/__tests__/ActionEditorOverlay.test.tsx src/components/actionEditor/__tests__/ActionEditorWriter.test.tsx src/components/actionEditor/__tests__/ActionEditorSidebar.test.tsx` passed with 42 tests.
+5. `npm run test:e2e -- action-editor-usability.spec.ts` passed with 12 Playwright tests.
+6. `npm run build` passed with known non-blocking `/env.js`, Browserslist, and large chunk warnings.
+7. `ACTION_EDITOR_VISUAL_CHECK=1 npm run test:e2e -- action-editor-usability.spec.ts --grep "toolbar menus|command rows expose"` captured `artifacts/action-editor-toolbar-menu-visual-check.png` and `artifacts/action-editor-command-fields-visual-check.png` for manual visual review.
+
 ## 2026-06-03
+
+### Action Editor Emergency Sprint 6.5.10 Single Active Draft Picker
+
+Closed the follow-up fix for the empty-row draft picker behavior.
+
+Files:
+
+1. `frontend/src/components/actionEditor/actionEditorModel.ts`
+2. `frontend/src/components/actionEditor/ActionEditorWriter.tsx`
+3. `frontend/src/components/actionEditor/ActionEditorOverlay.css`
+4. `frontend/src/components/actionEditor/__tests__/actionEditorModel.test.ts`
+5. `frontend/src/components/actionEditor/__tests__/ActionEditorWriter.test.tsx`
+6. `frontend/e2e/action-editor-usability.spec.ts`
+7. `UPDATES.md`
+
+Result:
+
+1. The draft picker is now rendered only for the focused empty writer row, matching the inline text toolbar activation model.
+2. Empty rows no longer show multiple always-on picker strips across the editor.
+3. Pressing Enter repeatedly at the end of the same source row no longer creates duplicate empty rows when a same-speaker empty row already follows it.
+4. Arrow Left/Right changes the selected draft card in the active picker.
+5. Pressing Enter on an empty row confirms the selected draft card.
+6. Confirming `Scene` converts the empty row into a concrete `scene black` command row instead of leaving an inert picker.
+7. The speaker rail is shown only while the selected draft card is `Dialogue`; command cards hide speaker choices because they are not speaker-specific.
+8. Empty rows no longer render the inline text-tag toolbar, so the draft picker is the only active overlay.
+
+Checks:
+
+1. Red steps covered duplicate empty rows, always-on picker strips, non-confirming card selection, and speaker rail visibility for command cards.
+2. `npm test -- --run src/components/actionEditor/__tests__/actionEditorModel.test.ts src/components/actionEditor/__tests__/ActionEditorWriter.test.tsx` passed with 27 tests.
+3. `npm test -- --run src/components/actionEditor/__tests__/actionEditorModel.test.ts src/components/actionEditor/__tests__/ActionEditorOverlay.test.tsx src/components/actionEditor/__tests__/ActionEditorWriter.test.tsx src/components/actionEditor/__tests__/ActionEditorSidebar.test.tsx` passed with 36 tests.
+4. `npm run test:e2e -- action-editor-usability.spec.ts` passed with 9 Playwright tests.
+5. `npm run build` passed with known non-blocking `/env.js`, Browserslist, and large chunk warnings.
+6. Manual visual review is still required before continuing beyond this Action editor gate.
+
+### Action Editor Emergency Sprint 6.5.9 Enter Split And Draft Picker
+
+Closed the urgent Action editor behavior fix for Enter handling, empty-row navigation, and the mistaken header annotation divider.
+
+Files:
+
+1. `frontend/src/components/actionEditor/actionEditorModel.ts`
+2. `frontend/src/components/actionEditor/ActionEditorWriter.tsx`
+3. `frontend/src/components/actionEditor/ActionEditorOverlay.tsx`
+4. `frontend/src/components/actionEditor/ActionEditorOverlay.css`
+5. `frontend/src/components/actionEditor/__tests__/actionEditorModel.test.ts`
+6. `frontend/src/components/actionEditor/__tests__/ActionEditorWriter.test.tsx`
+7. `frontend/src/components/actionEditor/__tests__/ActionEditorOverlay.test.tsx`
+8. `frontend/e2e/action-editor-usability.spec.ts`
+9. `UPDATES.md`
+
+Result:
+
+1. Pressing Enter in a dialogue or narration textarea now splits the current Ren'Py statement into two writer rows instead of inserting a raw newline inside quoted text.
+2. A split at the end of a row creates an empty same-speaker row, for example `m "Text."\nm ""`, so it remains a writer row and does not degrade into raw lines.
+3. Empty writer rows show a PSP-style draft picker: vertical speaker rail with previous/current/next speakers and a horizontal card belt for dialogue/scene/show/hide/music/sound/transition.
+4. Arrow Up/Down on an empty row cycles the speaker through the current action block speaker pool.
+5. Arrow Left/Right on an empty row cycles the selected card type in the horizontal picker.
+6. Typing the first ordinary character in an empty row hides the picker and returns to normal text editing.
+7. Removed the visible red/orange header divider that was incorrectly implemented from annotation arrows in the mockup screenshots.
+
+Checks:
+
+1. Red steps covered missing split model helpers, raw multiline Enter behavior, missing empty picker UI, missing picker keyboard navigation, and the unwanted header divider.
+2. `npm test -- --run src/components/actionEditor/__tests__/actionEditorModel.test.ts` passed with 16 tests.
+3. `npm test -- --run src/components/actionEditor/__tests__/ActionEditorWriter.test.tsx src/components/actionEditor/__tests__/ActionEditorOverlay.test.tsx` passed with 16 tests.
+4. `npm test -- --run src/components/actionEditor/__tests__/actionEditorModel.test.ts src/components/actionEditor/__tests__/ActionEditorOverlay.test.tsx src/components/actionEditor/__tests__/ActionEditorWriter.test.tsx src/components/actionEditor/__tests__/ActionEditorSidebar.test.tsx` passed with 35 tests.
+5. `npm run test:e2e -- action-editor-usability.spec.ts` passed with 7 Playwright tests.
+6. `npm run build` passed with known non-blocking `/env.js`, Browserslist, and large chunk warnings.
+7. Manual visual review is still required before continuing beyond this Action editor behavior/visual gate.
+
+### Action Editor Say Image Attribute Help
+
+Closed a focused UX refinement for the Action editor say image attribute field.
+
+Files:
+
+1. `frontend/src/components/actionEditor/ActionEditorWriter.tsx`
+2. `frontend/src/components/actionEditor/ActionEditorOverlay.css`
+3. `frontend/src/components/actionEditor/__tests__/ActionEditorWriter.test.tsx`
+4. `frontend/e2e/action-editor-usability.spec.ts`
+5. `UPDATES.md`
+
+Result:
+
+1. The sprite/image attribute rectangle is visually quieter by default with lower opacity and weaker border contrast.
+2. Clicking/focusing the field restores the current speaker accent highlight.
+3. The focused field now shows an explicit explanatory note for Ren'Py say image attributes with a link to official Ren'Py documentation.
+
+Checks:
+
+1. Red steps confirmed the help note was missing and the focused browser behavior was not covered.
+2. `npm test -- --run src/components/actionEditor/__tests__/ActionEditorWriter.test.tsx` passed with 10 tests.
+3. `npm test -- --run src/components/actionEditor/__tests__/actionEditorModel.test.ts src/components/actionEditor/__tests__/ActionEditorWriter.test.tsx src/components/actionEditor/__tests__/ActionEditorOverlay.test.tsx src/components/actionEditor/__tests__/ActionEditorSidebar.test.tsx` passed with 35 tests.
+4. `npm run test:e2e -- action-editor-usability.spec.ts` passed with 7 Playwright tests.
+5. `npm run build` passed with known non-blocking `/env.js`, Browserslist, and large chunk warnings.
+
+### Action Editor RenPy Say Image Attributes
+
+Closed a focused Action editor parsing and UI step for Ren'Py say image attributes such as `m 2d "..."`.
+
+Files:
+
+1. `frontend/src/components/actionEditor/actionEditorModel.ts`
+2. `frontend/src/components/actionEditor/ActionEditorWriter.tsx`
+3. `frontend/src/components/actionEditor/ActionEditorOverlay.css`
+4. `frontend/src/components/actionEditor/__tests__/actionEditorModel.test.ts`
+5. `frontend/src/components/actionEditor/__tests__/ActionEditorWriter.test.tsx`
+6. `UPDATES.md`
+
+Result:
+
+1. Dialogue rows now recognize optional say image attributes between the speaker id and dialogue text.
+2. Untouched rows such as `m 2d "Sayori helps lighten the mood."` remain serialized as one original Ren'Py line.
+3. Edited image attributes serialize back into the same dialogue statement, for example `m 3b "..."`.
+4. The Action editor renders an editable image-attribute field inside the speaker tile for dialogue rows.
+
+Checks:
+
+1. Red step confirmed `m 2d "..."` previously rendered as `[Raw]`.
+2. `npm test -- --run src/components/actionEditor/__tests__/actionEditorModel.test.ts src/components/actionEditor/__tests__/ActionEditorWriter.test.tsx src/components/actionEditor/__tests__/ActionEditorOverlay.test.tsx src/components/actionEditor/__tests__/ActionEditorSidebar.test.tsx` passed with 29 tests.
+3. `npm run test:e2e -- action-editor-usability.spec.ts` passed with 4 Playwright tests.
+4. `npm run build` passed with known non-blocking `/env.js`, Browserslist, and large chunk warnings.
+
+### Action Editor Emergency Sprint 6.5.8 Mockup Fidelity Follow-up
+
+Closed the automated part of the follow-up Action editor visual fidelity fixes after manual review.
+
+Files:
+
+1. `frontend/src/e2e/action-editor-visual.tsx`
+2. `frontend/e2e/action-editor-usability.spec.ts`
+3. `frontend/src/components/actionEditor/ActionEditorOverlay.tsx`
+4. `frontend/src/components/actionEditor/ActionEditorSidebar.tsx`
+5. `frontend/src/components/actionEditor/ActionEditorWriter.tsx`
+6. `frontend/src/components/actionEditor/ActionEditorOverlay.css`
+7. `frontend/src/components/actionEditor/__tests__/ActionEditorOverlay.test.tsx`
+8. `frontend/src/components/actionEditor/__tests__/ActionEditorSidebar.test.tsx`
+9. `frontend/src/components/actionEditor/__tests__/ActionEditorWriter.test.tsx`
+10. `UPDATES.md`
+
+Result:
+
+1. The editor surface now uses the available viewport height and width with fixed outer margins instead of a short centered window.
+2. The right-side six-dot row handles are asserted to share one strict column across dialogue, raw, and command rows.
+3. The header now groups the Writer/Raw mode switch, a vertical divider, and Undo/Redo into one compact mode-history cluster like the mockup.
+4. The Audio panel now uses bordered inner rows with distinct Music and Sound rows, a music preview button, and per-row option buttons.
+5. The inline text toolbar now renders grouped controls for text style, parameters, and timing tags.
+6. Scene, show, hide, music, sound, and transition command rows now expose distinct icon classes and visual color identities.
+
+Checks:
+
+1. Red steps covered constrained surface size, misaligned row handles, missing header divider/cluster, missing audio controls, missing toolbar groups, and missing command icon identities.
+2. `npm test -- --run src/components/actionEditor/__tests__/ActionEditorOverlay.test.tsx src/components/actionEditor/__tests__/ActionEditorSidebar.test.tsx` passed with 9 tests.
+3. `npm test -- --run src/components/actionEditor/__tests__/ActionEditorWriter.test.tsx` passed with 6 tests.
+4. `npm test -- --run src/components/actionEditor/__tests__/actionEditorModel.test.ts src/components/actionEditor/__tests__/ActionEditorOverlay.test.tsx src/components/actionEditor/__tests__/ActionEditorWriter.test.tsx src/components/actionEditor/__tests__/ActionEditorSidebar.test.tsx` passed with 26 tests.
+5. `npm run test:e2e -- action-editor-usability.spec.ts` passed with 4 Playwright tests.
+6. `npm run build` passed with known non-blocking Vite/env.js, Browserslist, and large chunk warnings.
+7. Manual visual review is still required before continuing beyond visual fidelity work.
+
+### Action Editor Emergency Sprint 6.5.7 Visual Regression Gate
+
+Closed the automated part of the urgent Action editor usability visual regression gate.
+
+Files:
+
+1. `frontend/src/e2e/action-editor-visual.tsx`
+2. `frontend/e2e/action-editor-usability.spec.ts`
+3. `artifacts/action-editor-emergency-visual-check.png`
+4. `UPDATES.md`
+
+Result:
+
+1. The visual harness now uses the long `script-ch20.rpy / ch20_main2` action block and includes `scene black`.
+2. The Playwright gate verifies independent writer scrolling, pinned sidebar visibility, dense row height, no fake preview standees/classroom, visible `black`/`natsuki 4c`/`monika 3m` preview placeholders, real textarea selection toolbar behavior, and compact ordered header controls.
+3. Captured the review screenshot at `artifacts/action-editor-emergency-visual-check.png` with a focused textarea selection so the inline toolbar is visible.
+
+Checks:
+
+1. `npm run test:e2e -- action-editor-usability.spec.ts` passed with 3 tests.
+2. `npm run build` passed with known non-blocking Vite/env.js, Browserslist, and large chunk warnings.
+3. Manual user review is still required before moving to Action Editor graph-node creation, because final mockup fidelity is a visual/product judgment.
+
+### Action Editor Emergency Sprint 6.5.6 Header Control Fidelity
+
+Closed the sixth urgent Action editor usability action for header control structure and layout.
+
+Files:
+
+1. `frontend/src/components/actionEditor/ActionEditorOverlay.tsx`
+2. `frontend/src/components/actionEditor/ActionEditorOverlay.css`
+3. `frontend/src/components/actionEditor/__tests__/ActionEditorOverlay.test.tsx`
+4. `frontend/e2e/action-editor-usability.spec.ts`
+5. `UPDATES.md`
+
+Result:
+
+1. Grouped Undo and Redo into `action-editor__history-actions`.
+2. Added `role="status"` to the autosave status.
+3. Kept header control order aligned with the mockup: Writer/Raw segmented mode switch, undo/redo, save status, close.
+4. Tightened header sizing with border-box layout so desktop header stays compact.
+5. Added Playwright layout assertions for desktop ordering and height.
+
+Checks:
+
+1. Red step confirmed the defect: `action-editor__history-actions` was missing in SSR and e2e layout tests.
+2. `npm test -- --run src/components/actionEditor/__tests__/ActionEditorOverlay.test.tsx` passed with 6 tests.
+3. `npm run test:e2e -- action-editor-usability.spec.ts --grep "header controls"` passed.
+4. `npm test -- --run src/components/actionEditor/__tests__/actionEditorModel.test.ts src/components/actionEditor/__tests__/ActionEditorOverlay.test.tsx src/components/actionEditor/__tests__/ActionEditorWriter.test.tsx src/components/actionEditor/__tests__/ActionEditorSidebar.test.tsx` passed with 25 tests.
+5. `npm run test:e2e -- action-editor-usability.spec.ts` passed with 3 tests.
+
+### Action Editor Emergency Sprint 6.5.5 Correct Inline Selection Text Tags
+
+Closed the fifth urgent Action editor usability action for real textarea selection handling.
+
+Files:
+
+1. `frontend/e2e/action-editor-usability.spec.ts`
+2. `frontend/src/components/actionEditor/ActionEditorWriter.tsx`
+3. `UPDATES.md`
+
+Result:
+
+1. Added a browser interaction test that selects the word `words` in a textarea and clicks Bold.
+2. Bold now wraps only the selected word: `All {b}words{/b} escape me in this situation.`
+3. Added a caret insertion test for Wait.
+4. Wait now inserts `{w}` at the actual textarea caret position: `This{w} club...`.
+5. `DialogueWriterRow` tracks textarea selection on focus, select, mouseup, keyup, and change.
+6. Paired and insertion toolbar actions now use the current row selection/caret instead of fake whole-row ranges.
+
+Checks:
+
+1. Red step confirmed the defect: after clicking Bold, the expected selected-word textarea value was not present.
+2. `npm run test:e2e -- action-editor-usability.spec.ts` passed with 2 tests.
+3. `npm test -- --run src/components/actionEditor/__tests__/actionEditorModel.test.ts src/components/actionEditor/__tests__/ActionEditorOverlay.test.tsx src/components/actionEditor/__tests__/ActionEditorWriter.test.tsx src/components/actionEditor/__tests__/ActionEditorSidebar.test.tsx` passed with 24 tests.
+
+### Action Editor Emergency Sprint 6.5.4 Real Six-dot Row Handles
+
+Closed the fourth urgent Action editor usability action for row reorder handles.
+
+Files:
+
+1. `frontend/src/components/actionEditor/ActionEditorDragHandle.tsx`
+2. `frontend/src/components/actionEditor/ActionEditorWriter.tsx`
+3. `frontend/src/components/actionEditor/ActionEditorOverlay.css`
+4. `frontend/src/components/actionEditor/__tests__/ActionEditorWriter.test.tsx`
+5. `UPDATES.md`
+
+Result:
+
+1. Added a small `ActionEditorDragHandle` module.
+2. Replaced rotated punctuation text `::` with a real six-dot handle.
+3. Handles expose `aria-label="Reorder row"` for future drag-and-drop wiring.
+4. Dialogue, command, and raw rows now use the same handle component.
+5. Reordering behavior remains intentionally out of scope for this urgent visual/usability sprint.
+
+Checks:
+
+1. Red step confirmed the defect: writer tests failed because no accessible reorder handle existed and old `::` text was still rendered.
+2. `npm test -- --run src/components/actionEditor/__tests__/ActionEditorWriter.test.tsx` passed with 5 tests.
+3. `npm test -- --run src/components/actionEditor/__tests__/actionEditorModel.test.ts src/components/actionEditor/__tests__/ActionEditorOverlay.test.tsx src/components/actionEditor/__tests__/ActionEditorWriter.test.tsx src/components/actionEditor/__tests__/ActionEditorSidebar.test.tsx` passed with 24 tests.
+4. `npm run test:e2e -- action-editor-usability.spec.ts` passed, preserving the Sprint 6.5.1 scroll/density gate.
+
+### Action Editor Emergency Sprint 6.5.3 RenPy-like Missing Asset Preview
+
+Closed the third urgent Action editor usability action for honest Scene preview placeholders.
+
+Files:
+
+1. `frontend/src/components/actionEditor/ActionEditorSidebar.tsx`
+2. `frontend/src/components/actionEditor/ActionEditorOverlay.css`
+3. `frontend/src/components/actionEditor/__tests__/ActionEditorSidebar.test.tsx`
+4. `UPDATES.md`
+
+Result:
+
+1. Scene preview no longer renders fake people, classroom layers, or standee mockups.
+2. Preview now renders a Ren'Py-like missing asset area with labeled rectangles.
+3. `scene black` uses a black preview background and a visible `black` label.
+4. `show` commands render labeled missing-asset rectangles such as `natsuki 4c` and `monika 3m`.
+5. Placement/suffix text such as `zorder 2 at t32` remains visible in the preview.
+
+Checks:
+
+1. Red step confirmed the defect: sidebar tests failed because the old `standee/classroom` DOM was still rendered.
+2. `npm test -- --run src/components/actionEditor/__tests__/ActionEditorSidebar.test.tsx` passed with 3 tests.
+3. `npm test -- --run src/components/actionEditor/__tests__/actionEditorModel.test.ts src/components/actionEditor/__tests__/ActionEditorOverlay.test.tsx src/components/actionEditor/__tests__/ActionEditorWriter.test.tsx src/components/actionEditor/__tests__/ActionEditorSidebar.test.tsx` passed with 23 tests.
+4. `npm run test:e2e -- action-editor-usability.spec.ts` passed, preserving the Sprint 6.5.1 scroll/density gate.
+
+### Action Editor Emergency Sprint 6.5.2 Speaker Identity Colors
+
+Closed the second urgent Action editor usability action for dense speaker scanning.
+
+Files:
+
+1. `frontend/src/components/actionEditor/actionEditorModel.ts`
+2. `frontend/src/components/actionEditor/ActionEditorWriter.tsx`
+3. `frontend/src/components/actionEditor/ActionEditorOverlay.css`
+4. `frontend/src/components/actionEditor/__tests__/actionEditorModel.test.ts`
+5. `frontend/src/components/actionEditor/__tests__/ActionEditorWriter.test.tsx`
+6. `UPDATES.md`
+
+Result:
+
+1. Added deterministic `speakerAccentForId()` for stable speaker accent colors.
+2. Covered common Ren'Py/DDLC speaker IDs from the failing case: `y`, `n`, `m`/`Monika`, `mc`, and `Narrator`.
+3. Dialogue and narration rows now expose `data-speaker-id` and `--action-editor-speaker-accent`.
+4. Speaker tiles, speaker icons, and focused dialogue borders use the row speaker accent.
+
+Checks:
+
+1. Red step confirmed the defect: `speakerAccentForId` was missing and writer rows had no speaker accent variable.
+2. `npm test -- --run src/components/actionEditor/__tests__/actionEditorModel.test.ts src/components/actionEditor/__tests__/ActionEditorWriter.test.tsx` passed with 15 tests.
+3. `npm run test:e2e -- action-editor-usability.spec.ts` passed, preserving the Sprint 6.5.1 scroll/density gate.
+
+### Action Editor Emergency Sprint 6.5.1 Scrollable Dense Writer
+
+Closed the first urgent Action editor usability action for long Action blocks.
+
+Files:
+
+1. `frontend/src/e2e/action-editor-visual.tsx`
+2. `frontend/e2e/action-editor-usability.spec.ts`
+3. `frontend/src/components/actionEditor/ActionEditorOverlay.css`
+4. `frontend/src/components/actionEditor/ActionEditorWriter.tsx`
+5. `UPDATES.md`
+
+Result:
+
+1. Replaced the visual harness content with a long `script-ch20.rpy / ch20_main2` dialogue/action block based on the failing review case.
+2. Added a Playwright layout test proving the fullscreen editor stays inside a `1680x900` viewport.
+3. The writer column now scrolls independently with `overflow-y: auto`.
+4. The right sidebar remains visible while the writer column scrolls.
+5. One-line dialogue rows now use compact `rows={1}` textareas and pass the max-height density gate.
+
+Checks:
+
+1. Red step confirmed the defect: `action-editor-usability.spec.ts` failed because writer overflow was `visible`.
+2. Red step confirmed the second density defect: first dialogue row height was `71.5px`.
+3. `npm run test:e2e -- action-editor-usability.spec.ts` passed.
+4. `npm test -- --run src/components/actionEditor/__tests__/actionEditorModel.test.ts src/components/actionEditor/__tests__/ActionEditorOverlay.test.tsx src/components/actionEditor/__tests__/ActionEditorWriter.test.tsx src/components/actionEditor/__tests__/ActionEditorSidebar.test.tsx` passed with 20 tests.
 
 ### Action Editor Emergency Usability Sprint Artifact
 

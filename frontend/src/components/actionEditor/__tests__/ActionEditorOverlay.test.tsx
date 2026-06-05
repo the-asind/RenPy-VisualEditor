@@ -51,6 +51,30 @@ describe('ActionEditorOverlay Sprint 1 shell', () => {
     expect(html).toContain('Autosaved just now');
   });
 
+  it('renders mockup-aligned accessible header control groups', () => {
+    const html = renderToStaticMarkup(
+      <ActionEditorOverlay
+        filePath="script-ch20.rpy"
+        labelPath="ch20_main2"
+        node={actionNode}
+        saveStatus="Saved"
+        onClose={vi.fn()}
+        onContentChange={vi.fn()}
+        onTitleChange={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain('aria-label="Action editor mode"');
+    expect(html).toContain('action-editor__mode-history-cluster');
+    expect(html).not.toContain('action-editor__header-divider');
+    expect(html).toContain('action-editor__history-actions');
+    expect(html).toContain('aria-label="Undo"');
+    expect(html).toContain('aria-label="Redo"');
+    expect(html).toContain('role="status"');
+    expect(html).toContain('aria-label="Autosave status"');
+    expect(html).toContain('aria-label="Close action editor"');
+  });
+
   it('connects the fullscreen shell to writer rows parsed from Action content', () => {
     const html = renderToStaticMarkup(
       <ActionEditorOverlay
@@ -125,5 +149,50 @@ describe('ActionEditorOverlay Sprint 1 shell', () => {
     expect(source).toContain('aria-label="Open fullscreen action editor"');
     expect(source).toContain('onTitleChange');
     expect(source).toContain('flushScenarioContentCommit');
+  });
+
+  it('keeps fullscreen Action editor text local while canvas only schedules CRDT commits', () => {
+    const overlaySource = readFileSync(new URL('../ActionEditorOverlay.tsx', import.meta.url), 'utf-8');
+    const canvasSource = readFileSync(new URL('../../projectGraph/ProjectGraphCanvas.tsx', import.meta.url), 'utf-8');
+
+    expect(overlaySource).toContain('draftContent');
+    expect(overlaySource).toContain('setDraftContentState');
+    expect(overlaySource).toContain('content={draftContent}');
+    expect(canvasSource).toContain('handleActionEditorContentChange');
+    expect(canvasSource).toContain('scheduleScenarioContentCommit(selectedActionEditorNodeId, content)');
+    expect(canvasSource).toContain('onContentChange={handleActionEditorContentChange}');
+  });
+
+  it('keeps compact inspector text local while canvas only schedules debounced commits', () => {
+    const canvasSource = readFileSync(new URL('../../projectGraph/ProjectGraphCanvas.tsx', import.meta.url), 'utf-8');
+
+    expect(canvasSource).toContain('const ProjectGraphScenarioContentEditor = memo');
+    expect(canvasSource).toContain('setDraft({ nodeId, content: nextContent })');
+    expect(canvasSource).toContain('onContentChange(nodeId, nextContent)');
+    expect(canvasSource).toContain('onContentChange={scheduleScenarioContentCommit}');
+    expect(canvasSource).toContain('setScenarioContentDraft({ nodeId: pendingCommit.nodeId, content: pendingCommit.content })');
+  });
+
+  it('disables browser text assistance in raw and compact RenPy content editors', () => {
+    const html = renderToStaticMarkup(
+      <ActionEditorOverlay
+        filePath="script-ch3.rpy"
+        initialMode="raw"
+        labelPath="ch3_end_sayori"
+        node={actionNode}
+        saveStatus="Saved"
+        onClose={vi.fn()}
+        onContentChange={vi.fn()}
+        onTitleChange={vi.fn()}
+      />,
+    );
+    const canvasSource = readFileSync(new URL('../../projectGraph/ProjectGraphCanvas.tsx', import.meta.url), 'utf-8');
+
+    expect(html).toContain('spellcheck="false"');
+    expect(html).toContain('autoCorrect="off"');
+    expect(html).toContain('autoCapitalize="off"');
+    expect(html).toContain('autoComplete="off"');
+    expect(canvasSource).toContain('spellCheck={false}');
+    expect(canvasSource).toContain('autoCorrect="off"');
   });
 });

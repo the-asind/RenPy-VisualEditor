@@ -68,16 +68,18 @@ const graph = {
 };
 
 let viteServer: ViteDevServer | null = null;
+let e2eBaseUrl = 'http://127.0.0.1:5175';
 
 test.beforeAll(async () => {
   viteServer = await createServer({
     server: {
       host: '127.0.0.1',
       port: 5175,
-      strictPort: true,
+      strictPort: false,
     },
   });
   await viteServer.listen();
+  e2eBaseUrl = viteServer.resolvedUrls?.local[0] ?? e2eBaseUrl;
 });
 
 test.afterAll(async () => {
@@ -92,8 +94,8 @@ test('two browser contexts exchange ProjectGraph CRDT content and drag updates',
   const pageA = await contextA.newPage();
   const pageB = await contextB.newPage();
 
-  await pageA.goto('/e2e/project-graph-collaboration.html');
-  await pageB.goto('/e2e/project-graph-collaboration.html');
+  await pageA.goto(e2eUrl('/e2e/project-graph-collaboration.html'));
+  await pageB.goto(e2eUrl('/e2e/project-graph-collaboration.html'));
 
   const snapshot = await pageA.evaluate((initialGraph) => {
     return window.projectGraphHarness.createFromGraph(initialGraph.graph, '1', initialGraph.socketUrl);
@@ -124,9 +126,11 @@ test('two browser contexts exchange ProjectGraph CRDT content and drag updates',
 });
 
 test('canvas export UX shows status, returned filenames, and normalized content', async ({ page }) => {
-  await page.goto('/e2e/project-graph-export-ux.html');
+  await page.goto(e2eUrl('/e2e/project-graph-export-ux.html'));
 
-  await page.keyboard.press(process.platform === 'darwin' ? 'Meta+Shift+E' : 'Control+Shift+E');
+  await page.evaluate(() => {
+    window.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, ctrlKey: true, key: 'e', shiftKey: true }));
+  });
   await expect(page.getByText('Exporting...')).toBeVisible();
 
   await page.evaluate(() => window.resolveExport?.());
@@ -142,7 +146,7 @@ test('canvas export UX shows status, returned filenames, and normalized content'
 });
 
 test('canvas top-right actions use dismissible search and invite popovers', async ({ page }) => {
-  await page.goto('/e2e/project-graph-export-ux.html');
+  await page.goto(e2eUrl('/e2e/project-graph-export-ux.html'));
 
   const searchButton = page.getByRole('button', { name: 'Open node search' });
   await expect(searchButton).toBeVisible();
@@ -205,3 +209,5 @@ const startRelayServer = async (): Promise<{
       }),
   };
 };
+
+const e2eUrl = (path: string): string => new URL(path, e2eBaseUrl).toString();

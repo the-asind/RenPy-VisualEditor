@@ -107,6 +107,17 @@ CREATE TABLE IF NOT EXISTS project_crdt_snapshots (
     FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
 );
 
+-- Text-only local Ren'Py game asset catalogs
+CREATE TABLE IF NOT EXISTS project_asset_catalogs (
+    project_id TEXT PRIMARY KEY,
+    catalog_json TEXT NOT NULL,
+    revision INTEGER NOT NULL DEFAULT 1,
+    updated_by TEXT NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+    FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE CASCADE
+);
+
 -- Indices for common queries
 CREATE INDEX IF NOT EXISTS idx_scripts_project ON scripts(project_id);
 CREATE INDEX IF NOT EXISTS idx_versions_script ON versions(script_id);

@@ -4,9 +4,11 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import {
   apiClient,
   exportProjectGraphFiles,
+  getProjectAssetCatalog,
   importProjectGraphFiles,
   loadProjectGraphCrdtDocument,
   saveProjectGraphCrdtSnapshot,
+  updateProjectAssetCatalog,
 } from '../services/api';
 import {
   ProjectGraphCollaborationSession,
@@ -25,6 +27,13 @@ import {
   getEditorVisibleOnlyEnabled,
 } from './editorPageQuery';
 import { ProjectGraphCanvas, type ProjectGraphEntityPositionChange } from './projectGraph/ProjectGraphCanvas';
+import {
+  connectLocalRenpyGameRoot,
+  writeExportedScriptsToLocalGame,
+  type LocalRenpyDirectoryScan,
+  type LocalRenpyGameDirectorySession,
+  type ProjectAssetCatalogPayload,
+} from '../utils/localRenpyDirectory';
 
 const EditorPage = () => {
   const location = useLocation();
@@ -38,9 +47,13 @@ const EditorPage = () => {
   const [, startGraphTransition] = useTransition();
   const [graph, setGraph] = useState<ProjectGraphSnapshot | null>(null);
   const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
-  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [importStatus, setImportStatus] = useState<'idle' | 'importing' | 'error'>('idle');
   const [importMessage, setImportMessage] = useState<string | null>(null);
+  const [localDirectorySession, setLocalDirectorySession] = useState<LocalRenpyGameDirectorySession | null>(null);
+  const [localDirectoryScan, setLocalDirectoryScan] = useState<LocalRenpyDirectoryScan | null>(null);
+  const [localDirectoryMessage, setLocalDirectoryMessage] = useState<string | null>(null);
+  const [assetCatalog, setAssetCatalog] = useState<ProjectAssetCatalogPayload | null>(null);
+  const [localAssetUrls, setLocalAssetUrls] = useState<Record<string, string>>({});
   const [reloadKey, setReloadKey] = useState(0);
   const [exportStatus, setExportStatus] = useState<string | null>(null);
   const [exportedFiles, setExportedFiles] = useState<Record<string, string> | null>(null);
@@ -76,7 +89,8 @@ const EditorPage = () => {
           persistSnapshot: async (snapshot) => {
             await saveProjectGraphCrdtSnapshot(projectId, snapshot);
           },
-          onPersistenceStatusChange: setSaveStatus,
+          onPersistenceStatusChange: (updatedSaveStatus) =>
+            startGraphTransition(() => setSaveStatus(updatedSaveStatus)),
           onGraphChange: (updatedGraph) => startGraphTransition(() => setGraph(updatedGraph)),
         });
         sessionRef.current = session;
@@ -96,6 +110,62 @@ const EditorPage = () => {
       sessionRef.current = null;
     };
   }, [projectId, reloadKey]);
+
+  useEffect(() => {
+    if (!localDirectorySession || !assetCatalog || typeof URL.createObjectURL !== 'function') {
+      setLocalAssetUrls({});
+      return undefined;
+    }
+
+    let isActive = true;
+    const createdUrls: string[] = [];
+    console.info('[LocalRenpyAssets] Creating local object URLs for asset catalog.', {
+      catalogEntries: assetCatalog.entries.length,
+      mediaEntries: assetCatalog.entries.filter((entry) => entry.kind === 'image' || entry.kind === 'audio').length,
+    });
+    void Promise.all(
+      assetCatalog.entries
+        .filter((entry) => entry.kind === 'image' || entry.kind === 'audio')
+        .map(async (entry) => {
+          const file = await localDirectorySession.readAsset(entry.path);
+          if (!file) {
+            console.warn('[LocalRenpyAssets] Catalog entry exists but local file could not be read.', {
+              path: entry.path,
+              kind: entry.kind,
+              renpyNames: entry.renpyNames,
+            });
+            return null;
+          }
+          const url = URL.createObjectURL(file);
+          createdUrls.push(url);
+          return [entry.path, url] as const;
+        }),
+    ).then((pairs) => {
+      if (isActive) {
+        const nextLocalAssetUrls = Object.fromEntries(pairs.filter((pair): pair is readonly [string, string] => pair !== null));
+        console.info('[LocalRenpyAssets] Local object URL creation finished.', {
+          localUrlCount: Object.keys(nextLocalAssetUrls).length,
+        });
+        setLocalAssetUrls(nextLocalAssetUrls);
+      } else {
+        for (const url of createdUrls) {
+          URL.revokeObjectURL(url);
+        }
+      }
+    }).catch((error) => {
+      console.error('[LocalRenpyAssets] Failed to create local asset object URLs.', error);
+      if (isActive) {
+        setLocalAssetUrls({});
+      }
+    });
+
+    return () => {
+      isActive = false;
+      for (const url of createdUrls) {
+        URL.revokeObjectURL(url);
+      }
+    };
+  }, [assetCatalog, localDirectorySession]);
 
   useEffect(() => {
     if (!projectId) {
@@ -123,6 +193,31 @@ const EditorPage = () => {
       isActive = false;
     };
   }, [projectId]);
+
+  useEffect(() => {
+    if (!projectId) {
+      setAssetCatalog(null);
+      return;
+    }
+
+    let isActive = true;
+    void getProjectAssetCatalog(projectId)
+      .then((response) => {
+        if (isActive) {
+          setAssetCatalog(response?.catalog ?? null);
+        }
+      })
+      .catch((error) => {
+        if (isActive) {
+          console.error('Failed to load project asset catalog:', error);
+          setAssetCatalog(null);
+        }
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [projectId, reloadKey]);
 
   useEffect(() => {
     if (!projectId || status !== 'ready') {
@@ -212,14 +307,79 @@ const EditorPage = () => {
       });
   }, [projectId]);
 
+  const handleConnectLocalDirectory = useCallback(() => {
+    setLocalDirectoryMessage('Requesting read/write access to the RenPy game root...');
+    void connectLocalRenpyGameRoot()
+      .then(({ session, scan }) => {
+        setLocalDirectorySession(session);
+        setLocalDirectoryScan(scan);
+        setAssetCatalog(scan.catalog);
+        setLocalDirectoryMessage(
+          `Connected game folder: ${scan.rpyFiles.length} .rpy file(s), ${scan.catalog.entries.length} catalog file(s).`,
+        );
+      })
+      .catch((error) => {
+        console.error('Failed to connect local RenPy directory:', error);
+        setLocalDirectorySession(null);
+        setLocalDirectoryScan(null);
+        setLocalDirectoryMessage(error instanceof Error ? error.message : 'Failed to connect local RenPy directory.');
+      });
+  }, []);
+
+  const handleRefreshLocalAssets = useCallback(() => {
+    if (!projectId || !localDirectorySession) {
+      return;
+    }
+    setLocalDirectoryMessage('Refreshing local game catalog...');
+    void localDirectorySession
+      .scan()
+      .then((scan) => {
+        setLocalDirectoryScan(scan);
+        setAssetCatalog(scan.catalog);
+        return updateProjectAssetCatalog(projectId, scan.catalog).then(() => scan);
+      })
+      .then((scan) => {
+        setLocalDirectoryMessage(`Catalog refreshed: ${scan.catalog.entries.length} file(s).`);
+      })
+      .catch((error) => {
+        console.error('Failed to refresh local asset catalog:', error);
+        setLocalDirectoryMessage('Catalog refresh failed.');
+      });
+  }, [localDirectorySession, projectId]);
+
+  const handleWriteExportedScriptsToLocal = useCallback(() => {
+    if (!localDirectorySession || !exportedFiles) {
+      return;
+    }
+    setLocalDirectoryMessage('Writing exported .rpy files to local game folder...');
+    void writeExportedScriptsToLocalGame(localDirectorySession, exportedFiles)
+      .then((writtenCount) => localDirectorySession.scan().then((scan) => ({ scan, writtenCount })))
+      .then(({ scan, writtenCount }) => {
+        setLocalDirectoryScan(scan);
+        setAssetCatalog(scan.catalog);
+        setLocalDirectoryMessage(`Wrote ${writtenCount} .rpy file(s) to local game folder.`);
+      })
+      .catch((error) => {
+        console.error('Failed to write exported scripts locally:', error);
+        setLocalDirectoryMessage('Local script write failed.');
+      });
+  }, [exportedFiles, localDirectorySession]);
+
   const handleProjectGraphImport = useCallback(() => {
-    if (!projectId || selectedFiles.length === 0) {
+    if (!projectId || !localDirectoryScan || localDirectoryScan.rpyFiles.length === 0) {
       return;
     }
 
     setImportStatus('importing');
     setImportMessage(null);
-    void importProjectGraphFiles(projectId, selectedFiles)
+    void importProjectGraphFiles(
+      projectId,
+      localDirectoryScan.rpyFiles.map((script) => script.file),
+      {
+        filePaths: localDirectoryScan.rpyFiles.map((script) => script.path),
+        assetCatalog: localDirectoryScan.catalog,
+      },
+    )
       .then((result) => {
         if (result.diagnostics.blocking > 0) {
           setImportStatus('error');
@@ -234,8 +394,9 @@ const EditorPage = () => {
 
         setImportStatus('idle');
         setImportMessage(
-          `Imported ${result.file_count} file(s), ${result.label_count} label(s), ${result.node_count} node(s).`,
+          `Imported ${result.file_count} .rpy file(s), ${result.label_count} label(s), ${result.node_count} node(s), ${result.catalog_entry_count ?? 0} catalog file(s).`,
         );
+        setAssetCatalog(localDirectoryScan.catalog);
         const nextSearch = new URLSearchParams({ project: result.project_id });
         if (showDevPerformancePanel) {
           nextSearch.set('devPerf', '1');
@@ -251,7 +412,7 @@ const EditorPage = () => {
         setImportStatus('error');
         setImportMessage('Import failed.');
       });
-  }, [navigate, onlyRenderVisibleElements, projectId, selectedFiles, showDevPerformancePanel]);
+  }, [localDirectoryScan, navigate, onlyRenderVisibleElements, projectId, showDevPerformancePanel]);
 
   if (status === 'loading') {
     return (
@@ -270,21 +431,22 @@ const EditorPage = () => {
           </div>
           {projectId ? (
             <>
-              <input
-                accept=".rpy"
-                className="project-graph-import__file"
-                multiple
-                onChange={(event) => setSelectedFiles(Array.from(event.target.files ?? []))}
-                type="file"
-              />
+              <div className="project-graph-import__message">
+                Select the Ren&apos;Py game root. The editor scans only its <code>game</code> folder, uploads .rpy
+                text and file names, and keeps images/audio local.
+              </div>
+              <button className="project-graph-import__button" onClick={handleConnectLocalDirectory} type="button">
+                Connect RenPy game root
+              </button>
               <button
                 className="project-graph-import__button"
-                disabled={selectedFiles.length === 0 || importStatus === 'importing'}
+                disabled={!localDirectoryScan || localDirectoryScan.rpyFiles.length === 0 || importStatus === 'importing'}
                 onClick={handleProjectGraphImport}
                 type="button"
               >
                 {importStatus === 'importing' ? 'Importing...' : 'Import'}
               </button>
+              {localDirectoryMessage ? <div className="project-graph-import__message">{localDirectoryMessage}</div> : null}
               {importMessage ? <div className="project-graph-import__message">{importMessage}</div> : null}
             </>
           ) : (
@@ -297,10 +459,33 @@ const EditorPage = () => {
 
   return (
     <div style={{ width: '100%', height: '100vh', minHeight: 0 }}>
+      {(localDirectorySession || assetCatalog || localDirectoryMessage) ? (
+        <div className="project-graph-local-assets" aria-label="Local RenPy game folder">
+          <span>
+            Catalog: {assetCatalog?.entries.length ?? 0} file(s)
+            {localDirectoryScan ? `, local ${localDirectoryScan.rpyFiles.length} .rpy` : ''}
+          </span>
+          {localDirectorySession ? (
+            <button onClick={handleRefreshLocalAssets} type="button">
+              Refresh assets
+            </button>
+          ) : (
+            <button onClick={handleConnectLocalDirectory} type="button">
+              Connect game root
+            </button>
+          )}
+          <button disabled={!localDirectorySession || !exportedFiles} onClick={handleWriteExportedScriptsToLocal} type="button">
+            Write exported .rpy locally
+          </button>
+          {localDirectoryMessage ? <small>{localDirectoryMessage}</small> : null}
+        </div>
+      ) : null}
       <ProjectGraphCanvas
+        assetCatalog={assetCatalog}
         exportedFiles={exportedFiles}
         exportStatus={exportStatus}
         graph={graph}
+        localAssetUrls={localAssetUrls}
         onlyRenderVisibleElements={onlyRenderVisibleElements}
         participants={participants}
         projectName={projectName}

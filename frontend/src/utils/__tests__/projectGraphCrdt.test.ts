@@ -213,6 +213,42 @@ describe('ProjectGraph Loro CRDT adapter', () => {
     });
   });
 
+  it('merges concurrent edits inside one scenario content field instead of picking one whole string', () => {
+    const collaborativeGraph: ProjectGraphSnapshot = {
+      ...graph,
+      nodes: graph.nodes.map((node) =>
+        node.id === 'node-intro'
+          ? {
+              ...node,
+              content: 'r "RenPy Mouse compares crumbs."',
+            }
+          : node,
+      ),
+    };
+    const clientA = createProjectGraphCrdtDoc(collaborativeGraph, { peerId: '1' });
+    const clientB = importProjectGraphCrdtSnapshot(exportProjectGraphCrdtSnapshot(clientA), { peerId: '2' });
+    const versionA = getProjectGraphCrdtVersion(clientA);
+    const versionB = getProjectGraphCrdtVersion(clientB);
+
+    updateScenarioNodeContent(clientA, 'node-intro', 'r "RenPy Mouse compares left-client crumbs."');
+    updateScenarioNodeContent(clientB, 'node-intro', 'r "RenPy Mouse compares right-client crumbs."');
+
+    const updateA = exportProjectGraphCrdtUpdate(clientA, versionA);
+    const updateB = exportProjectGraphCrdtUpdate(clientB, versionB);
+
+    importProjectGraphCrdtUpdate(clientA, updateB);
+    importProjectGraphCrdtUpdate(clientB, updateA);
+
+    const graphA = projectGraphFromCrdtDoc(clientA);
+    const graphB = projectGraphFromCrdtDoc(clientB);
+    const mergedContent = graphA.nodes.find((node) => node.id === 'node-intro')?.content ?? '';
+
+    expect(graphA).toEqual(graphB);
+    expect(mergedContent).toContain('left-client');
+    expect(mergedContent).toContain('right-client');
+    expect(mergedContent).toContain('RenPy Mouse compares');
+  });
+
   it('keeps domain IDs stable when a scenario node is reparented through Loro Tree updates', () => {
     const clientA = createProjectGraphCrdtDoc(graph, { peerId: '1' });
     const clientB = importProjectGraphCrdtSnapshot(exportProjectGraphCrdtSnapshot(clientA), { peerId: '2' });

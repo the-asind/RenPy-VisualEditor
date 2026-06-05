@@ -80,6 +80,35 @@ def _upload_files(client: TestClient, project_id: str, filenames: list[str]):
             handle.close()
 
 
+def _upload_directory_import(
+    client: TestClient,
+    project_id: str,
+    file_specs: list[tuple[str, str]],
+    asset_catalog: dict,
+):
+    handles = []
+    try:
+        files = []
+        file_paths = []
+        for relative_path, fixture_name in file_specs:
+            handle = (FIXTURE_DIR / fixture_name).open("rb")
+            handles.append(handle)
+            files.append(("files", (Path(relative_path).name, handle, "text/plain")))
+            file_paths.append(relative_path)
+
+        return client.post(
+            f"/api/projects/{project_id}/graph-import",
+            data={
+                "file_paths": file_paths,
+                "asset_catalog": json.dumps(asset_catalog),
+            },
+            files=files,
+        )
+    finally:
+        for handle in handles:
+            handle.close()
+
+
 def _decode_loro_snapshot(snapshot: bytes) -> dict:
     result = subprocess.run(
         ["node", "scripts/project-graph-snapshot-cli.mjs", "decode"],
@@ -89,6 +118,131 @@ def _decode_loro_snapshot(snapshot: bytes) -> dict:
         capture_output=True,
     )
     return json.loads(result.stdout.decode("utf-8"))
+
+
+def test_project_graph_import_route_preserves_directory_paths_and_catalog(client, project_owner):
+    asset_catalog = {
+        "root_kind": "renpy-game-root",
+        "game_directory": "game",
+        "entries": [
+            {
+                "path": "scripts/renpy_mouse_day_1.rpy",
+                "name": "renpy_mouse_day_1.rpy",
+                "extension": ".rpy",
+                "kind": "script",
+                "size": 100,
+                "lastModified": 1000,
+            },
+            {
+                "path": "images/monika/monika 1a.png",
+                "name": "monika 1a.png",
+                "extension": ".png",
+                "kind": "image",
+                "size": 200,
+                "lastModified": 2000,
+            },
+            {
+                "path": "audio/t2.ogg",
+                "name": "t2.ogg",
+                "extension": ".ogg",
+                "kind": "audio",
+                "size": 300,
+                "lastModified": 3000,
+                "renpyNames": ["t2", "audio.t2"],
+            },
+        ],
+        "characterImages": {"s": "sayori", "y": "yuri"},
+    }
+
+    response = _upload_directory_import(
+        client,
+        project_owner["project_id"],
+        [
+            ("scripts/renpy_mouse_day_1.rpy", "renpy_mouse_day_1.rpy"),
+            ("chapters/renpy_mouse_day_2.rpy", "renpy_mouse_day_2.rpy"),
+        ],
+        asset_catalog,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["catalog_entry_count"] == 3
+
+    snapshot_response = client.get(f"/api/projects/{project_owner['project_id']}/graph-snapshot")
+    restored_graph = _decode_loro_snapshot(snapshot_response.content)
+
+    assert [file["path"] for file in restored_graph["files"]] == [
+        "scripts/renpy_mouse_day_1.rpy",
+        "chapters/renpy_mouse_day_2.rpy",
+    ]
+
+    catalog_response = client.get(f"/api/projects/{project_owner['project_id']}/asset-catalog")
+    assert catalog_response.status_code == 200
+    catalog_payload = catalog_response.json()
+    assert catalog_payload["project_id"] == project_owner["project_id"]
+    assert catalog_payload["revision"] == 1
+    assert catalog_payload["catalog"]["entries"] == sorted(asset_catalog["entries"], key=lambda entry: entry["path"].lower())
+
+
+def test_project_graph_import_route_rejects_unsafe_directory_paths(client, project_owner):
+    response = _upload_directory_import(
+        client,
+        project_owner["project_id"],
+        [("../outside.rpy", "renpy_mouse_day_1.rpy")],
+        {
+            "root_kind": "renpy-game-root",
+            "game_directory": "game",
+            "entries": [],
+        },
+    )
+
+    assert response.status_code == 400
+    assert "Unsafe project file path" in response.json()["detail"]
+
+
+def test_project_asset_catalog_update_is_owner_only(temp_database, project_owner):
+    collaborator_id = temp_database.create_user(
+        username="catalog_collaborator",
+        email="catalog_collaborator@example.com",
+        password_hash="hash",
+    )
+    temp_database.grant_project_access(project_owner["project_id"], collaborator_id, "role_editor")
+
+    original_projects_db = projects.db_service
+    original_current_user_override = app.dependency_overrides.get(get_current_user)
+    projects.db_service = temp_database
+
+    async def collaborator_user():
+        return {"id": collaborator_id, "username": "catalog_collaborator"}
+
+    app.dependency_overrides[get_current_user] = collaborator_user
+    try:
+        test_client = TestClient(app)
+        response = test_client.put(
+            f"/api/projects/{project_owner['project_id']}/asset-catalog",
+            json={
+                "root_kind": "renpy-game-root",
+                "game_directory": "game",
+                "entries": [
+                    {
+                        "path": "images/private/local-only.png",
+                        "name": "local-only.png",
+                        "extension": ".png",
+                        "kind": "image",
+                        "size": 10,
+                        "lastModified": 10,
+                    }
+                ],
+            },
+        )
+    finally:
+        if original_current_user_override is None:
+            app.dependency_overrides.pop(get_current_user, None)
+        else:
+            app.dependency_overrides[get_current_user] = original_current_user_override
+        projects.db_service = original_projects_db
+
+    assert response.status_code == 403
+    assert temp_database.get_project_asset_catalog(project_owner["project_id"]) is None
 
 
 def test_project_graph_import_route_imports_files_and_saves_loro_snapshot(client, project_owner):

@@ -2,6 +2,7 @@ import sqlite3
 import uuid
 import os
 import logging
+import json
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Tuple
 from datetime import datetime, timedelta
@@ -148,7 +149,7 @@ class DatabaseService:
                         
                     logger.info(f"Found existing database with tables: {', '.join(tables)}")
                     if tables:  # If tables exist, we don't need to initialize again
-                        self._ensure_project_crdt_schema()
+                        self._ensure_project_graph_metadata_schema()
                         return
                 except Exception as e:
                     logger.warning(f"Error checking existing database: {e}")
@@ -225,8 +226,8 @@ class DatabaseService:
             logger.error(f"Database initialization failed: {str(e)}")
             raise
 
-    def _ensure_project_crdt_schema(self):
-        """Ensure MVP 2.0 ProjectGraph CRDT persistence tables exist."""
+    def _ensure_project_graph_metadata_schema(self):
+        """Ensure MVP 2.0 ProjectGraph metadata persistence tables exist."""
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("PRAGMA foreign_keys = ON")
             conn.execute(
@@ -237,6 +238,19 @@ class DatabaseService:
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+                )
+                '''
+            )
+            conn.execute(
+                '''
+                CREATE TABLE IF NOT EXISTS project_asset_catalogs (
+                    project_id TEXT PRIMARY KEY,
+                    catalog_json TEXT NOT NULL,
+                    revision INTEGER NOT NULL DEFAULT 1,
+                    updated_by TEXT NOT NULL,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+                    FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE CASCADE
                 )
                 '''
             )
@@ -713,6 +727,53 @@ class DatabaseService:
                 return bytes(row["snapshot"])
         except Exception as e:
             logger.error(f"Failed to load ProjectGraph CRDT snapshot: {str(e)}")
+            raise
+
+    def save_project_asset_catalog(self, project_id: str, catalog: Dict[str, Any], updated_by: str) -> None:
+        """Persist the latest text-only local Ren'Py asset catalog for a project."""
+        try:
+            catalog_json = json.dumps(catalog, ensure_ascii=False, sort_keys=True)
+            with self._get_connection() as conn:
+                conn.execute(
+                    '''
+                    INSERT INTO project_asset_catalogs (project_id, catalog_json, revision, updated_by)
+                    VALUES (?, ?, 1, ?)
+                    ON CONFLICT(project_id) DO UPDATE SET
+                        catalog_json = excluded.catalog_json,
+                        revision = project_asset_catalogs.revision + 1,
+                        updated_by = excluded.updated_by,
+                        updated_at = CURRENT_TIMESTAMP
+                    ''',
+                    (project_id, catalog_json, updated_by)
+                )
+        except Exception as e:
+            logger.error(f"Failed to save ProjectGraph asset catalog: {str(e)}")
+            raise
+
+    def get_project_asset_catalog(self, project_id: str) -> Optional[Dict[str, Any]]:
+        """Load the latest text-only local Ren'Py asset catalog for a project."""
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.execute(
+                    '''
+                    SELECT project_id, catalog_json, revision, updated_by, updated_at
+                    FROM project_asset_catalogs
+                    WHERE project_id = ?
+                    ''',
+                    (project_id,)
+                )
+                row = cursor.fetchone()
+                if not row:
+                    return None
+                return {
+                    "project_id": row["project_id"],
+                    "catalog": json.loads(row["catalog_json"]),
+                    "revision": row["revision"],
+                    "updated_by": row["updated_by"],
+                    "updated_at": row["updated_at"],
+                }
+        except Exception as e:
+            logger.error(f"Failed to load ProjectGraph asset catalog: {str(e)}")
             raise
 
     def delete_project(self, project_id: str) -> bool:

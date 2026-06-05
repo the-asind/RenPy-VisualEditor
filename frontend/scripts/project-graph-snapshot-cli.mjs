@@ -45,6 +45,8 @@ const sourceSpanOrNull = (value) => {
 const recordOrEmpty = (value) =>
   value && typeof value === 'object' && !Array.isArray(value) ? { ...value } : {};
 
+const scenarioContentTextKey = (nodeId) => `scenario_content:${nodeId}`;
+
 const writeCommonEntityData = (node, kind, entityId, visual) => {
   node.data.set('kind', kind);
   node.data.set('entity_id', entityId);
@@ -138,15 +140,17 @@ const createProjectGraphCrdtDoc = (graph) => {
     (scenario) => scenario.parent_node_id ?? scenario.label_id,
     (scenario) => {
       const node = createIndexedTreeNode(doc, scenario.id, scenario.parent_node_id ?? scenario.label_id);
+      const contentTextKey = scenarioContentTextKey(scenario.id);
       writeCommonEntityData(node, 'scenario', scenario.id, scenario.visual);
       node.data.set('file_id', scenario.file_id);
       node.data.set('label_id', scenario.label_id);
       node.data.set('parent_node_id', scenario.parent_node_id);
       node.data.set('type', scenario.type);
-      node.data.set('content', scenario.content);
+      node.data.set('content_text_key', contentTextKey);
       node.data.set('order', scenario.order);
       node.data.set('source_span', scenario.source_span);
       node.data.set('metadata', scenario.metadata ?? {});
+      doc.getText(contentTextKey).update(scenario.content);
     },
   );
 
@@ -154,7 +158,12 @@ const createProjectGraphCrdtDoc = (graph) => {
   return doc;
 };
 
-const collectTreeEntities = (nodes) => {
+const getScenarioContent = (doc, meta) => {
+  const contentTextKey = String(meta.content_text_key ?? scenarioContentTextKey(String(meta.entity_id)));
+  return doc.getText(contentTextKey).toString();
+};
+
+const collectTreeEntities = (doc, nodes) => {
   const files = [];
   const labels = [];
   const labelStarts = [];
@@ -198,7 +207,7 @@ const collectTreeEntities = (nodes) => {
         label_id: String(meta.label_id),
         parent_node_id: meta.parent_node_id === null ? null : String(meta.parent_node_id),
         type: String(meta.type),
-        content: String(meta.content),
+        content: getScenarioContent(doc, meta),
         order: String(meta.order),
         source_span: sourceSpanOrNull(meta.source_span),
         metadata: recordOrEmpty(meta.metadata),
@@ -221,7 +230,7 @@ const collectTreeEntities = (nodes) => {
 const projectGraphFromCrdtDoc = (doc) => {
   const meta = doc.getMap(META_CONTAINER);
   const treeJson = doc.getTree(TREE_CONTAINER).toJSON();
-  const { files, labels, labelStarts, scenarios } = collectTreeEntities(treeJson);
+  const { files, labels, labelStarts, scenarios } = collectTreeEntities(doc, treeJson);
   const fileOrder = new Map(files.map((file, index) => [file.id, `${file.order}:${index}`]));
   const labelOrder = new Map(
     labels

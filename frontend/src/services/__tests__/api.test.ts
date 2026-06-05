@@ -102,6 +102,56 @@ describe('ProjectGraph snapshot loading', () => {
     await expect(importProjectGraphFiles('project-load-snapshot', files)).resolves.toEqual(importResult);
   });
 
+  it('imports directory scan results with relative script paths and asset catalog', async () => {
+    const files = [
+      new File(['label start:\n    jump day_two\n'], 'renpy_mouse_day_1.rpy', { type: 'text/plain' }),
+      new File(['label day_two:\n    return\n'], 'renpy_mouse_day_2.rpy', { type: 'text/plain' }),
+    ];
+    const filePaths = ['scripts/renpy_mouse_day_1.rpy', 'chapters/renpy_mouse_day_2.rpy'];
+    const assetCatalog = {
+      root_kind: 'renpy-game-root',
+      game_directory: 'game',
+      entries: [
+        {
+          path: 'images/monika/monika 1a.png',
+          name: 'monika 1a.png',
+          extension: '.png',
+          kind: 'image',
+          size: 100,
+          lastModified: 1000,
+        },
+      ],
+    };
+    const importResult: ProjectGraphImportResult = {
+      project_id: 'project-load-snapshot',
+      file_count: 2,
+      label_count: 2,
+      label_start_count: 2,
+      node_count: 2,
+      edge_count: 1,
+      diagnostics: {
+        total: 0,
+        blocking: 0,
+        info: 0,
+        warning: 0,
+        error: 0,
+      },
+      snapshot_available: true,
+      catalog_entry_count: 1,
+    };
+
+    mock.onPost('/projects/project-load-snapshot/graph-import').reply((config) => {
+      const formData = config.data as FormData;
+      expect(formData.getAll('file_paths')).toEqual(filePaths);
+      expect(JSON.parse(formData.get('asset_catalog') as string)).toEqual(assetCatalog);
+      return [200, importResult];
+    });
+
+    await expect(
+      importProjectGraphFiles('project-load-snapshot', files, { filePaths, assetCatalog }),
+    ).resolves.toEqual(importResult);
+  });
+
   afterEach(() => {
     mock.restore();
   });

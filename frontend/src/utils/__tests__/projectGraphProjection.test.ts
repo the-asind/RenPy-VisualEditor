@@ -17,6 +17,7 @@ import {
   getProjectGraphScenarioContentEditorValue,
   projectGraphNodeTypes,
   reconcileProjectGraphScenarioContentDraft,
+  shouldFlushProjectGraphScenarioContentCommitForSelection,
   shouldHideProjectGraphEdgeInLod,
   shouldTrackProjectGraphViewportLive,
   shouldRenderProjectGraphSimpleNodes,
@@ -83,6 +84,18 @@ describe('relation-aware label frame packing helpers', () => {
       draft,
     );
     expect(reconcileProjectGraphScenarioContentDraft('node-other', 'r "Other node authoritative text."', draft)).toBeNull();
+  });
+
+  it('flushes deferred scenario text commits when the editor leaves the pending node', () => {
+    const pendingCommit = {
+      nodeId: 'node-intro',
+      content: 'r "RenPy Mouse coalesces text before waking the graph."',
+    };
+
+    expect(shouldFlushProjectGraphScenarioContentCommitForSelection(pendingCommit, 'node-intro')).toBe(false);
+    expect(shouldFlushProjectGraphScenarioContentCommitForSelection(pendingCommit, 'node-other')).toBe(true);
+    expect(shouldFlushProjectGraphScenarioContentCommitForSelection(pendingCommit, null)).toBe(true);
+    expect(shouldFlushProjectGraphScenarioContentCommitForSelection(null, 'node-intro')).toBe(false);
   });
 
   it('filters render edges through dev-only kill switches', () => {

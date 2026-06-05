@@ -58,6 +58,50 @@
   line-height: 1.35;
 }
 
+.project-graph-local-assets {
+  position: absolute;
+  z-index: 12;
+  top: 16px;
+  left: 50%;
+  display: flex;
+  max-width: calc(100vw - 32px);
+  transform: translateX(-50%);
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(15, 23, 42, 0.14);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.94);
+  padding: 8px 10px;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12);
+  color: #334155;
+  font-size: 12px;
+}
+
+.project-graph-local-assets button {
+  min-height: 28px;
+  border: 1px solid rgba(37, 99, 235, 0.32);
+  border-radius: 6px;
+  background: #ffffff;
+  color: #1d4ed8;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.project-graph-local-assets button:disabled {
+  border-color: rgba(100, 116, 139, 0.24);
+  color: #94a3b8;
+  cursor: not-allowed;
+}
+
+.project-graph-local-assets small {
+  max-width: 320px;
+  overflow: hidden;
+  color: #64748b;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .project-graph-canvas .react-flow__node {
   border-radius: 8px;
 }
