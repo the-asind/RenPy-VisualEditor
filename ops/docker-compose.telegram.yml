@@ -1,0 +1,22 @@
+services:
+  telegram-relay:
+    image: python:3.12.12-alpine
+    restart: unless-stopped
+    network_mode: host
+    user: "65534:65534"
+    env_file:
+      - ../telegram-relay.env
+    volumes:
+      - ./telegram_alert_relay.py:/app/relay.py:ro
+    command: ["python", "-u", "/app/relay.py"]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 64m
+    cpus: 0.25
+    pids_limit: 16
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"

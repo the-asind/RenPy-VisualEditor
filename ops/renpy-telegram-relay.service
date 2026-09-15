@@ -1,0 +1,20 @@
+[Unit]
+Description=RenPy Grafana Telegram alert relay
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+DynamicUser=true
+EnvironmentFile=/etc/renpy-telegram-relay.env
+ExecStart=/usr/bin/python3 /usr/local/lib/renpy-telegram-alert-relay.py
+Restart=on-failure
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+MemoryMax=64M
+TasksMax=16
+
+[Install]
+WantedBy=multi-user.target

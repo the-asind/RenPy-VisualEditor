@@ -28,6 +28,14 @@ FIN reaches MSK over the existing VPN: Prometheus resolves `renpy.online` to `10
 
 ## Release Evidence
 
+## Telegram alerts on FIN
+
+Put `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in `telegram-relay.env` next to the monitoring Compose file; keep it outside Git and set mode `0600`. The existing MSK bot cannot reach Telegram directly; the owner authorized copying its credentials to FIN. Never include credentials in commands, logs or release artifacts.
+
+Run `docker compose -p renpy-alerts -f ops/docker-compose.telegram.yml up -d`. The relay uses host networking but binds only `127.0.0.1:9081`, accepts only local webhook requests and limits payloads to 64 KiB. Then run `python3 ops/configure_grafana_alerts.py` from the FIN account whose monitoring configuration is in `~/renpy-observability`. This idempotently configures the contact point, notification policy and backend availability / HTTP failure rules, and sends a real test notification. The command fails if notification delivery fails. Keep the monitoring volume: API-provisioned rules live in Grafana's persistent database.
+
+The optional systemd unit uses `/etc/renpy-telegram-relay.env` for hosts with administrator access; FIN currently runs the Docker variant. Do not run both on the same port.
+
 The backend now admits at most two concurrent project writes or password operations per worker, returning `503` with `Retry-After: 2` instead of queueing extra work. Request bodies are bounded to 10 MiB before JSON/multipart parsing, with a 30-second read deadline and at most 16 simultaneous body readers. Imports, exports, graph commands and password work run outside the event loop. Use one backend worker: admission and IP counters are process-local.
 
 Persisted graph snapshots, catalogs and legacy script text share a 32 MiB owner budget, including catalog writes by collaborators. Each snapshot is limited to 8 MiB and each catalog to 1 MiB. Import replaces graph/catalog atomically; rejected writes preserve existing data and revisions. This is a logical payload quota, not a cap on SQLite file size, backups, logs or legacy version history. Existing owners above the budget can shrink data or delete projects.
