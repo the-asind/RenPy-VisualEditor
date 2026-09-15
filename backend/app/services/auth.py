@@ -4,13 +4,18 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List
 from passlib.context import CryptContext
 from jose import JWTError, jwt
+from ..security import (
+    ACCESS_TOKEN_EXPIRE_MINUTES,
+    DEV_JWT_SECRET,
+    SESSION_TOKEN_EXPIRE_MINUTES,
+    get_jwt_secret_key,
+)
 
 logger = logging.getLogger(__name__)
 
 # JWT Configuration
-SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "YOUR_SUPER_SECRET_KEY_CHANGE_IN_PRODUCTION")
+SECRET_KEY = os.environ.get("JWT_SECRET_KEY", DEV_JWT_SECRET)
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 3000  # 5 hours
 
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -54,7 +59,7 @@ class AuthService:
         to_encode.update({"exp": expire})
         
         try:
-            encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+            encoded_jwt = jwt.encode(to_encode, get_jwt_secret_key(), algorithm=ALGORITHM)
             return encoded_jwt
         except Exception as e:
             logger.error(f"Token creation error: {str(e)}")
@@ -63,7 +68,7 @@ class AuthService:
     def decode_token(self, token: str) -> Optional[Dict[str, Any]]:
         """Decode and verify a JWT token."""
         try:
-            payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+            payload = jwt.decode(token, get_jwt_secret_key(), algorithms=[ALGORITHM])
             return payload
         except JWTError as e:
             logger.error(f"Token validation error: {str(e)}")
@@ -103,7 +108,7 @@ class AuthService:
     def create_session_token(self, user_id: str, script_id: str) -> str:
         """Create a session token for real-time collaboration."""
         data = {"sub": user_id, "script_id": script_id}
-        return self.create_access_token(data)
+        return self.create_access_token(data, expires_delta=timedelta(minutes=SESSION_TOKEN_EXPIRE_MINUTES))
 
     def validate_session_token(self, token: str, script_id: str) -> Optional[str]:
         """Validate a session token and ensure it matches the script."""

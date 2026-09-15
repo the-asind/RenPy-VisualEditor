@@ -4,6 +4,7 @@ import time
 from datetime import datetime, timedelta
 from unittest.mock import MagicMock, patch
 
+from app.api.routes import auth as auth_routes
 from app.services.auth import AuthService
 
 class TestAuthService:
@@ -102,6 +103,75 @@ class TestAuthService:
         assert payload["sub"] == "user_id_123"
         assert payload["username"] == "testuser"
         assert "exp" in payload  # Expiry time
+
+    def test_production_jwt_secret_is_required(self, auth_service, monkeypatch):
+        """Production must fail closed instead of signing tokens with a built-in fallback secret."""
+        monkeypatch.setenv("APP_ENV", "production")
+        monkeypatch.delenv("JWT_SECRET_KEY", raising=False)
+
+        with pytest.raises(RuntimeError, match="JWT_SECRET_KEY"):
+            auth_service.create_access_token({"sub": "user_id_123"})
+
+    @pytest.mark.asyncio
+    async def test_login_access_token_uses_thirty_day_jwt_lifetime(self, monkeypatch):
+        """Login route should issue the same long-lived JWT used by the auth service."""
+
+        class FakeFormData:
+            username = "testuser"
+            password = "password123"
+
+        class FakeAuthService:
+            def authenticate_user(self, username, password):
+                assert username == "testuser"
+                assert password == "password123"
+                return {"id": "user_id_123", "username": "testuser"}
+
+            def create_access_token(self, data, expires_delta=None):
+                return AuthService(MagicMock()).create_access_token(data, expires_delta=expires_delta)
+
+        monkeypatch.setattr(auth_routes, "auth_service", FakeAuthService())
+
+        token_response = await auth_routes.login_for_access_token(FakeFormData())
+
+        from app.services.auth import SECRET_KEY, ALGORITHM
+        payload = jwt.decode(token_response["access_token"], SECRET_KEY, algorithms=[ALGORITHM])
+        expiry_time = datetime.utcfromtimestamp(payload["exp"])
+        time_left = expiry_time - datetime.utcnow()
+
+        assert payload["sub"] == "user_id_123"
+        assert time_left > timedelta(days=29, hours=23)
+        assert time_left <= timedelta(days=30, minutes=1)
+
+    @pytest.mark.asyncio
+    async def test_project_session_token_route_uses_session_token_path(self, monkeypatch):
+        """Session-token route should issue a project-scoped collaboration token."""
+        issued_sessions = []
+
+        class FakeDatabase:
+            def get_user_projects(self, user_id):
+                assert user_id == "user_id_123"
+                return [{"id": "project_id_456"}]
+
+        class FakeAuthService:
+            def create_session_token(self, user_id, project_id):
+                issued_sessions.append((user_id, project_id))
+                return AuthService(MagicMock()).create_session_token(user_id, project_id)
+
+        monkeypatch.setattr(auth_routes, "db_service", FakeDatabase())
+        monkeypatch.setattr(auth_routes, "auth_service", FakeAuthService())
+
+        token_response = await auth_routes.create_project_session_token(
+            auth_routes.SessionTokenCreate(project_id="project_id_456"),
+            current_user={"id": "user_id_123", "username": "testuser"},
+        )
+
+        from app.services.auth import SECRET_KEY, ALGORITHM
+        payload = jwt.decode(token_response["access_token"], SECRET_KEY, algorithms=[ALGORITHM])
+
+        assert issued_sessions == [("user_id_123", "project_id_456")]
+        assert token_response["token_type"] == "bearer"
+        assert payload["sub"] == "user_id_123"
+        assert payload["script_id"] == "project_id_456"
     
     def test_decode_token(self, auth_service):
         """Test JWT token decoding."""
@@ -265,7 +335,7 @@ class TestAuthService:
         assert auth_service.check_role_permission("Editor", "Owner") is False
     
     def test_create_session_token(self, auth_service):
-        """Test creating a session token with short expiry for real-time collaboration."""
+        """Test creating a short-lived session token for real-time collaboration."""
         user_id = "user_id_123"
         script_id = "script_id_456"
         
@@ -281,14 +351,12 @@ class TestAuthService:
         assert payload["script_id"] == script_id
         assert "exp" in payload
         
-        # Session token should have shorter expiry than regular token
-        # Calculate remaining time
-        expiry_time = datetime.fromtimestamp(payload["exp"])
+        # Session tokens are bearer credentials used for collaboration handshakes and should be short-lived.
+        expiry_time = datetime.utcfromtimestamp(payload["exp"])
         time_left = expiry_time - datetime.utcnow()
         
-        # Should be less than the default token expiry but more than 10 minutes
-        assert time_left < timedelta(days=3)  # Less than default
-        assert time_left > timedelta(minutes=10)  # Enough for a collaboration session
+        assert time_left > timedelta(minutes=4)
+        assert time_left <= timedelta(minutes=15)
     
     def test_validate_session_token(self, auth_service):
         """Test validating a session token for real-time access."""

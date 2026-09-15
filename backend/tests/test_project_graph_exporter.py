@@ -1,0 +1,302 @@
+from collections import Counter
+from dataclasses import replace
+from pathlib import Path
+
+from app.services.project_graph.exporter import ProjectGraphExporter
+from app.services.project_graph.importer import ProjectGraphImporter
+from app.services.project_graph.resolver import ProjectGraphResolver
+
+
+def semantic_signature(graph):
+    labels = sorted(label.qualified_name for label in graph.labels)
+    nodes = sorted(
+        (
+            node.type,
+            node.content,
+            node.parent_node_id is not None,
+            tuple(sorted(node.metadata.items())),
+        )
+        for node in graph.nodes
+    )
+    diagnostics = sorted((diagnostic.code, diagnostic.severity, diagnostic.blocking) for diagnostic in graph.diagnostics)
+    return labels, nodes, diagnostics
+
+
+def import_and_resolve(path: Path):
+    return ProjectGraphResolver().resolve(
+        ProjectGraphImporter().import_files(
+            project_id="single-export-project",
+            files=[path],
+        )
+    )
+
+
+def test_single_file_roundtrip_preserves_mvp_semantics(tmp_path):
+    source = tmp_path / "single_mouse_story.rpy"
+    source.write_text(
+        "\n".join(
+            [
+                'define r = Character("RenPy")',
+                "",
+                "label start:",
+                "    # Comment stays editable.",
+                "    scene kitchen morning",
+                "    r \"Roundtrip smells like cheese.\"",
+                "    menu:",
+                "        \"Pick a route.\"",
+                "        \"Nibble\" if True:",
+                "            jump .nibble",
+                "    if True:",
+                "        r \"The branch survives.\"",
+                "    else:",
+                "        r \"The fallback survives.\"",
+                "",
+                "label .nibble:",
+                "    show renpy happy:",
+                "        xalign 0.5",
+                "        linear 0.2 yoffset -10",
+                "    return",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    graph = import_and_resolve(source)
+    exported = ProjectGraphExporter().export(graph)
+
+    assert list(exported) == ["single_mouse_story.rpy"]
+    assert "label start:" in exported["single_mouse_story.rpy"]
+    assert "label .nibble:" in exported["single_mouse_story.rpy"]
+    assert "# Comment stays editable." in exported["single_mouse_story.rpy"]
+    assert "show renpy happy:" in exported["single_mouse_story.rpy"]
+
+    roundtrip_path = tmp_path / "roundtrip" / "single_mouse_story.rpy"
+    roundtrip_path.parent.mkdir()
+    roundtrip_path.write_text(exported["single_mouse_story.rpy"], encoding="utf-8")
+    roundtripped = import_and_resolve(roundtrip_path)
+
+    assert semantic_signature(roundtripped) == semantic_signature(graph)
+
+
+def test_single_file_export_matches_expected_normalized_renpy_text(tmp_path):
+    source = tmp_path / "single_mouse_story.rpy"
+    source.write_text(
+        "\n".join(
+            [
+                'define r = Character("RenPy")',
+                "",
+                "label start:",
+                "    # Comment stays editable.",
+                "    scene kitchen morning",
+                "    r \"Roundtrip smells like cheese.\"",
+                "    menu:",
+                "        \"Pick a route.\"",
+                "        \"Nibble\" if True:",
+                "            jump .nibble",
+                "    if True:",
+                "        r \"The branch survives.\"",
+                "    else:",
+                "        r \"The fallback survives.\"",
+                "",
+                "label .nibble:",
+                "    show renpy happy:",
+                "        xalign 0.5",
+                "        linear 0.2 yoffset -10",
+                "    return",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    graph = import_and_resolve(source)
+    exported = ProjectGraphExporter().export(graph)
+
+    assert exported["single_mouse_story.rpy"] == "\n".join(
+        [
+            'define r = Character("RenPy")',
+            "",
+            "label start:",
+            "    # Comment stays editable.",
+            "    scene kitchen morning",
+            "    r \"Roundtrip smells like cheese.\"",
+            "    menu:",
+            "        \"Pick a route.\"",
+            "        \"Nibble\" if True:",
+            "            jump .nibble",
+            "    if True:",
+            "        r \"The branch survives.\"",
+            "    else:",
+            "        r \"The fallback survives.\"",
+            "",
+            "label .nibble:",
+            "    show renpy happy:",
+            "        xalign 0.5",
+            "        linear 0.2 yoffset -10",
+            "    return",
+            "",
+        ]
+    )
+
+
+def test_code_only_file_export_preserves_original_technical_file_text(tmp_path):
+    gui_file = tmp_path / "gui.rpy"
+    gui_file.write_text(
+        "\n".join(
+            [
+                "init python:",
+                "    gui.init(1920, 1080)",
+                "",
+                "label accidental_gui_label:",
+                "    return",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    graph = import_and_resolve(gui_file)
+    exported = ProjectGraphExporter().export(graph)
+
+    assert graph.files[0].metadata["code_only"] is True
+    assert graph.labels == []
+    assert graph.nodes == []
+    assert exported == {"gui.rpy": gui_file.read_text(encoding="utf-8")}
+
+
+def test_empty_label_exports_canonical_pass_placeholder(tmp_path):
+    source = tmp_path / "empty_mouse_vault.rpy"
+    source.write_text("label mouse_vault:\n    pass\n", encoding="utf-8")
+    imported = import_and_resolve(source)
+    graph = replace(imported, nodes=[])
+
+    assert ProjectGraphExporter().export(graph)["empty_mouse_vault.rpy"] == "label mouse_vault:\n    pass\n"
+
+
+def test_comment_before_else_roundtrips_as_part_of_else_statement(tmp_path):
+    source = tmp_path / "mouse_comment_before_else.rpy"
+    source.write_text(
+        "\n".join(
+            [
+                "label start:",
+                '    if flags["d5"]["sanya_love_yuli"]:',
+                '        sanya "Ну... думаю, что скорее да, чем нет..."',
+                "    # концовка",
+                "    else:",
+                '        sanya "Юль, что за бред?"',
+                "    return",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    graph = import_and_resolve(source)
+    exported = ProjectGraphExporter().export(graph)
+
+    assert exported["mouse_comment_before_else.rpy"] == "\n".join(
+        [
+            "label start:",
+            '    if flags["d5"]["sanya_love_yuli"]:',
+            '        sanya "Ну... думаю, что скорее да, чем нет..."',
+            "    # концовка",
+            "    else:",
+            '        sanya "Юль, что за бред?"',
+            "    return",
+            "",
+        ]
+    )
+
+
+FIXTURE_DIR = Path(__file__).parent / "fixtures" / "renpy_mouse"
+
+
+def import_mouse_project(paths):
+    return ProjectGraphResolver().resolve(
+        ProjectGraphImporter().import_files(
+            project_id="mouse-renpy-project",
+            files=paths,
+        )
+    )
+
+
+def edge_contract(graph):
+    nodes_by_id = {node.id: node for node in graph.nodes}
+    return sorted(
+        (nodes_by_id[edge.source_node_id].content, edge.kind, edge.metadata["resolved_qualified_name"])
+        for edge in graph.edges
+    )
+
+
+def test_multi_file_roundtrip_exports_each_file_by_file_frame_path(tmp_path):
+    source_paths = [
+        FIXTURE_DIR / "renpy_mouse_day_1.rpy",
+        FIXTURE_DIR / "renpy_mouse_day_2.rpy",
+    ]
+    graph = import_mouse_project(source_paths)
+    exported = ProjectGraphExporter().export(graph)
+
+    assert list(exported) == ["renpy_mouse_day_1.rpy", "renpy_mouse_day_2.rpy"]
+    assert "label start:" in exported["renpy_mouse_day_1.rpy"]
+    assert "label ask_duck(topic=\"crumbs\"):" in exported["renpy_mouse_day_1.rpy"]
+    assert "label day_two:" not in exported["renpy_mouse_day_1.rpy"]
+    assert "label day_two:" in exported["renpy_mouse_day_2.rpy"]
+    assert "label cheese_count(amount=0):" in exported["renpy_mouse_day_2.rpy"]
+    assert "label start:" not in exported["renpy_mouse_day_2.rpy"]
+
+    roundtrip_dir = tmp_path / "roundtrip"
+    roundtrip_dir.mkdir()
+    roundtrip_paths = []
+    for path, content in exported.items():
+        roundtrip_path = roundtrip_dir / path
+        roundtrip_path.write_text(content, encoding="utf-8")
+        roundtrip_paths.append(roundtrip_path)
+
+    roundtripped = import_mouse_project(roundtrip_paths)
+
+    assert [file.path for file in roundtripped.files] == ["renpy_mouse_day_1.rpy", "renpy_mouse_day_2.rpy"]
+    assert sorted(label.qualified_name for label in roundtripped.labels) == sorted(
+        label.qualified_name for label in graph.labels
+    )
+    assert Counter(node.type for node in roundtripped.nodes) == Counter(node.type for node in graph.nodes)
+    assert edge_contract(roundtripped) == edge_contract(graph)
+
+def test_export_preserves_raw_action_comment_text_and_excludes_editor_metadata():
+    graph = import_mouse_project(
+        [
+            FIXTURE_DIR / "renpy_mouse_day_1.rpy",
+            FIXTURE_DIR / "renpy_mouse_day_2.rpy",
+            FIXTURE_DIR / "renpy_mouse_diagnostics.rpy",
+        ]
+    )
+    exported = ProjectGraphExporter().export(graph)
+    combined = "\n".join(exported.values())
+
+    assert "# RenPy wakes up under the keyboard." in combined
+    assert "scene kitchen morning" in combined
+    assert "show renpy curious at left with dissolve" in combined
+    assert "play music \"tiny_footsteps.ogg\" fadein 1.0" in combined
+    assert "with dissolve" in combined
+    assert "python:" in combined
+    assert "renpy_note = \"raw python block survives the graph\"" in combined
+    assert "while crumb_count < 3:" in combined
+    assert "Loop crumbs are preserved as a raw block for MVP." in combined
+
+    forbidden_fragments = [
+        "raw_block_type",
+        "choice_text",
+        "resolved_qualified_name",
+        "target_label_id",
+        "duplicate_global_label",
+        "unresolved_target",
+        "dynamic_target",
+        "unsupported_raw_block",
+        "source_span",
+        "parent_node_id",
+        "label_start_node_id",
+        "FramePosition",
+        "FrameVisual",
+    ]
+    for fragment in forbidden_fragments:
+        assert fragment not in combined

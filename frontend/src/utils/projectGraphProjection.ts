@@ -1,0 +1,3176 @@
+import { MarkerType, Position, type Edge, type Node } from '@xyflow/react';
+import type { ProjectGraphReadModelUpdate } from './projectGraphReadModel';
+
+export interface GraphPoint {
+  x: number;
+  y: number;
+}
+
+export interface GraphSize {
+  width: number;
+  height: number;
+}
+
+export interface GraphVisual {
+  position: GraphPoint;
+  size: GraphSize;
+}
+
+export interface SourceSpan {
+  start_line: number;
+  end_line: number;
+}
+
+export interface FileFrameSnapshot {
+  id: string;
+  path: string;
+  order: string;
+  visual: GraphVisual;
+  metadata?: Record<string, unknown>;
+}
+
+export interface LabelFrameSnapshot {
+  id: string;
+  file_id: string;
+  parent_label_id: string | null;
+  name: string;
+  qualified_name: string;
+  scope: 'global' | 'local' | 'nested';
+  label_start_node_id: string;
+  source_span: SourceSpan | null;
+  visual: GraphVisual;
+}
+
+export interface LabelStartNodeSnapshot {
+  id: string;
+  file_id: string;
+  label_id: string;
+  qualified_name: string;
+  content: string;
+  visual: GraphVisual;
+}
+
+export interface ScenarioNodeSnapshot {
+  id: string;
+  file_id: string;
+  label_id: string;
+  parent_node_id: string | null;
+  type: string;
+  content: string;
+  order: string;
+  source_span: SourceSpan | null;
+  metadata: Record<string, unknown>;
+  visual: GraphVisual;
+}
+
+export interface FlowEdgeSnapshot {
+  id: string;
+  source_node_id: string;
+  target_node_id: string;
+  kind: 'jump' | 'call';
+  metadata: Record<string, unknown>;
+}
+
+export interface GraphDiagnosticSnapshot {
+  id: string;
+  code: string;
+  severity: 'info' | 'warning' | 'error';
+  message: string;
+  blocking: boolean;
+  file_id: string | null;
+  label_id: string | null;
+  node_id: string | null;
+  source_span: SourceSpan | null;
+  metadata: Record<string, unknown>;
+}
+
+export interface ProjectGraphSnapshot {
+  project_id: string;
+  files: FileFrameSnapshot[];
+  labels: LabelFrameSnapshot[];
+  label_starts: LabelStartNodeSnapshot[];
+  nodes: ScenarioNodeSnapshot[];
+  edges: FlowEdgeSnapshot[];
+  diagnostics: GraphDiagnosticSnapshot[];
+  source_index: Record<string, unknown>;
+}
+
+export interface ProjectGraphProjection {
+  nodes: Node[];
+  edges: Edge[];
+}
+
+export interface ProjectGraphSearchResult {
+  nodeId: string;
+  fileId: string;
+  labelId: string;
+  kind: 'labelStart' | 'scenario';
+  title: string;
+  content: string;
+}
+
+export interface ProjectGraphProblem {
+  id: string;
+  code: string;
+  severity: GraphDiagnosticSnapshot['severity'];
+  message: string;
+  blocking: boolean;
+  nodeId: string | null;
+  fileId: string | null;
+  labelId: string | null;
+}
+
+export interface LabelRelation {
+  sourceLabelId: string;
+  targetLabelId: string;
+  weight: number;
+  kinds: Set<'jump' | 'call'>;
+}
+
+export interface LabelPackingQuality {
+  weightedRelationDistance: number;
+  boundingBoxArea: number;
+  overlapCount: number;
+}
+
+const PROJECT_GRAPH_REACT_FLOW_NODE_CLASS = 'project-graph-rf-node';
+
+type LayoutNode = Node & {
+  position: GraphPoint;
+  width: number;
+  height: number;
+  parentId?: string;
+};
+
+const FRAME_PADDING = 32;
+const SIBLING_GAP = 40;
+const COMPACT_SIBLING_GAP = 24;
+const COMPACT_SCENARIO_CHILD_GAP = 8;
+const BRANCH_LANE_GAP = 64;
+const FLOW_COLUMN_GAP = 96;
+const BRANCH_ROW_GAP = 72;
+const TOP_DOWN_MAIN_CENTER_X = 520;
+const TOP_DOWN_LABEL_TOP_PADDING = 96;
+const LABEL_FRAME_CONTENT_TOP_PADDING = 72;
+const TOP_DOWN_FLOW_ROW_GAP = 84;
+const TOP_DOWN_BRANCH_HEADER_GAP = 0;
+const TOP_DOWN_BRANCH_COLUMN_GAP = 420;
+const TOP_DOWN_BRANCH_SUBTREE_GAP = 96;
+const TOP_DOWN_REJOIN_TURN_OFFSET = 24;
+const BRANCH_HEADER_HEIGHT = 40;
+const FLOW_CONTROL_NODE_HEIGHT = 38;
+const FLOW_CONTROL_NODE_MIN_WIDTH = 220;
+const RELATION_LABEL_FRAME_COLUMN_GAP = 64;
+const RELATION_LABEL_FRAME_ROW_GAP = 48;
+const ROOT_FILE_FRAME_COLUMN_GAP = 96;
+const ROOT_FILE_FRAME_ROW_GAP = 96;
+const ROOT_FILE_FRAME_TARGET_ASPECT = 1.6;
+const COMPACT_FRAME_MIN_SIZE: Record<string, GraphSize> = {
+  projectFrame: { width: 560, height: 260 },
+  labelFrame: { width: 520, height: 180 },
+  scenarioNode: { width: 320, height: 88 },
+  labelStart: { width: 280, height: 72 },
+};
+
+const clonePoint = (point: GraphPoint): GraphPoint => ({ x: point.x, y: point.y });
+
+const normalizeSize = (size: GraphSize): GraphSize => ({
+  width: Math.max(size.width, 160),
+  height: Math.max(size.height, 80),
+});
+
+const overlaps = (a: LayoutNode, b: LayoutNode): boolean =>
+  a.position.x < b.position.x + b.width &&
+  a.position.x + a.width > b.position.x &&
+  a.position.y < b.position.y + b.height &&
+  a.position.y + a.height > b.position.y;
+
+const overlapsWithGap = (a: LayoutNode, b: LayoutNode, gap: number): boolean =>
+  a.position.x < b.position.x + b.width + gap &&
+  a.position.x + a.width + gap > b.position.x &&
+  a.position.y < b.position.y + b.height + gap &&
+  a.position.y + a.height + gap > b.position.y;
+
+const scenarioKind = (node: LayoutNode): string =>
+  node.type === 'scenarioNode' && typeof node.data?.scenarioType === 'string' ? node.data.scenarioType : '';
+
+const isConditionalBranchNode = (node: LayoutNode): boolean => ['if', 'elif', 'else'].includes(scenarioKind(node));
+
+const isConditionalContinuationNode = (node: LayoutNode): boolean => ['elif', 'else'].includes(scenarioKind(node));
+
+const isBranchHeaderNode = (node: LayoutNode): boolean => ['elif', 'else'].includes(scenarioKind(node));
+
+const isMenuNode = (node: LayoutNode): boolean => scenarioKind(node) === 'menu';
+
+const isMenuChoiceNode = (node: LayoutNode): boolean => scenarioKind(node) === 'menu_choice';
+
+const isFlowTerminalNode = (node: LayoutNode): boolean => ['jump', 'return'].includes(scenarioKind(node));
+
+const isBranchingParentNode = (node: LayoutNode | undefined): boolean =>
+  !!node && node.type === 'scenarioNode' && ['if', 'elif', 'else', 'menu'].includes(scenarioKind(node));
+
+const isConditionalScenario = (node: ScenarioNodeSnapshot | undefined): boolean =>
+  !!node && ['if', 'elif', 'else'].includes(node.type);
+
+const isConditionalContinuationScenario = (node: ScenarioNodeSnapshot | undefined): boolean =>
+  !!node && ['elif', 'else'].includes(node.type);
+
+const isBranchHeaderScenario = (node: ScenarioNodeSnapshot | undefined): boolean =>
+  !!node && ['elif', 'else'].includes(node.type);
+
+const isMenuScenario = (node: ScenarioNodeSnapshot | undefined): boolean => node?.type === 'menu';
+
+const isMenuChoiceScenario = (node: ScenarioNodeSnapshot | undefined): boolean => node?.type === 'menu_choice';
+
+const isMenuPromptScenario = (node: ScenarioNodeSnapshot | undefined): boolean => node?.type === 'menu_prompt';
+
+const isFlowControlScenario = (node: ScenarioNodeSnapshot | undefined): boolean =>
+  !!node && ['jump', 'call', 'return'].includes(node.type);
+
+const isVisualBranchContainerScenario = (node: ScenarioNodeSnapshot | undefined): boolean =>
+  isConditionalScenario(node) || isMenuScenario(node) || isMenuChoiceScenario(node);
+
+const hasManualScenarioPosition = (node: ScenarioNodeSnapshot): boolean => node.metadata?._manual_position === true;
+
+const scenarioParentNodeId = (node: LayoutNode): string | null => {
+  const original = node.data?.original;
+  return typeof original === 'object' &&
+    original !== null &&
+    'parent_node_id' in original &&
+    (typeof original.parent_node_id === 'string' || original.parent_node_id === null)
+    ? original.parent_node_id
+    : null;
+};
+
+const hasManualLayoutPosition = (node: LayoutNode): boolean => {
+  const original = node.data?.original;
+  return (
+    typeof original === 'object' &&
+    original !== null &&
+    'metadata' in original &&
+    typeof original.metadata === 'object' &&
+    original.metadata !== null &&
+    '_manual_position' in original.metadata &&
+    original.metadata._manual_position === true
+  );
+};
+
+const hasAutoBranchLayout = (node: LayoutNode): boolean => node.data?.autoBranchLayout === true;
+
+const withFixedSize = <T extends LayoutNode>(node: T): T => ({
+  ...node,
+  style: {
+    ...(node.style ?? {}),
+    width: node.width,
+    height: node.height,
+  },
+});
+
+const buildChildrenByParent = (nodes: LayoutNode[]): Map<string, LayoutNode[]> => {
+  const childrenByParent = new Map<string, LayoutNode[]>();
+  for (const node of nodes) {
+    const parentKey = node.parentId ?? '__root__';
+    const children = childrenByParent.get(parentKey) ?? [];
+    children.push(node);
+    childrenByParent.set(parentKey, children);
+  }
+  return childrenByParent;
+};
+
+const reserveFrameHeaderSpace = (siblings: LayoutNode[], parent: LayoutNode | undefined): void => {
+  if (parent?.type !== 'labelFrame') {
+    return;
+  }
+
+  for (const sibling of siblings) {
+    sibling.position.y = Math.max(sibling.position.y, LABEL_FRAME_CONTENT_TOP_PADDING);
+  }
+};
+
+const hasSiblingOverlap = (siblings: LayoutNode[]): boolean => {
+  for (let leftIndex = 0; leftIndex < siblings.length; leftIndex += 1) {
+    for (let rightIndex = leftIndex + 1; rightIndex < siblings.length; rightIndex += 1) {
+      if (overlaps(siblings[leftIndex], siblings[rightIndex])) {
+        return true;
+      }
+    }
+  }
+  return false;
+};
+
+const hasStackedSiblingPositions = (siblings: LayoutNode[]): boolean => {
+  const seenPositions = new Set<string>();
+  for (const sibling of siblings) {
+    const positionKey = `${sibling.position.x}:${sibling.position.y}`;
+    if (seenPositions.has(positionKey)) {
+      return true;
+    }
+    seenPositions.add(positionKey);
+  }
+  return false;
+};
+
+const hasNegativePosition = (siblings: LayoutNode[]): boolean =>
+  siblings.some((sibling) => sibling.position.x < 0 || sibling.position.y < 0);
+
+const hasImportedScenarioSpread = (siblings: LayoutNode[], parent: LayoutNode | undefined): boolean => {
+  if (parent?.type !== 'scenarioNode') {
+    return false;
+  }
+
+  if (siblings.length === 1) {
+    const [child] = siblings;
+    return child.position.x > 80 || child.position.y > 180;
+  }
+
+  const minY = Math.min(...siblings.map((sibling) => sibling.position.y));
+  const maxY = Math.max(...siblings.map((sibling) => sibling.position.y + sibling.height));
+  const expectedHeight =
+    siblings.reduce((height, sibling) => height + sibling.height, 0) + SIBLING_GAP * Math.max(0, siblings.length - 1);
+
+  return maxY - minY > expectedHeight + 160;
+};
+
+const nodeCenterX = (node: LayoutNode): number => node.position.x + node.width / 2;
+const nodeCenterY = (node: LayoutNode): number => node.position.y + node.height / 2;
+
+const isLabelStartFirst = (siblings: LayoutNode[], parent: LayoutNode | undefined): boolean => {
+  if (parent?.type !== 'labelFrame') {
+    return true;
+  }
+
+  const start = siblings.find((sibling) => sibling.type === 'labelStart');
+  if (!start) {
+    return true;
+  }
+
+  return siblings.every(
+    (sibling) => sibling.id === start.id || start.position.y < sibling.position.y || start.position.x < sibling.position.x,
+  );
+};
+
+const hasSimpleLabelColumnMisalignment = (siblings: LayoutNode[], parent: LayoutNode | undefined): boolean => {
+  if (parent?.type !== 'labelFrame' || siblings.some(hasAutoBranchLayout)) {
+    return false;
+  }
+
+  const ordered = [...siblings].sort(compareLayoutSiblings(parent));
+  const start = ordered.find((sibling) => sibling.type === 'labelStart');
+  const firstFlowNode = ordered.find((sibling) => sibling.id !== start?.id && sibling.type !== 'labelFrame');
+
+  return !!start && !!firstFlowNode && Math.abs(nodeCenterX(start) - nodeCenterX(firstFlowNode)) > 1;
+};
+
+const alignSimpleLabelColumn = (siblings: LayoutNode[], parent: LayoutNode | undefined): void => {
+  if (parent?.type !== 'labelFrame' || siblings.some(hasAutoBranchLayout)) {
+    return;
+  }
+
+  const ordered = [...siblings].sort(compareLayoutSiblings(parent));
+  const columnNodes = ordered.filter(
+    (sibling) =>
+      sibling.type === 'labelStart' ||
+      (sibling.type === 'scenarioNode' &&
+        !isConditionalBranchNode(sibling) &&
+        !isMenuNode(sibling) &&
+        !isMenuChoiceNode(sibling)),
+  );
+
+  if (columnNodes.length < 3) {
+    return;
+  }
+
+  const manualScenarioCount = columnNodes.filter(
+    (sibling) => sibling.type === 'scenarioNode' && hasManualLayoutPosition(sibling),
+  ).length;
+  if (manualScenarioCount < 2) {
+    return;
+  }
+
+  const startX = 32;
+  const columnWidth = Math.max(...columnNodes.map((sibling) => sibling.width));
+  let cursorY = LABEL_FRAME_CONTENT_TOP_PADDING;
+  for (const sibling of columnNodes) {
+    sibling.position.x = startX + (columnWidth - sibling.width) / 2;
+    sibling.position.y = Math.max(sibling.position.y, cursorY);
+    cursorY = sibling.position.y + sibling.height + COMPACT_SIBLING_GAP;
+  }
+};
+
+const groupNeedsCompaction = (
+  siblings: LayoutNode[],
+  parent: LayoutNode | undefined,
+  direction: 'horizontal' | 'vertical',
+): boolean => {
+  if (siblings.length === 0) {
+    return false;
+  }
+
+  if ((parent && hasNegativePosition(siblings)) || hasStackedSiblingPositions(siblings)) {
+    return true;
+  }
+
+  if (!isLabelStartFirst(siblings, parent)) {
+    return true;
+  }
+
+  if (hasSimpleLabelColumnMisalignment(siblings, parent)) {
+    return true;
+  }
+
+  return direction === 'vertical' && hasImportedScenarioSpread(siblings, parent);
+};
+
+const layoutSourceLine = (node: LayoutNode): number =>
+  typeof node.data?.layoutSourceLine === 'number' ? node.data.layoutSourceLine : Number.MAX_SAFE_INTEGER;
+
+const layoutOrder = (node: LayoutNode): string =>
+  typeof node.data?.layoutOrder === 'string' ? node.data.layoutOrder : '';
+
+const compareLayoutSiblings = (parent: LayoutNode | undefined) => (a: LayoutNode, b: LayoutNode): number => {
+  if (parent?.type === 'labelFrame') {
+    if (a.type === 'labelStart' && b.type !== 'labelStart') {
+      return -1;
+    }
+    if (b.type === 'labelStart' && a.type !== 'labelStart') {
+      return 1;
+    }
+  }
+
+  const aOrder = layoutOrder(a);
+  const bOrder = layoutOrder(b);
+  if (a.data?.kind === 'scenario' && b.data?.kind === 'scenario' && aOrder && bOrder && aOrder !== bOrder) {
+    return aOrder.localeCompare(bOrder);
+  }
+
+  const aLine = layoutSourceLine(a);
+  const bLine = layoutSourceLine(b);
+  if (aLine !== bLine) {
+    return aLine - bLine;
+  }
+
+  return layoutOrder(a).localeCompare(layoutOrder(b));
+};
+
+const compactSiblings = (
+  siblings: LayoutNode[],
+  parent: LayoutNode | undefined,
+  direction: 'horizontal' | 'vertical',
+): void => {
+  siblings.sort(compareLayoutSiblings(parent));
+
+  if (direction === 'horizontal') {
+    let cursorX = 0;
+    for (const sibling of siblings) {
+      sibling.position.x = cursorX;
+      sibling.position.y = Math.max(0, sibling.position.y);
+      cursorX += sibling.width + SIBLING_GAP;
+    }
+    return;
+  }
+
+  const startX = parent?.type === 'projectFrame' ? 48 : parent?.type === 'labelFrame' ? 32 : 24;
+  const startY =
+    parent?.type === 'scenarioNode'
+      ? 40
+      : parent?.type === 'labelFrame'
+        ? LABEL_FRAME_CONTENT_TOP_PADDING
+        : parent?.type === 'projectFrame'
+          ? 48
+          : 32;
+  const gap = parent?.type === 'scenarioNode' ? COMPACT_SCENARIO_CHILD_GAP : COMPACT_SIBLING_GAP;
+  const columnWidth = parent?.type === 'labelFrame' ? Math.max(...siblings.map((sibling) => sibling.width)) : 0;
+  const compactX = (sibling: LayoutNode): number =>
+    parent?.type === 'labelFrame' ? startX + (columnWidth - sibling.width) / 2 : startX;
+  let cursorY = startY;
+  let index = 0;
+
+  while (index < siblings.length) {
+    const sibling = siblings[index];
+    if (isConditionalBranchNode(sibling)) {
+      const group = [sibling];
+      let nextIndex = index + 1;
+      while (nextIndex < siblings.length && isConditionalBranchNode(siblings[nextIndex])) {
+        group.push(siblings[nextIndex]);
+        nextIndex += 1;
+      }
+
+      let cursorX = startX;
+      let rowHeight = 0;
+      for (const branch of group) {
+        branch.position.x = cursorX;
+        branch.position.y = cursorY;
+        cursorX += branch.width + BRANCH_LANE_GAP;
+        rowHeight = Math.max(rowHeight, branch.height);
+      }
+      cursorY += rowHeight + gap;
+      index = nextIndex;
+      continue;
+    }
+
+    sibling.position.x = compactX(sibling);
+    sibling.position.y = cursorY;
+    cursorY += sibling.height + gap;
+    index += 1;
+  }
+};
+
+const shiftOverlappingSiblings = (
+  siblings: LayoutNode[],
+  parent: LayoutNode | undefined,
+  direction: 'horizontal' | 'vertical',
+): void => {
+  siblings.sort(compareLayoutSiblings(parent));
+  const placed: LayoutNode[] = [];
+
+  for (const sibling of siblings) {
+    while (placed.some((placedSibling) => overlaps(sibling, placedSibling))) {
+      if (direction === 'horizontal') {
+        sibling.position.x = Math.max(
+          sibling.position.x,
+          ...placed.map((placedSibling) => placedSibling.position.x + placedSibling.width + SIBLING_GAP),
+        );
+      } else {
+        sibling.position.y = Math.max(
+          sibling.position.y,
+          ...placed.map((placedSibling) => placedSibling.position.y + placedSibling.height + SIBLING_GAP),
+        );
+      }
+    }
+    placed.push(sibling);
+  }
+};
+
+const separateOverlappingSiblings = (
+  siblings: LayoutNode[],
+  parent: LayoutNode | undefined,
+  direction: 'horizontal' | 'vertical',
+): boolean => {
+  siblings.sort(compareLayoutSiblings(parent));
+  const placed: LayoutNode[] = [];
+  let changed = false;
+
+  for (const sibling of siblings) {
+    const originalPosition = { ...sibling.position };
+    while (placed.some((placedSibling) => overlaps(sibling, placedSibling))) {
+      const overlapping = placed.filter((placedSibling) => overlaps(sibling, placedSibling));
+      if (direction === 'horizontal') {
+        sibling.position.x = Math.max(
+          sibling.position.x,
+          ...overlapping.map((placedSibling) => placedSibling.position.x + placedSibling.width + SIBLING_GAP),
+        );
+      } else {
+        sibling.position.y = Math.max(
+          sibling.position.y,
+          ...overlapping.map((placedSibling) => placedSibling.position.y + placedSibling.height + SIBLING_GAP),
+        );
+      }
+    }
+    changed = changed || sibling.position.x !== originalPosition.x || sibling.position.y !== originalPosition.y;
+    placed.push(sibling);
+  }
+
+  return changed;
+};
+
+const compactMinSize = (node: LayoutNode): GraphSize => COMPACT_FRAME_MIN_SIZE[node.type ?? ''] ?? {
+  width: node.width,
+  height: node.height,
+};
+
+const addParentAndAncestors = (nodeId: string, byId: Map<string, LayoutNode>, parentIds: Set<string>): void => {
+  let current = byId.get(nodeId);
+  while (current) {
+    parentIds.add(current.id);
+    current = current.parentId ? byId.get(current.parentId) : undefined;
+  }
+};
+
+const expandParentsToFitChildren = (nodes: LayoutNode[], compactParentIds: Set<string>): void => {
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const childrenByParent = buildChildrenByParent(nodes);
+
+  const expand = (parent: LayoutNode): void => {
+    const children = childrenByParent.get(parent.id) ?? [];
+    for (const child of children) {
+      expand(child);
+    }
+
+    const baseSize = compactParentIds.has(parent.id) ? compactMinSize(parent) : parent;
+    const requiredWidth = Math.max(
+      baseSize.width,
+      ...children.map((child) => child.position.x + child.width + FRAME_PADDING),
+    );
+    const requiredHeight = Math.max(
+      baseSize.height,
+      ...children.map((child) => child.position.y + child.height + FRAME_PADDING),
+    );
+
+    parent.width = requiredWidth;
+    parent.height = requiredHeight;
+  };
+
+  for (const node of nodes) {
+    if (!node.parentId || !byId.has(node.parentId)) {
+      expand(node);
+    }
+  }
+};
+
+const hasManualFramePosition = (node: Pick<Node, 'data'>): boolean => {
+  const data = node.data as Record<string, unknown> | undefined;
+  const original = data?.original as { metadata?: Record<string, unknown> } | undefined;
+  return data?.manualPosition === true || original?.metadata?._manual_position === true;
+};
+
+export const shouldAutoPackLabelFrames = (
+  siblings: Array<Pick<LayoutNode, 'position' | 'width' | 'height' | 'data'>>,
+  localRelationCount: number,
+): boolean => {
+  if (siblings.length < 2 || siblings.some(hasManualFramePosition)) {
+    return false;
+  }
+
+  const centers = siblings.map(nodeCenterX);
+  const spread = Math.max(...centers) - Math.min(...centers);
+  const maxWidth = Math.max(...siblings.map((sibling) => sibling.width));
+  const mostlySingleColumn = spread <= Math.max(96, maxWidth * 0.5);
+  return mostlySingleColumn && (localRelationCount > 0 || siblings.length >= 8);
+};
+
+const relationWeight = (kind: FlowEdgeSnapshot['kind']): number => (kind === 'jump' ? 1 : 0.8);
+
+const recordOrEmpty = (value: unknown): Record<string, unknown> =>
+  value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+
+const codeOnlyReasonForFile = (
+  file: FileFrameSnapshot,
+  labelCountByFileId: Map<string, number>,
+): string | null => {
+  const metadata = recordOrEmpty(file.metadata);
+  if (metadata.code_only === true) {
+    return typeof metadata.code_only_reason === 'string' ? metadata.code_only_reason : 'technical';
+  }
+  return (labelCountByFileId.get(file.id) ?? 0) === 0 ? 'no_labels' : null;
+};
+
+const sourceContentForFile = (graph: ProjectGraphSnapshot, file: FileFrameSnapshot): string => {
+  const filesIndex = recordOrEmpty(graph.source_index?.files);
+  const directEntry = recordOrEmpty(filesIndex[file.id]);
+  if (typeof directEntry.content === 'string') {
+    return directEntry.content;
+  }
+  return '';
+};
+
+const scenarioTitleFor = (scenario: ScenarioNodeSnapshot): string =>
+  typeof scenario.metadata.title === 'string' && scenario.metadata.title.trim()
+    ? scenario.metadata.title
+    : typeof scenario.metadata.default_title === 'string' && scenario.metadata.default_title.trim()
+      ? scenario.metadata.default_title
+      : scenario.type;
+
+export const buildLabelRelations = (graph: ProjectGraphSnapshot): LabelRelation[] => {
+  const sourceLabelIdByScenarioId = new Map(graph.nodes.map((scenario) => [scenario.id, scenario.label_id]));
+  const labelIdByStartId = new Map(graph.label_starts.map((start) => [start.id, start.label_id]));
+  const labelsById = new Map(graph.labels.map((label) => [label.id, label]));
+  const relationByPair = new Map<string, LabelRelation>();
+
+  for (const edge of graph.edges) {
+    const sourceLabelId = sourceLabelIdByScenarioId.get(edge.source_node_id);
+    const targetLabelId = edge.target_node_id ? labelIdByStartId.get(edge.target_node_id) : undefined;
+    const sourceLabel = sourceLabelId ? labelsById.get(sourceLabelId) : undefined;
+    const targetLabel = targetLabelId ? labelsById.get(targetLabelId) : undefined;
+
+    if (
+      !sourceLabel ||
+      !targetLabel ||
+      sourceLabel.id === targetLabel.id ||
+      sourceLabel.file_id !== targetLabel.file_id ||
+      sourceLabel.parent_label_id !== targetLabel.parent_label_id
+    ) {
+      continue;
+    }
+
+    const pairKey = `${sourceLabel.id}->${targetLabel.id}`;
+    const relation = relationByPair.get(pairKey) ?? {
+      sourceLabelId: sourceLabel.id,
+      targetLabelId: targetLabel.id,
+      weight: 0,
+      kinds: new Set<'jump' | 'call'>(),
+    };
+    relation.weight = Math.min(3, Number((relation.weight + relationWeight(edge.kind)).toFixed(4)));
+    relation.kinds.add(edge.kind);
+    relationByPair.set(pairKey, relation);
+  }
+
+  const labelSourceOrder = (labelId: string): number => labelsById.get(labelId)?.source_span?.start_line ?? Number.MAX_SAFE_INTEGER;
+  return [...relationByPair.values()].sort(
+    (left, right) =>
+      labelSourceOrder(left.sourceLabelId) - labelSourceOrder(right.sourceLabelId) ||
+      labelSourceOrder(left.targetLabelId) - labelSourceOrder(right.targetLabelId) ||
+      left.sourceLabelId.localeCompare(right.sourceLabelId) ||
+      left.targetLabelId.localeCompare(right.targetLabelId),
+  );
+};
+
+export const buildLabelRelationComponents = (
+  orderedLabelIds: string[],
+  relations: LabelRelation[],
+): string[][] => {
+  const labelIds = new Set(orderedLabelIds);
+  const originalIndexById = new Map(orderedLabelIds.map((labelId, index) => [labelId, index]));
+  const adjacency = new Map<string, Set<string>>();
+
+  for (const labelId of orderedLabelIds) {
+    adjacency.set(labelId, new Set());
+  }
+
+  for (const relation of relations) {
+    if (!labelIds.has(relation.sourceLabelId) || !labelIds.has(relation.targetLabelId)) {
+      continue;
+    }
+    adjacency.get(relation.sourceLabelId)?.add(relation.targetLabelId);
+    adjacency.get(relation.targetLabelId)?.add(relation.sourceLabelId);
+  }
+
+  const sortByOriginalOrder = (left: string, right: string) =>
+    (originalIndexById.get(left) ?? Number.MAX_SAFE_INTEGER) -
+      (originalIndexById.get(right) ?? Number.MAX_SAFE_INTEGER) ||
+    left.localeCompare(right);
+
+  const visited = new Set<string>();
+  const connectedComponents: string[][] = [];
+  const isolatedLabels: string[] = [];
+
+  for (const labelId of orderedLabelIds) {
+    if (visited.has(labelId)) {
+      continue;
+    }
+
+    const neighbors = adjacency.get(labelId) ?? new Set<string>();
+    if (neighbors.size === 0) {
+      visited.add(labelId);
+      isolatedLabels.push(labelId);
+      continue;
+    }
+
+    const component: string[] = [];
+    const queue = [labelId];
+    visited.add(labelId);
+
+    for (let queueIndex = 0; queueIndex < queue.length; queueIndex += 1) {
+      const current = queue[queueIndex];
+      component.push(current);
+      for (const next of [...(adjacency.get(current) ?? [])].sort(sortByOriginalOrder)) {
+        if (!visited.has(next)) {
+          visited.add(next);
+          queue.push(next);
+        }
+      }
+    }
+
+    connectedComponents.push(component.sort(sortByOriginalOrder));
+  }
+
+  connectedComponents.sort((left, right) => sortByOriginalOrder(left[0], right[0]));
+  if (isolatedLabels.length > 0) {
+    connectedComponents.push(isolatedLabels.sort(sortByOriginalOrder));
+  }
+
+  return connectedComponents;
+};
+
+export const measureLabelPackingQuality = (
+  labels: Array<Pick<LayoutNode, 'id' | 'position' | 'width' | 'height'>>,
+  relations: LabelRelation[],
+): LabelPackingQuality => {
+  if (labels.length === 0) {
+    return { weightedRelationDistance: 0, boundingBoxArea: 0, overlapCount: 0 };
+  }
+
+  const byId = new Map(labels.map((label) => [label.id, label]));
+  const minX = Math.min(...labels.map((label) => label.position.x));
+  const minY = Math.min(...labels.map((label) => label.position.y));
+  const maxX = Math.max(...labels.map((label) => label.position.x + label.width));
+  const maxY = Math.max(...labels.map((label) => label.position.y + label.height));
+  let weightedRelationDistance = 0;
+  let relationWeightSum = 0;
+
+  for (const relation of relations) {
+    const source = byId.get(relation.sourceLabelId);
+    const target = byId.get(relation.targetLabelId);
+    if (!source || !target) {
+      continue;
+    }
+
+    weightedRelationDistance +=
+      Math.hypot(nodeCenterX(source as LayoutNode) - nodeCenterX(target as LayoutNode), nodeCenterY(source as LayoutNode) - nodeCenterY(target as LayoutNode)) *
+      relation.weight;
+    relationWeightSum += relation.weight;
+  }
+
+  let overlapCount = 0;
+  for (let leftIndex = 0; leftIndex < labels.length; leftIndex += 1) {
+    for (let rightIndex = leftIndex + 1; rightIndex < labels.length; rightIndex += 1) {
+      if (overlaps(labels[leftIndex] as LayoutNode, labels[rightIndex] as LayoutNode)) {
+        overlapCount += 1;
+      }
+    }
+  }
+
+  return {
+    weightedRelationDistance: relationWeightSum > 0 ? weightedRelationDistance / relationWeightSum : 0,
+    boundingBoxArea: (maxX - minX) * (maxY - minY),
+    overlapCount,
+  };
+};
+
+const orderLabelFramesForPacking = (ordered: LayoutNode[], relations: LabelRelation[]): LayoutNode[] => {
+  if (relations.length === 0) {
+    return ordered;
+  }
+
+  const labelIds = new Set(ordered.map((label) => label.id));
+  const originalIndexById = new Map(ordered.map((label, index) => [label.id, index]));
+  const labelById = new Map(ordered.map((label) => [label.id, label]));
+  const targetsBySource = new Map<string, LabelRelation[]>();
+  const incomingSourcesByTarget = new Map<string, Set<string>>();
+
+  for (const relation of relations) {
+    if (!labelIds.has(relation.sourceLabelId) || !labelIds.has(relation.targetLabelId)) {
+      continue;
+    }
+    const targets = targetsBySource.get(relation.sourceLabelId) ?? [];
+    targets.push(relation);
+    targetsBySource.set(relation.sourceLabelId, targets);
+
+    const incomingSources = incomingSourcesByTarget.get(relation.targetLabelId) ?? new Set<string>();
+    incomingSources.add(relation.sourceLabelId);
+    incomingSourcesByTarget.set(relation.targetLabelId, incomingSources);
+  }
+
+  const highIncomingHubIds = new Set(
+    [...incomingSourcesByTarget.entries()]
+      .filter(([, sources]) => sources.size >= 4)
+      .map(([targetLabelId]) => targetLabelId),
+  );
+
+  for (const targets of targetsBySource.values()) {
+    targets.sort(
+      (left, right) =>
+        right.weight - left.weight ||
+        (originalIndexById.get(left.targetLabelId) ?? Number.MAX_SAFE_INTEGER) -
+          (originalIndexById.get(right.targetLabelId) ?? Number.MAX_SAFE_INTEGER) ||
+        left.targetLabelId.localeCompare(right.targetLabelId),
+    );
+  }
+
+  const result: LayoutNode[] = [];
+  const emitted = new Set<string>();
+  const visiting = new Set<string>();
+
+  const emitCluster = (label: LayoutNode): void => {
+    if (emitted.has(label.id)) {
+      return;
+    }
+    emitted.add(label.id);
+    result.push(label);
+
+    if (visiting.has(label.id)) {
+      return;
+    }
+    visiting.add(label.id);
+    for (const relation of targetsBySource.get(label.id) ?? []) {
+      if (highIncomingHubIds.has(relation.targetLabelId)) {
+        continue;
+      }
+      const target = labelById.get(relation.targetLabelId);
+      if (target) {
+        emitCluster(target);
+      }
+    }
+    visiting.delete(label.id);
+  };
+
+  for (const component of buildLabelRelationComponents(ordered.map((label) => label.id), relations)) {
+    const componentHubIds = component
+      .filter((labelId) => highIncomingHubIds.has(labelId))
+      .sort(
+        (left, right) =>
+          (originalIndexById.get(left) ?? Number.MAX_SAFE_INTEGER) -
+            (originalIndexById.get(right) ?? Number.MAX_SAFE_INTEGER) ||
+          left.localeCompare(right),
+      );
+    if (componentHubIds.length > 0) {
+      const componentOrder = component.filter((labelId) => !highIncomingHubIds.has(labelId));
+
+      for (const hubId of componentHubIds) {
+        const incomingSourceIndexes = [...(incomingSourcesByTarget.get(hubId) ?? [])]
+          .map((sourceId) => componentOrder.indexOf(sourceId))
+          .filter((index) => index >= 0)
+          .sort((left, right) => left - right);
+        const insertIndex =
+          incomingSourceIndexes.length > 0
+            ? incomingSourceIndexes[Math.floor(incomingSourceIndexes.length / 2)] + 1
+            : componentOrder.length;
+        componentOrder.splice(insertIndex, 0, hubId);
+      }
+
+      for (const labelId of componentOrder) {
+        const label = labelById.get(labelId);
+        if (label) {
+          emitCluster(label);
+        }
+      }
+      continue;
+    }
+
+    for (const labelId of component) {
+      const label = labelById.get(labelId);
+      if (label) {
+        emitCluster(label);
+      }
+    }
+  }
+
+  return result;
+};
+
+const packLabelFramesIntoShelves = (
+  labelSiblings: LayoutNode[],
+  parent: LayoutNode | undefined,
+  ordered: LayoutNode[],
+  componentIds?: string[][],
+): void => {
+  const startX = Math.min(...ordered.map((sibling) => sibling.position.x));
+  let cursorX = startX;
+  let cursorY = Math.min(...ordered.map((sibling) => sibling.position.y));
+  let rowHeight = 0;
+  const maxLabelWidth = Math.max(...ordered.map((sibling) => sibling.width));
+  const totalArea = ordered.reduce((area, sibling) => area + sibling.width * sibling.height, 0);
+  const compactTargetWidth = Math.max(maxLabelWidth * 4 + RELATION_LABEL_FRAME_COLUMN_GAP * 3, Math.sqrt(totalArea * 1.5));
+  const parentAvailableWidth =
+    parent && parent.type !== 'labelFrame'
+      ? Math.max(maxLabelWidth, parent.width - startX - FRAME_PADDING, compactTargetWidth)
+      : compactTargetWidth;
+  const targetWidth = Math.max(
+    maxLabelWidth,
+    Math.min(parentAvailableWidth, compactTargetWidth),
+  );
+  const rightLimit = startX + targetWidth;
+  const orderedIndexById = new Map(ordered.map((sibling, index) => [sibling.id, index]));
+  const siblingById = new Map(ordered.map((sibling) => [sibling.id, sibling]));
+  const componentGroups =
+    componentIds && componentIds.length > 0
+      ? componentIds
+          .map((component) =>
+            component
+              .map((labelId) => siblingById.get(labelId))
+              .filter((sibling): sibling is LayoutNode => !!sibling)
+              .sort(
+                (left, right) =>
+                  (orderedIndexById.get(left.id) ?? Number.MAX_SAFE_INTEGER) -
+                  (orderedIndexById.get(right.id) ?? Number.MAX_SAFE_INTEGER),
+              ),
+          )
+          .filter((component) => component.length > 0)
+      : [ordered];
+
+  const startNextRow = (): void => {
+    if (cursorX > startX || rowHeight > 0) {
+      cursorX = startX;
+      cursorY += rowHeight + RELATION_LABEL_FRAME_ROW_GAP;
+      rowHeight = 0;
+    }
+  };
+
+  for (const [componentIndex, component] of componentGroups.entries()) {
+    if (componentIndex > 0) {
+      startNextRow();
+    }
+
+    for (const sibling of component) {
+      const doesNotFitCurrentRow = cursorX > startX && cursorX + sibling.width > rightLimit;
+      if (doesNotFitCurrentRow) {
+        startNextRow();
+      }
+
+      sibling.position.x = cursorX;
+      sibling.position.y = cursorY;
+      cursorX += sibling.width + RELATION_LABEL_FRAME_COLUMN_GAP;
+      rowHeight = Math.max(rowHeight, sibling.height);
+    }
+  }
+
+  for (let leftIndex = 0; leftIndex < labelSiblings.length; leftIndex += 1) {
+    for (let rightIndex = leftIndex + 1; rightIndex < labelSiblings.length; rightIndex += 1) {
+      const left = labelSiblings[leftIndex];
+      const right = labelSiblings[rightIndex];
+      if (overlapsWithGap(left, right, 0)) {
+        right.position.x = startX;
+        right.position.y = left.position.y + left.height + RELATION_LABEL_FRAME_ROW_GAP;
+      }
+    }
+  }
+};
+
+const applyRelationAwareLabelFrameLayout = (nodes: LayoutNode[], graph: ProjectGraphSnapshot): void => {
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const relationTargetsBySourceLabel = new Map<string, Set<string>>();
+  const relations = buildLabelRelations(graph);
+
+  for (const relation of relations) {
+    const targets = relationTargetsBySourceLabel.get(relation.sourceLabelId) ?? new Set<string>();
+    targets.add(relation.targetLabelId);
+    relationTargetsBySourceLabel.set(relation.sourceLabelId, targets);
+  }
+
+  const touchedParentIds = new Set<string>();
+  const childrenByParent = buildChildrenByParent(nodes);
+
+  for (const [parentId, siblings] of childrenByParent.entries()) {
+    const labelSiblings = siblings.filter((sibling) => sibling.type === 'labelFrame');
+    const siblingIds = new Set(labelSiblings.map((sibling) => sibling.id));
+    const localRelationCount = labelSiblings.reduce(
+      (count, sibling) =>
+        count +
+        [...(relationTargetsBySourceLabel.get(sibling.id) ?? [])].filter((targetId) => siblingIds.has(targetId)).length,
+      0,
+    );
+
+    if (!shouldAutoPackLabelFrames(labelSiblings, localRelationCount)) {
+      continue;
+    }
+
+    const hasLocalRelation = labelSiblings.some((sibling) =>
+      [...(relationTargetsBySourceLabel.get(sibling.id) ?? [])].some((targetId) => siblingIds.has(targetId)),
+    );
+    if (!hasLocalRelation && labelSiblings.length < 8) {
+      continue;
+    }
+
+    const ordered = [...labelSiblings].sort(compareLayoutSiblings(byId.get(parentId)));
+    const startX = Math.min(...ordered.map((sibling) => sibling.position.x));
+    const startY = Math.min(...ordered.map((sibling) => sibling.position.y));
+    const localRelations = relations.filter(
+      (relation) => siblingIds.has(relation.sourceLabelId) && siblingIds.has(relation.targetLabelId),
+    );
+
+    if (!hasLocalRelation || labelSiblings.length >= 8) {
+      const packingOrder = orderLabelFramesForPacking(ordered, localRelations);
+      const relationComponents = hasLocalRelation
+        ? buildLabelRelationComponents(packingOrder.map((label) => label.id), localRelations)
+        : undefined;
+      packLabelFramesIntoShelves(labelSiblings, byId.get(parentId), packingOrder, relationComponents);
+      if (parentId !== '__root__') {
+        const parent = byId.get(parentId);
+        if (parent) {
+          addParentAndAncestors(parent.id, byId, touchedParentIds);
+        }
+      }
+      continue;
+    }
+
+    const placedIds = new Set<string>();
+    const placedNodes: LayoutNode[] = [];
+
+    const placeWithoutOverlap = (node: LayoutNode, x: number, y: number): void => {
+      node.position.x = x;
+      node.position.y = y;
+      while (placedNodes.some((placed) => overlapsWithGap(node, placed, RELATION_LABEL_FRAME_ROW_GAP))) {
+        node.position.y =
+          Math.max(
+            node.position.y + RELATION_LABEL_FRAME_ROW_GAP,
+            ...placedNodes
+              .filter((placed) => overlapsWithGap(node, placed, RELATION_LABEL_FRAME_ROW_GAP))
+              .map((placed) => placed.position.y + placed.height + RELATION_LABEL_FRAME_ROW_GAP),
+          );
+      }
+      placedIds.add(node.id);
+      placedNodes.push(node);
+    };
+
+    placeWithoutOverlap(ordered[0], startX, startY);
+    const queue = [ordered[0]];
+    for (let queueIndex = 0; queueIndex < queue.length; queueIndex += 1) {
+      const source = queue[queueIndex];
+      const targets = [...(relationTargetsBySourceLabel.get(source.id) ?? [])]
+        .map((targetId) => byId.get(targetId))
+        .filter((node): node is LayoutNode => !!node && siblingIds.has(node.id) && !placedIds.has(node.id))
+        .sort(compareLayoutSiblings(byId.get(parentId)));
+
+      for (const [targetIndex, target] of targets.entries()) {
+        placeWithoutOverlap(
+          target,
+          source.position.x + source.width + RELATION_LABEL_FRAME_COLUMN_GAP,
+          source.position.y + targetIndex * (target.height + RELATION_LABEL_FRAME_ROW_GAP),
+        );
+        queue.push(target);
+      }
+    }
+
+    let cursorY =
+      Math.max(
+        startY,
+        ...placedNodes.map((node) => node.position.y + node.height + RELATION_LABEL_FRAME_ROW_GAP),
+      );
+    for (const sibling of ordered) {
+      if (placedIds.has(sibling.id)) {
+        continue;
+      }
+      placeWithoutOverlap(sibling, startX, cursorY);
+      cursorY = sibling.position.y + sibling.height + RELATION_LABEL_FRAME_ROW_GAP;
+    }
+
+    if (parentId !== '__root__') {
+      const parent = byId.get(parentId);
+      if (parent) {
+        addParentAndAncestors(parent.id, byId, touchedParentIds);
+      }
+    }
+  }
+
+  if (touchedParentIds.size > 0) {
+    expandParentsToFitChildren(nodes, touchedParentIds);
+  }
+};
+
+const shouldAutoPackRootFileFrames = (files: LayoutNode[]): boolean => {
+  if (files.length < 3 || files.some(hasManualFramePosition)) {
+    return false;
+  }
+
+  const centersY = files.map(nodeCenterY);
+  const spreadY = Math.max(...centersY) - Math.min(...centersY);
+  const maxHeight = Math.max(...files.map((file) => file.height));
+  return spreadY <= Math.max(96, maxHeight * 0.5);
+};
+
+const applyRootFileFrameCalendarLayout = (nodes: LayoutNode[]): void => {
+  const rootFiles = nodes.filter((node) => !node.parentId && node.type === 'projectFrame');
+  if (!shouldAutoPackRootFileFrames(rootFiles)) {
+    return;
+  }
+
+  const ordered = [...rootFiles].sort(compareLayoutSiblings(undefined));
+  const startX = Math.min(...ordered.map((file) => file.position.x));
+  const startY = Math.min(...ordered.map((file) => file.position.y));
+
+  const measureCandidate = (columnCount: number) => {
+    const positions = new Map<string, GraphPoint>();
+    let cursorY = startY;
+    let maxRight = startX;
+    let maxBottom = startY;
+
+    for (let rowStart = 0; rowStart < ordered.length; rowStart += columnCount) {
+      const row = ordered.slice(rowStart, rowStart + columnCount);
+      let cursorX = startX;
+      let rowHeight = 0;
+
+      for (const file of row) {
+        positions.set(file.id, { x: cursorX, y: cursorY });
+        maxRight = Math.max(maxRight, cursorX + file.width);
+        maxBottom = Math.max(maxBottom, cursorY + file.height);
+        cursorX += file.width + ROOT_FILE_FRAME_COLUMN_GAP;
+        rowHeight = Math.max(rowHeight, file.height);
+      }
+
+      cursorY += rowHeight + ROOT_FILE_FRAME_ROW_GAP;
+    }
+
+    const width = Math.max(1, maxRight - startX);
+    const height = Math.max(1, maxBottom - startY);
+    const aspect = width / height;
+    const score = Math.abs(aspect - ROOT_FILE_FRAME_TARGET_ASPECT);
+    return { positions, score };
+  };
+
+  const maxCandidateColumns = Math.max(2, Math.min(ordered.length, Math.ceil(Math.sqrt(ordered.length)) * 2));
+  let best = measureCandidate(2);
+  for (let columnCount = 3; columnCount <= maxCandidateColumns; columnCount += 1) {
+    const candidate = measureCandidate(columnCount);
+    if (candidate.score < best.score) {
+      best = candidate;
+    }
+  }
+
+  for (const file of ordered) {
+    const position = best.positions.get(file.id);
+    if (position) {
+      file.position = position;
+    }
+  }
+};
+
+const normalizeLayout = (nodes: LayoutNode[]): LayoutNode[] => {
+  const compactParentIds = new Set<string>();
+  const compactGroupIds = new Set<string>();
+
+  const arrangeSiblings = (): void => {
+    const byId = new Map(nodes.map((node) => [node.id, node]));
+    const childrenByParent = buildChildrenByParent(nodes);
+    for (const [parentId, siblings] of childrenByParent.entries()) {
+      const direction = parentId === '__root__' ? 'horizontal' : 'vertical';
+      const parent = parentId === '__root__' ? undefined : byId.get(parentId);
+      const groupKey = parent?.id ?? '__root__';
+      reserveFrameHeaderSpace(siblings, parent);
+      alignSimpleLabelColumn(siblings, parent);
+
+      if (siblings.some(hasAutoBranchLayout)) {
+        const autoLaidOutSiblings = siblings.filter(hasAutoBranchLayout);
+        const remainingSiblings = siblings.filter((sibling) => !hasAutoBranchLayout(sibling));
+        const placed: LayoutNode[] = [...autoLaidOutSiblings];
+        let cursorY =
+          Math.max(
+            0,
+            ...autoLaidOutSiblings.map((sibling) => sibling.position.y + sibling.height),
+          ) + COMPACT_SIBLING_GAP;
+
+        for (const sibling of remainingSiblings.sort(compareLayoutSiblings(parent))) {
+          if (sibling.type === 'labelFrame') {
+            sibling.position.y = Math.max(sibling.position.y, cursorY);
+            cursorY = sibling.position.y + sibling.height + COMPACT_SIBLING_GAP;
+            placed.push(sibling);
+            continue;
+          }
+
+          while (placed.some((placedSibling) => overlaps(sibling, placedSibling))) {
+            sibling.position.y = Math.max(sibling.position.y, cursorY);
+          }
+          cursorY = Math.max(cursorY, sibling.position.y + sibling.height + COMPACT_SIBLING_GAP);
+          placed.push(sibling);
+        }
+
+        if (parent?.type === 'projectFrame' || parent?.type === 'labelFrame') {
+          addParentAndAncestors(parent.id, byId, compactParentIds);
+        }
+        continue;
+      }
+
+      if (siblings.some(hasManualLayoutPosition)) {
+        if (parent?.type === 'projectFrame' || parent?.type === 'labelFrame') {
+          addParentAndAncestors(parent.id, byId, compactParentIds);
+        }
+        continue;
+      }
+
+      if (compactGroupIds.has(groupKey) || groupNeedsCompaction(siblings, parent, direction)) {
+        compactGroupIds.add(groupKey);
+        compactSiblings(siblings, parent, direction);
+        if (parent) {
+          addParentAndAncestors(parent.id, byId, compactParentIds);
+        }
+      } else {
+        shiftOverlappingSiblings(siblings, parent, direction);
+      }
+
+      if (parent?.type === 'projectFrame' || parent?.type === 'labelFrame') {
+        addParentAndAncestors(parent.id, byId, compactParentIds);
+      }
+    }
+  };
+
+  for (let pass = 0; pass < 4; pass += 1) {
+    arrangeSiblings();
+    expandParentsToFitChildren(nodes, compactParentIds);
+  }
+
+  return nodes;
+};
+
+const enforceNoSiblingOverlaps = (nodes: LayoutNode[]): void => {
+  const touchedParentIds = new Set<string>();
+
+  for (let pass = 0; pass < 6; pass += 1) {
+    const byId = new Map(nodes.map((node) => [node.id, node]));
+    const childrenByParent = buildChildrenByParent(nodes);
+    let changed = false;
+
+    for (const [parentId, siblings] of childrenByParent.entries()) {
+      if (siblings.length < 2) {
+        continue;
+      }
+
+      const parent = parentId === '__root__' ? undefined : byId.get(parentId);
+      const direction = parentId === '__root__' ? 'horizontal' : 'vertical';
+      if (!separateOverlappingSiblings(siblings, parent, direction)) {
+        continue;
+      }
+
+      changed = true;
+      if (parent) {
+        addParentAndAncestors(parent.id, byId, touchedParentIds);
+      }
+    }
+
+    if (touchedParentIds.size > 0) {
+      expandParentsToFitChildren(nodes, touchedParentIds);
+    }
+
+    if (!changed) {
+      return;
+    }
+  }
+};
+
+export const getAbsoluteNodePosition = (nodes: Node[], nodeId: string): GraphPoint | null => {
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const visited = new Set<string>();
+  let current = byId.get(nodeId);
+
+  if (!current) {
+    return null;
+  }
+
+  const position = { x: 0, y: 0 };
+
+  while (current) {
+    if (visited.has(current.id)) {
+      return null;
+    }
+    visited.add(current.id);
+    position.x += current.position.x;
+    position.y += current.position.y;
+    current = current.parentId ? byId.get(current.parentId) : undefined;
+  }
+
+  return position;
+};
+
+export const searchProjectGraph = (graph: ProjectGraphSnapshot, query: string): ProjectGraphSearchResult[] => {
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+
+  if (!normalizedQuery) {
+    return [];
+  }
+
+  const labelStartResults = graph.label_starts
+    .filter((node) => `${node.qualified_name}\n${node.content}`.toLocaleLowerCase().includes(normalizedQuery))
+    .map<ProjectGraphSearchResult>((node) => ({
+      nodeId: node.id,
+      fileId: node.file_id,
+      labelId: node.label_id,
+      kind: 'labelStart',
+      title: node.qualified_name,
+      content: node.content,
+    }));
+
+  const scenarioResults = graph.nodes
+    .filter((node) => `${node.type}\n${node.content}`.toLocaleLowerCase().includes(normalizedQuery))
+    .sort(compareSourceOrder)
+    .map<ProjectGraphSearchResult>((node) => ({
+      nodeId: node.id,
+      fileId: node.file_id,
+      labelId: node.label_id,
+      kind: 'scenario',
+      title: node.type,
+      content: node.content,
+    }));
+
+  return [...labelStartResults, ...scenarioResults];
+};
+
+export const projectGraphDiagnosticsToProblems = (graph: ProjectGraphSnapshot): ProjectGraphProblem[] =>
+  graph.diagnostics.map((diagnostic) => ({
+    id: diagnostic.id,
+    code: diagnostic.code,
+    severity: diagnostic.severity,
+    message: diagnostic.message,
+    blocking: diagnostic.blocking,
+    nodeId: diagnostic.node_id,
+    fileId: diagnostic.file_id,
+    labelId: diagnostic.label_id,
+  }));
+
+const sourceOrder = (item: { source_span: SourceSpan | null; order?: string }): [number, string] => [
+  item.source_span?.start_line ?? Number.MAX_SAFE_INTEGER,
+  item.order ?? '',
+];
+
+const compareSourceOrder = <T extends { source_span: SourceSpan | null; order?: string }>(a: T, b: T): number => {
+  const [aLine, aOrder] = sourceOrder(a);
+  const [bLine, bOrder] = sourceOrder(b);
+  if (aLine !== bLine) {
+    return aLine - bLine;
+  }
+  return aOrder.localeCompare(bOrder);
+};
+
+const compareScenarioOrder = <T extends { source_span: SourceSpan | null; order?: string }>(a: T, b: T): number => {
+  const aOrder = a.order?.trim() ?? '';
+  const bOrder = b.order?.trim() ?? '';
+  if (aOrder && bOrder && aOrder !== bOrder) {
+    return aOrder.localeCompare(bOrder);
+  }
+  return compareSourceOrder(a, b);
+};
+
+const domainChildrenKey = (labelId: string, parentNodeId: string | null): string =>
+  `${labelId}:${parentNodeId ?? '__label__'}`;
+
+const buildScenarioChildrenByDomainParent = (graph: ProjectGraphSnapshot): Map<string, ScenarioNodeSnapshot[]> => {
+  const childrenByDomainParent = new Map<string, ScenarioNodeSnapshot[]>();
+  for (const scenario of graph.nodes) {
+    const key = domainChildrenKey(scenario.label_id, scenario.parent_node_id);
+    childrenByDomainParent.set(key, [...(childrenByDomainParent.get(key) ?? []), scenario]);
+  }
+
+  for (const children of childrenByDomainParent.values()) {
+    children.sort(compareScenarioOrder);
+  }
+
+  return childrenByDomainParent;
+};
+
+const buildScenarioDragGroups = (graph: ProjectGraphSnapshot): Map<string, string[]> => {
+  const scenariosById = new Map(graph.nodes.map((scenario) => [scenario.id, scenario]));
+  const childrenByDomainParent = buildScenarioChildrenByDomainParent(graph);
+  const visibleChildrenByParentId = new Map<string, ScenarioNodeSnapshot[]>();
+
+  for (const scenario of graph.nodes) {
+    visibleChildrenByParentId.set(
+      scenario.id,
+      (childrenByDomainParent.get(domainChildrenKey(scenario.label_id, scenario.id)) ?? []).filter(
+        (child) => !isMenuPromptScenario(child),
+      ),
+    );
+  }
+
+  const collectDescendants = (scenarioId: string, target: Set<string>): void => {
+    for (const child of visibleChildrenByParentId.get(scenarioId) ?? []) {
+      target.add(child.id);
+      collectDescendants(child.id, target);
+    }
+  };
+
+  const nearestAttachedBranchHeaderId = (scenario: ScenarioNodeSnapshot): string | null => {
+    let parent = scenario.parent_node_id ? scenariosById.get(scenario.parent_node_id) : undefined;
+    while (parent) {
+      if (isBranchHeaderScenario(parent)) {
+        return parent.id;
+      }
+      parent = parent.parent_node_id ? scenariosById.get(parent.parent_node_id) : undefined;
+    }
+    return null;
+  };
+
+  const groups = new Map<string, string[]>();
+  for (const scenario of graph.nodes) {
+    if (isMenuPromptScenario(scenario)) {
+      continue;
+    }
+
+    const groupIds = new Set<string>([scenario.id]);
+    collectDescendants(scenario.id, groupIds);
+
+    const attachedHeaderId = nearestAttachedBranchHeaderId(scenario);
+    if (attachedHeaderId) {
+      groupIds.add(attachedHeaderId);
+    }
+
+    groups.set(scenario.id, [...groupIds]);
+  }
+
+  return groups;
+};
+
+const resolveScenarioVisualParentId = (
+  scenario: ScenarioNodeSnapshot,
+  scenariosById: Map<string, ScenarioNodeSnapshot>,
+): string => {
+  const parentScenario = scenario.parent_node_id ? scenariosById.get(scenario.parent_node_id) : undefined;
+
+  if (!parentScenario) {
+    return scenario.label_id;
+  }
+
+  if (isVisualBranchContainerScenario(parentScenario)) {
+    return resolveScenarioVisualParentId(parentScenario, scenariosById);
+  }
+
+  return parentScenario.id;
+};
+
+const applyConditionalStoryLayout = (nodes: LayoutNode[], graph: ProjectGraphSnapshot): void => {
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const scenarioLayoutsById = new Map(
+    nodes.filter((node) => node.type === 'scenarioNode').map((node) => [node.id, node]),
+  );
+  const childrenByDomainParent = buildScenarioChildrenByDomainParent(graph);
+  const labelsWithBranching = new Set(
+    graph.nodes
+      .filter(
+        (scenario) =>
+          isConditionalScenario(scenario) || isMenuScenario(scenario),
+      )
+      .map((scenario) => scenario.label_id),
+  );
+
+  const getChildren = (labelId: string, parentNodeId: string | null): ScenarioNodeSnapshot[] =>
+    (childrenByDomainParent.get(domainChildrenKey(labelId, parentNodeId)) ?? []).filter(
+      (scenario) => !isMenuPromptScenario(scenario),
+    );
+
+  const nodeLeft = (node: LayoutNode): number => node.position.x;
+  const nodeRight = (node: LayoutNode): number => node.position.x + node.width;
+  const nodeTop = (node: LayoutNode): number => node.position.y;
+  const nodeBottom = (node: LayoutNode): number => node.position.y + node.height;
+  const placeNodeAtCenter = (node: LayoutNode, centerX: number, y: number): void => {
+    node.position.x = centerX - node.width / 2;
+    node.position.y = y;
+  };
+  const applyManualBranchPositions = (labelId: string): void => {
+    for (const scenario of graph.nodes) {
+      if (scenario.label_id !== labelId || !hasManualScenarioPosition(scenario)) {
+        continue;
+      }
+
+      const node = scenarioLayoutsById.get(scenario.id);
+      if (!node) {
+        continue;
+      }
+
+      node.position = clonePoint(scenario.visual.position);
+    }
+
+    for (const scenario of graph.nodes) {
+      if (scenario.label_id !== labelId || !isBranchHeaderScenario(scenario) || hasManualScenarioPosition(scenario)) {
+        continue;
+      }
+
+      const firstChild = getChildren(labelId, scenario.id)[0];
+      if (!firstChild || !hasManualScenarioPosition(firstChild)) {
+        continue;
+      }
+
+      const headerNode = scenarioLayoutsById.get(scenario.id);
+      const childNode = scenarioLayoutsById.get(firstChild.id);
+      if (!headerNode || !childNode) {
+        continue;
+      }
+
+      headerNode.width = childNode.width;
+      headerNode.position.x = childNode.position.x;
+      headerNode.position.y = childNode.position.y - headerNode.height;
+    }
+  };
+
+  const shiftScenarioSubtreeY = (labelId: string, scenarioId: string, deltaY: number, seen = new Set<string>()): void => {
+    if (seen.has(scenarioId) || deltaY === 0) {
+      return;
+    }
+    seen.add(scenarioId);
+
+    const node = scenarioLayoutsById.get(scenarioId);
+    if (node) {
+      node.position.y += deltaY;
+    }
+
+    for (const child of getChildren(labelId, scenarioId)) {
+      shiftScenarioSubtreeY(labelId, child.id, deltaY, seen);
+    }
+  };
+
+  const shiftScenarioAtLeastY = (labelId: string, scenario: ScenarioNodeSnapshot, minimumY: number): void => {
+    const node = scenarioLayoutsById.get(scenario.id);
+    if (!node || node.position.y >= minimumY) {
+      return;
+    }
+
+    shiftScenarioSubtreeY(labelId, scenario.id, minimumY - node.position.y);
+  };
+
+  const sourceMinimumY = (sources: LayoutNode[]): number | null => {
+    const activeSources = sources.filter((node) => !isFlowTerminalNode(node));
+    if (activeSources.length === 0) {
+      return null;
+    }
+
+    return Math.max(
+      ...activeSources.map((node) => nodeBottom(node) + (isBranchHeaderNode(node) ? TOP_DOWN_BRANCH_HEADER_GAP : TOP_DOWN_FLOW_ROW_GAP)),
+    );
+  };
+
+  const enforceManualTopDownFlow = (labelId: string): void => {
+    const enforceList = (parentNodeId: string | null, incomingSources: LayoutNode[]): LayoutNode[] => {
+      const siblings = getChildren(labelId, parentNodeId);
+      let sources = incomingSources.filter((node) => !isFlowTerminalNode(node));
+      let index = 0;
+
+      while (index < siblings.length) {
+        const sibling = siblings[index];
+        const siblingNode = scenarioLayoutsById.get(sibling.id);
+        if (!siblingNode) {
+          index += 1;
+          continue;
+        }
+
+        if (isConditionalScenario(sibling)) {
+          const branches = [sibling];
+          let afterBranchIndex = index + 1;
+          while (afterBranchIndex < siblings.length && isConditionalContinuationScenario(siblings[afterBranchIndex])) {
+            branches.push(siblings[afterBranchIndex]);
+            afterBranchIndex += 1;
+          }
+
+          const incomingMinimumY = sourceMinimumY(sources);
+          if (incomingMinimumY !== null) {
+            shiftScenarioAtLeastY(labelId, branches[0], incomingMinimumY);
+          }
+
+          const rootBranchNode = scenarioLayoutsById.get(branches[0].id);
+          const alternativeMinimumY = rootBranchNode
+            ? nodeBottom(rootBranchNode) + TOP_DOWN_FLOW_ROW_GAP
+            : incomingMinimumY;
+          if (alternativeMinimumY !== null) {
+            for (const branch of branches.slice(1)) {
+              shiftScenarioAtLeastY(labelId, branch, alternativeMinimumY);
+            }
+          }
+
+          const terminals: LayoutNode[] = [];
+          for (const branch of branches) {
+            const branchNode = scenarioLayoutsById.get(branch.id);
+            if (!branchNode) {
+              continue;
+            }
+
+            const branchChildren = getChildren(labelId, branch.id);
+            if (branchChildren.length > 0) {
+              terminals.push(...enforceList(branch.id, [branchNode]));
+            } else if (!isFlowTerminalNode(branchNode)) {
+              terminals.push(branchNode);
+            }
+          }
+
+          sources = terminals.filter((node) => !isFlowTerminalNode(node));
+          index = afterBranchIndex;
+          continue;
+        }
+
+        if (isMenuScenario(sibling)) {
+          const incomingMinimumY = sourceMinimumY(sources);
+          if (incomingMinimumY !== null) {
+            shiftScenarioAtLeastY(labelId, sibling, incomingMinimumY);
+          }
+
+          const menuNode = scenarioLayoutsById.get(sibling.id);
+          const choiceMinimumY = menuNode ? nodeBottom(menuNode) + TOP_DOWN_FLOW_ROW_GAP : null;
+          const choices = getChildren(labelId, sibling.id).filter(isMenuChoiceScenario);
+          if (choiceMinimumY !== null) {
+            for (const choice of choices) {
+              shiftScenarioAtLeastY(labelId, choice, choiceMinimumY);
+            }
+          }
+
+          const terminals: LayoutNode[] = [];
+          for (const choice of choices) {
+            const choiceNode = scenarioLayoutsById.get(choice.id);
+            if (!choiceNode) {
+              continue;
+            }
+
+            const choiceChildren = getChildren(labelId, choice.id);
+            if (choiceChildren.length > 0) {
+              terminals.push(...enforceList(choice.id, [choiceNode]));
+            } else if (!isFlowTerminalNode(choiceNode)) {
+              terminals.push(choiceNode);
+            }
+          }
+
+          sources = terminals.filter((node) => !isFlowTerminalNode(node));
+          index += 1;
+          continue;
+        }
+
+        const incomingMinimumY = sourceMinimumY(sources);
+        if (incomingMinimumY !== null) {
+          shiftScenarioAtLeastY(labelId, sibling, incomingMinimumY);
+        }
+
+        const childSnapshots = getChildren(labelId, sibling.id);
+        if (isFlowTerminalNode(siblingNode)) {
+          sources = [];
+        } else if (childSnapshots.length > 0) {
+          sources = enforceList(sibling.id, [siblingNode]);
+        } else {
+          sources = [siblingNode];
+        }
+        index += 1;
+      }
+
+      return sources.filter((node) => !isFlowTerminalNode(node));
+    };
+
+    const labelStart = graph.label_starts.find((start) => start.label_id === labelId);
+    const startNode = labelStart ? byId.get(labelStart.id) : undefined;
+    if (startNode) {
+      enforceList(null, [startNode]);
+    }
+  };
+
+  const combineBounds = (
+    current: { leftX: number; rightX: number; topY: number; bottomY: number },
+    next: { leftX: number; rightX: number; topY: number; bottomY: number },
+  ): { leftX: number; rightX: number; topY: number; bottomY: number } => ({
+    leftX: Math.min(current.leftX, next.leftX),
+    rightX: Math.max(current.rightX, next.rightX),
+    topY: Math.min(current.topY, next.topY),
+    bottomY: Math.max(current.bottomY, next.bottomY),
+  });
+
+  type TreeMeasure = { left: number; right: number };
+  type ConditionalLanePlan = {
+    trueOffset: number;
+    alternativeOffsetsById: Map<string, number>;
+    groupMeasure: TreeMeasure;
+  };
+
+  const measureWidth = (measure: TreeMeasure): number => measure.left + measure.right;
+  const hasMeasureContent = (measure: TreeMeasure): boolean => measureWidth(measure) > 0;
+  const measureNode = (node: LayoutNode | undefined): TreeMeasure => ({
+    left: (node?.width ?? COMPACT_FRAME_MIN_SIZE.scenarioNode.width) / 2,
+    right: (node?.width ?? COMPACT_FRAME_MIN_SIZE.scenarioNode.width) / 2,
+  });
+  const combineMeasureAtOffset = (current: TreeMeasure, offset: number, next: TreeMeasure): TreeMeasure => ({
+    left: Math.max(current.left, next.left - offset),
+    right: Math.max(current.right, offset + next.right),
+  });
+  const computeLaneCenters = (measures: TreeMeasure[], gap: number): number[] => {
+    const totalWidth =
+      measures.reduce((sum, measure) => sum + measureWidth(measure), 0) + gap * Math.max(0, measures.length - 1);
+    let cursor = -totalWidth / 2;
+    return measures.map((measure) => {
+      const center = cursor + measure.left;
+      cursor += measureWidth(measure) + gap;
+      return center;
+    });
+  };
+  const conditionalBranchesAt = (
+    items: ScenarioNodeSnapshot[],
+    index: number,
+  ): { branches: ScenarioNodeSnapshot[]; nextIndex: number } => {
+    const branches = [items[index]];
+    let nextIndex = index + 1;
+    while (nextIndex < items.length && isConditionalContinuationScenario(items[nextIndex])) {
+      branches.push(items[nextIndex]);
+      nextIndex += 1;
+    }
+    return { branches, nextIndex };
+  };
+  const measureCache = new Map<string, TreeMeasure>();
+
+  const measureBranchHead = (labelId: string, branch: ScenarioNodeSnapshot): TreeMeasure => {
+    const branchNode = scenarioLayoutsById.get(branch.id);
+    const branchChildren = getChildren(labelId, branch.id);
+    const firstChildNode = branchChildren[0] ? scenarioLayoutsById.get(branchChildren[0].id) : undefined;
+    const headerWidth = isBranchHeaderScenario(branch) && firstChildNode ? firstChildNode.width : branchNode?.width;
+    let result = {
+      left: (headerWidth ?? COMPACT_FRAME_MIN_SIZE.scenarioNode.width) / 2,
+      right: (headerWidth ?? COMPACT_FRAME_MIN_SIZE.scenarioNode.width) / 2,
+    };
+
+    if (branchChildren.length > 0) {
+      result = combineMeasureAtOffset(result, 0, measureList(labelId, branch.id));
+    }
+
+    return result;
+  };
+
+  const measureConditionalGroup = (
+    labelId: string,
+    rootBranch: ScenarioNodeSnapshot,
+    alternativeBranches: ScenarioNodeSnapshot[],
+  ): ConditionalLanePlan => {
+    const rootNode = scenarioLayoutsById.get(rootBranch.id);
+    const trueMeasure = measureList(labelId, rootBranch.id);
+    let groupMeasure = measureNode(rootNode);
+    const alternativeOffsetsById = new Map<string, number>();
+    let trueOffset = 0;
+    const rootHalfWidth = (rootNode?.width ?? COMPACT_FRAME_MIN_SIZE.scenarioNode.width) / 2;
+
+    if (alternativeBranches.length === 0) {
+      if (hasMeasureContent(trueMeasure)) {
+        trueOffset = Math.max(
+          TOP_DOWN_BRANCH_COLUMN_GAP,
+          rootHalfWidth + TOP_DOWN_BRANCH_SUBTREE_GAP + trueMeasure.left,
+        );
+        groupMeasure = combineMeasureAtOffset(groupMeasure, trueOffset, trueMeasure);
+      }
+
+      return { trueOffset, alternativeOffsetsById, groupMeasure };
+    }
+
+    const laneBranches = [...alternativeBranches].reverse();
+    const branchMeasures = new Map(laneBranches.map((branch) => [branch.id, measureBranchHead(labelId, branch)]));
+    let leftPackingBoundary = -rootHalfWidth - TOP_DOWN_BRANCH_SUBTREE_GAP;
+
+    for (let index = laneBranches.length - 1; index >= 0; index -= 1) {
+      const branch = laneBranches[index];
+      const branchMeasure = branchMeasures.get(branch.id) ?? measureNode(scenarioLayoutsById.get(branch.id));
+      const offset = Math.min(
+        -TOP_DOWN_BRANCH_COLUMN_GAP,
+        leftPackingBoundary - branchMeasure.right,
+      );
+      alternativeOffsetsById.set(branch.id, offset);
+      groupMeasure = combineMeasureAtOffset(groupMeasure, offset, branchMeasure);
+      leftPackingBoundary = offset - branchMeasure.left - TOP_DOWN_BRANCH_SUBTREE_GAP;
+    }
+
+    if (hasMeasureContent(trueMeasure)) {
+      trueOffset = Math.max(
+        TOP_DOWN_BRANCH_COLUMN_GAP,
+        rootHalfWidth + TOP_DOWN_BRANCH_SUBTREE_GAP + trueMeasure.left,
+      );
+      groupMeasure = combineMeasureAtOffset(groupMeasure, trueOffset, trueMeasure);
+    }
+
+    return { trueOffset, alternativeOffsetsById, groupMeasure };
+  };
+
+  function measureList(labelId: string, parentNodeId: string | null): TreeMeasure {
+    const cacheKey = domainChildrenKey(labelId, parentNodeId);
+    const cached = measureCache.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    const items = getChildren(labelId, parentNodeId);
+    let result: TreeMeasure = { left: 0, right: 0 };
+    let index = 0;
+
+    while (index < items.length) {
+      const scenario = items[index];
+      const layoutNode = scenarioLayoutsById.get(scenario.id);
+      if (!layoutNode) {
+        index += 1;
+        continue;
+      }
+
+      if (isConditionalScenario(scenario)) {
+        const { branches, nextIndex } = conditionalBranchesAt(items, index);
+        const conditionalMeasure = measureConditionalGroup(labelId, scenario, branches.slice(1)).groupMeasure;
+        result = combineMeasureAtOffset(result, 0, conditionalMeasure);
+        index = nextIndex;
+        continue;
+      }
+
+      if (isMenuScenario(scenario)) {
+        let menuMeasure = measureNode(layoutNode);
+        const choices = getChildren(labelId, scenario.id).filter(isMenuChoiceScenario);
+        if (choices.length > 0) {
+          const choiceMeasures = choices.map((choice) => measureBranchHead(labelId, choice));
+          const choiceCenters = computeLaneCenters(choiceMeasures, TOP_DOWN_BRANCH_SUBTREE_GAP);
+          for (const [choiceIndex, choiceMeasure] of choiceMeasures.entries()) {
+            menuMeasure = combineMeasureAtOffset(menuMeasure, choiceCenters[choiceIndex], choiceMeasure);
+          }
+        }
+        result = combineMeasureAtOffset(result, 0, menuMeasure);
+        index += 1;
+        continue;
+      }
+
+      let nodeMeasure = measureNode(layoutNode);
+      const childMeasure = measureList(labelId, scenario.id);
+      if (hasMeasureContent(childMeasure)) {
+        nodeMeasure = combineMeasureAtOffset(nodeMeasure, 0, childMeasure);
+      }
+      result = combineMeasureAtOffset(result, 0, nodeMeasure);
+      index += 1;
+    }
+
+    measureCache.set(cacheKey, result);
+    return result;
+  }
+
+  const layoutList = (
+    labelId: string,
+    parentNodeId: string | null,
+    centerX: number,
+    y: number,
+  ): { nextY: number; leftX: number; rightX: number; topY: number; bottomY: number; terminals: LayoutNode[] } => {
+    const items = getChildren(labelId, parentNodeId);
+    let cursorY = y;
+    let leftX = centerX;
+    let rightX = centerX;
+    let topY = y;
+    let bottomY = y;
+    let terminals: LayoutNode[] = [];
+    let index = 0;
+
+    const includeNodeBounds = (node: LayoutNode): void => {
+      leftX = Math.min(leftX, nodeLeft(node));
+      rightX = Math.max(rightX, nodeRight(node));
+      topY = Math.min(topY, nodeTop(node));
+      bottomY = Math.max(bottomY, nodeBottom(node));
+    };
+
+    const includeResultBounds = (result: { leftX: number; rightX: number; topY: number; bottomY: number }): void => {
+      leftX = Math.min(leftX, result.leftX);
+      rightX = Math.max(rightX, result.rightX);
+      topY = Math.min(topY, result.topY);
+      bottomY = Math.max(bottomY, result.bottomY);
+    };
+
+    const layoutBranchHead = (
+      branch: ScenarioNodeSnapshot,
+      branchCenterX: number,
+      branchY: number,
+    ): { nextY: number; leftX: number; rightX: number; topY: number; bottomY: number; terminals: LayoutNode[] } | null => {
+      const branchNode = scenarioLayoutsById.get(branch.id);
+      if (!branchNode) {
+        return null;
+      }
+
+      const branchChildren = getChildren(labelId, branch.id);
+      const firstChildNode = branchChildren[0] ? scenarioLayoutsById.get(branchChildren[0].id) : undefined;
+      if (isBranchHeaderScenario(branch) && firstChildNode) {
+        branchNode.width = firstChildNode.width;
+      }
+      placeNodeAtCenter(branchNode, branchCenterX, branchY);
+      let result = {
+        nextY: nodeBottom(branchNode) + TOP_DOWN_FLOW_ROW_GAP,
+        leftX: nodeLeft(branchNode),
+        rightX: nodeRight(branchNode),
+        topY: nodeTop(branchNode),
+        bottomY: nodeBottom(branchNode),
+        terminals: [branchNode],
+      };
+      if (branchChildren.length > 0) {
+        const childGap = isBranchHeaderScenario(branch) ? TOP_DOWN_BRANCH_HEADER_GAP : TOP_DOWN_FLOW_ROW_GAP;
+        const childrenResult = layoutList(
+          labelId,
+          branch.id,
+          branchCenterX,
+          nodeBottom(branchNode) + childGap,
+        );
+        result = {
+          nextY: childrenResult.nextY,
+          ...combineBounds(result, childrenResult),
+          terminals: childrenResult.terminals.length > 0 ? childrenResult.terminals : [branchNode],
+        };
+      }
+
+      return result;
+    };
+
+    const layoutMenuBranches = (
+      menu: ScenarioNodeSnapshot,
+      menuNode: LayoutNode,
+      centerX: number,
+      branchStartY: number,
+    ): { nextY: number; leftX: number; rightX: number; topY: number; bottomY: number; terminals: LayoutNode[] } => {
+      const choices = getChildren(labelId, menu.id).filter(isMenuChoiceScenario);
+      let groupBounds = {
+        leftX: nodeLeft(menuNode),
+        rightX: nodeRight(menuNode),
+        topY: nodeTop(menuNode),
+        bottomY: nodeBottom(menuNode),
+      };
+      const branchTerminals: LayoutNode[] = [];
+
+      if (choices.length === 0) {
+        return {
+          nextY: nodeBottom(menuNode) + TOP_DOWN_FLOW_ROW_GAP,
+          ...groupBounds,
+          terminals: [menuNode],
+        };
+      }
+
+      const choiceMeasures = choices.map((choice) => measureBranchHead(labelId, choice));
+      const choiceCenters = computeLaneCenters(choiceMeasures, TOP_DOWN_BRANCH_SUBTREE_GAP);
+      for (const [choiceIndex, choice] of choices.entries()) {
+        const choiceCenterX = centerX + choiceCenters[choiceIndex];
+        const choiceResult = layoutBranchHead(choice, choiceCenterX, branchStartY);
+        if (!choiceResult) {
+          continue;
+        }
+
+        groupBounds = combineBounds(groupBounds, choiceResult);
+        branchTerminals.push(...choiceResult.terminals);
+      }
+
+      return {
+        nextY: groupBounds.bottomY + TOP_DOWN_FLOW_ROW_GAP,
+        ...groupBounds,
+        terminals: branchTerminals.length > 0 ? branchTerminals : [menuNode],
+      };
+    };
+
+    while (index < items.length) {
+      const scenario = items[index];
+      const layoutNode = scenarioLayoutsById.get(scenario.id);
+
+      if (!layoutNode) {
+        index += 1;
+        continue;
+      }
+
+      if (isConditionalScenario(scenario)) {
+        const { branches, nextIndex } = conditionalBranchesAt(items, index);
+        const lanePlan = measureConditionalGroup(labelId, scenario, branches.slice(1));
+
+        placeNodeAtCenter(layoutNode, centerX, cursorY);
+        let groupBounds = {
+          leftX: nodeLeft(layoutNode),
+          rightX: nodeRight(layoutNode),
+          topY: nodeTop(layoutNode),
+          bottomY: nodeBottom(layoutNode),
+        };
+        const branchStartY = nodeBottom(layoutNode) + TOP_DOWN_FLOW_ROW_GAP;
+        const branchTerminals: LayoutNode[] = [];
+
+        const trueResult = layoutList(
+          labelId,
+          scenario.id,
+          centerX + lanePlan.trueOffset,
+          branchStartY,
+        );
+        if (trueResult.terminals.length > 0) {
+          groupBounds = combineBounds(groupBounds, trueResult);
+          branchTerminals.push(...trueResult.terminals);
+        } else {
+          branchTerminals.push(layoutNode);
+        }
+
+        for (const [alternativeIndex, branch] of branches.slice(1).entries()) {
+          const branchOffset = lanePlan.alternativeOffsetsById.get(branch.id) ?? -TOP_DOWN_BRANCH_COLUMN_GAP * (alternativeIndex + 1);
+          const branchResult = layoutBranchHead(
+            branch,
+            centerX + branchOffset,
+            branchStartY,
+          );
+          if (!branchResult) {
+            continue;
+          }
+
+          groupBounds = combineBounds(groupBounds, branchResult);
+          branchTerminals.push(...branchResult.terminals);
+        }
+
+        terminals = branchTerminals;
+        cursorY = groupBounds.bottomY + TOP_DOWN_FLOW_ROW_GAP;
+        leftX = Math.min(leftX, groupBounds.leftX);
+        rightX = Math.max(rightX, groupBounds.rightX);
+        topY = Math.min(topY, groupBounds.topY);
+        bottomY = Math.max(bottomY, groupBounds.bottomY);
+        index = nextIndex;
+        continue;
+      }
+
+      if (isMenuScenario(scenario)) {
+        placeNodeAtCenter(layoutNode, centerX, cursorY);
+        const groupResult = layoutMenuBranches(
+          scenario,
+          layoutNode,
+          centerX,
+          nodeBottom(layoutNode) + TOP_DOWN_FLOW_ROW_GAP,
+        );
+
+        terminals = groupResult.terminals;
+        cursorY = groupResult.nextY;
+        includeResultBounds(groupResult);
+        index += 1;
+        continue;
+      }
+
+      placeNodeAtCenter(layoutNode, centerX, cursorY);
+      includeNodeBounds(layoutNode);
+
+      const childResult = layoutList(
+            labelId,
+        scenario.id,
+        centerX,
+        nodeBottom(layoutNode) + TOP_DOWN_FLOW_ROW_GAP,
+      );
+      const hasChildren = getChildren(labelId, scenario.id).length > 0;
+      terminals = hasChildren ? childResult.terminals : [layoutNode];
+      if (hasChildren) {
+        includeResultBounds(childResult);
+        cursorY = childResult.nextY;
+      } else {
+        cursorY = nodeBottom(layoutNode) + TOP_DOWN_FLOW_ROW_GAP;
+      }
+      index += 1;
+    }
+
+    return { nextY: cursorY, leftX, rightX, topY, bottomY, terminals };
+  };
+
+  for (const labelId of labelsWithBranching) {
+    const labelNode = byId.get(labelId);
+    const labelStart = graph.label_starts.find((start) => start.label_id === labelId);
+    const startNode = labelStart ? byId.get(labelStart.id) : undefined;
+
+    if (!labelNode || labelNode.type !== 'labelFrame' || !startNode) {
+      continue;
+    }
+
+    placeNodeAtCenter(startNode, TOP_DOWN_MAIN_CENTER_X, TOP_DOWN_LABEL_TOP_PADDING);
+    layoutList(labelId, null, TOP_DOWN_MAIN_CENTER_X, nodeBottom(startNode) + TOP_DOWN_FLOW_ROW_GAP);
+
+    const labelScenarioNodes = graph.nodes
+      .filter((scenario) => scenario.label_id === labelId)
+      .map((scenario) => scenarioLayoutsById.get(scenario.id))
+      .filter((node): node is LayoutNode => !!node);
+    const labelFlowNodes = [startNode, ...labelScenarioNodes];
+    for (const node of labelFlowNodes) {
+      node.data = {
+        ...(node.data ?? {}),
+        autoBranchLayout: true,
+      };
+    }
+    const minX = Math.min(...labelFlowNodes.map((node) => node.position.x));
+    const minY = Math.min(...labelFlowNodes.map((node) => node.position.y));
+    const shiftX = Number.isFinite(minX) && minX < FRAME_PADDING ? FRAME_PADDING - minX : 0;
+    const shiftY = Number.isFinite(minY) && minY < TOP_DOWN_LABEL_TOP_PADDING ? TOP_DOWN_LABEL_TOP_PADDING - minY : 0;
+    if (shiftX || shiftY) {
+      for (const node of labelFlowNodes) {
+        node.position.x += shiftX;
+        node.position.y += shiftY;
+      }
+    }
+
+    applyManualBranchPositions(labelId);
+    enforceManualTopDownFlow(labelId);
+  }
+};
+
+const deriveFlowEdges = (nodes: LayoutNode[], graph: ProjectGraphSnapshot): Edge[] => {
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const childrenByDomainParent = buildScenarioChildrenByDomainParent(graph);
+  const edges: Edge[] = [];
+  const seen = new Set<string>();
+  type BranchRole = 'true' | 'false';
+
+  const addEdge = (
+    source: LayoutNode,
+    target: LayoutNode,
+    kind: 'sequence' | 'branch',
+    flowRole: 'forward' | 'alternative' | 'rejoin' = 'forward',
+    branchRole?: BranchRole,
+  ): void => {
+    if (source.id === target.id) {
+      return;
+    }
+
+    const id = `derived-${kind}-${source.id}-${target.id}`;
+    if (seen.has(id)) {
+      return;
+    }
+    seen.add(id);
+
+    const useStraightRouting =
+      kind === 'sequence' &&
+      flowRole === 'forward' &&
+      source.parentId === target.parentId &&
+      Math.abs(nodeCenterX(source) - nodeCenterX(target)) <= 1 &&
+      target.position.y >= source.position.y + source.height;
+    const useSourceSideFlowRouting =
+      (kind === 'branch' && flowRole !== 'rejoin') ||
+      (kind === 'sequence' && flowRole === 'forward' && !useStraightRouting);
+    const useNearTargetRouting = flowRole === 'rejoin' || kind === 'branch' || useSourceSideFlowRouting;
+
+    edges.push({
+      id,
+      source: source.id,
+      target: target.id,
+      type: useNearTargetRouting ? 'nearTargetStep' : useStraightRouting ? 'straight' : 'step',
+      className: `project-edge project-edge--${kind}${branchRole ? ` project-edge--branch-${branchRole}` : ''}${flowRole === 'rejoin' ? ' project-edge--rejoin' : ''}`,
+      markerEnd: { type: MarkerType.ArrowClosed },
+      selectable: false,
+      focusable: false,
+      interactionWidth: 8,
+      zIndex: flowRole === 'rejoin' ? 0 : 1,
+      sourceHandle: 'flow-out',
+      targetHandle: 'flow-in',
+      sourcePosition: Position.Bottom,
+      targetPosition: Position.Top,
+      pathOptions: {
+        borderRadius: 8,
+        offset: flowRole === 'rejoin' ? 48 : 32,
+      },
+      style: {
+        opacity: flowRole === 'rejoin' ? 0.32 : kind === 'branch' ? 0.72 : 0.62,
+        strokeWidth: flowRole === 'rejoin' ? 1.35 : kind === 'branch' ? 2.15 : 2,
+      },
+      data: {
+        derived: true,
+        kind,
+        flowRole,
+        branchRole,
+        targetTurnOffset: useNearTargetRouting ? TOP_DOWN_REJOIN_TURN_OFFSET : undefined,
+        sourceTurnOffset: useSourceSideFlowRouting ? 36 : undefined,
+        direction: useSourceSideFlowRouting ? 'source-vertical' : useNearTargetRouting ? 'vertical' : undefined,
+      },
+    });
+  };
+
+  const isAttachedBranchHeaderEdge = (source: LayoutNode, target: LayoutNode): boolean =>
+    isBranchHeaderNode(source) && scenarioParentNodeId(target) === source.id;
+
+  const branchRoleForParentChild = (source: LayoutNode, target: LayoutNode): BranchRole | undefined =>
+    isConditionalBranchNode(source) && scenarioParentNodeId(target) === source.id ? 'true' : undefined;
+
+  const getChildren = (labelId: string, parentNodeId: string | null): ScenarioNodeSnapshot[] =>
+    (childrenByDomainParent.get(domainChildrenKey(labelId, parentNodeId)) ?? []).filter(
+      (scenario) => !isMenuPromptScenario(scenario),
+    );
+
+  const deriveList = (
+    labelId: string,
+    parentNodeId: string | null,
+    incomingSources: LayoutNode[],
+    fallthroughTarget?: LayoutNode,
+  ): LayoutNode[] => {
+    const scenarioSiblings = getChildren(labelId, parentNodeId)
+      .map((scenario) => byId.get(scenario.id))
+      .filter((node): node is LayoutNode => !!node);
+    let sources = incomingSources;
+    let index = 0;
+
+    while (index < scenarioSiblings.length) {
+      const sibling = scenarioSiblings[index];
+      if (isConditionalBranchNode(sibling)) {
+        const branches = [sibling];
+        let afterBranchIndex = index + 1;
+        while (afterBranchIndex < scenarioSiblings.length && isConditionalContinuationNode(scenarioSiblings[afterBranchIndex])) {
+          branches.push(scenarioSiblings[afterBranchIndex]);
+          afterBranchIndex += 1;
+        }
+
+        for (const source of sources.filter((node) => !isFlowTerminalNode(node))) {
+          addEdge(
+            source,
+            branches[0],
+            isBranchingParentNode(source) ? 'branch' : 'sequence',
+            'forward',
+            branchRoleForParentChild(source, branches[0]),
+          );
+        }
+
+        for (const branch of branches.slice(1)) {
+          addEdge(branches[0], branch, 'branch', 'alternative', 'false');
+        }
+
+        const falsePassThroughTarget = branches.length === 1 ? scenarioSiblings[afterBranchIndex] ?? fallthroughTarget : undefined;
+        if (falsePassThroughTarget) {
+          addEdge(branches[0], falsePassThroughTarget, 'branch', 'alternative', 'false');
+        }
+
+        sources = branches.flatMap((branch) => {
+          const branchChildren = getChildren(
+            typeof branch.data?.original === 'object' &&
+              branch.data.original !== null &&
+              'label_id' in branch.data.original &&
+              typeof branch.data.original.label_id === 'string'
+              ? branch.data.original.label_id
+              : labelId,
+            branch.id,
+          );
+          if (branchChildren.length === 0) {
+            return [branch];
+          }
+          return deriveList(labelId, branch.id, [branch], falsePassThroughTarget);
+        });
+        index = afterBranchIndex;
+        continue;
+      }
+
+      if (isMenuNode(sibling)) {
+        for (const source of sources.filter((node) => !isFlowTerminalNode(node))) {
+          addEdge(
+            source,
+            sibling,
+            isBranchingParentNode(source) ? 'branch' : 'sequence',
+            sources.length > 1 ? 'rejoin' : 'forward',
+          );
+        }
+
+        const choiceNodes = getChildren(labelId, sibling.id)
+          .map((scenario) => byId.get(scenario.id))
+          .filter((node): node is LayoutNode => !!node && isMenuChoiceNode(node));
+
+        for (const choice of choiceNodes) {
+          addEdge(sibling, choice, 'branch', 'alternative');
+        }
+
+        sources = choiceNodes.flatMap((choice) => {
+          const choiceChildren = getChildren(labelId, choice.id);
+          if (choiceChildren.length === 0) {
+            return [choice];
+          }
+          return deriveList(labelId, choice.id, [choice], scenarioSiblings[index + 1] ?? fallthroughTarget);
+        });
+        index += 1;
+        continue;
+      }
+
+      for (const source of sources.filter((node) => !isFlowTerminalNode(node))) {
+        if (isAttachedBranchHeaderEdge(source, sibling)) {
+          continue;
+        }
+        addEdge(
+          source,
+          sibling,
+          isBranchingParentNode(source) ? 'branch' : 'sequence',
+          sources.length > 1 ? 'rejoin' : 'forward',
+          branchRoleForParentChild(source, sibling),
+        );
+      }
+      const childSnapshots = getChildren(labelId, sibling.id);
+      if (isFlowTerminalNode(sibling)) {
+        sources = [];
+      } else {
+        sources = childSnapshots.length > 0 ? deriveList(labelId, sibling.id, [sibling], scenarioSiblings[index + 1] ?? fallthroughTarget) : [sibling];
+      }
+      index += 1;
+    }
+
+    return sources.filter((node) => !isFlowTerminalNode(node));
+  };
+
+  for (const label of graph.labels) {
+    const labelStart = graph.label_starts.find((start) => start.label_id === label.id);
+    const startNode = labelStart ? byId.get(labelStart.id) : undefined;
+    if (!startNode) {
+      continue;
+    }
+
+    deriveList(label.id, null, [startNode]);
+  }
+
+  return edges;
+};
+
+export const projectGraphToReactFlow = (graph: ProjectGraphSnapshot): ProjectGraphProjection => {
+  const nodes: LayoutNode[] = [];
+  const labelsById = new Map(graph.labels.map((label) => [label.id, label]));
+  const labelCountByFileId = new Map<string, number>();
+  for (const label of graph.labels) {
+    labelCountByFileId.set(label.file_id, (labelCountByFileId.get(label.file_id) ?? 0) + 1);
+  }
+  const codeOnlyReasonByFileId = new Map(
+    graph.files
+      .map((file) => [file.id, codeOnlyReasonForFile(file, labelCountByFileId)] as const)
+      .filter((entry): entry is readonly [string, string] => entry[1] !== null),
+  );
+  const codeOnlyFileIds = new Set(codeOnlyReasonByFileId.keys());
+
+  for (const file of [...graph.files].sort((a, b) => a.order.localeCompare(b.order))) {
+    const size = normalizeSize(file.visual.size);
+    const codeOnlyReason = codeOnlyReasonByFileId.get(file.id) ?? null;
+    const sourceContent = sourceContentForFile(graph, file);
+    nodes.push({
+      id: file.id,
+      type: 'projectFrame',
+      className: PROJECT_GRAPH_REACT_FLOW_NODE_CLASS,
+      position: clonePoint(file.visual.position),
+      data: {
+        kind: 'file',
+        path: file.path,
+        title: file.path,
+        codeOnlyFile: codeOnlyReason !== null,
+        codeOnlyReason,
+        sourceContent,
+        metadata: file.metadata ?? {},
+        original: file,
+        layoutOrder: file.order,
+        layoutSourceLine: Number.MAX_SAFE_INTEGER,
+      },
+      draggable: true,
+      selectable: true,
+      dragHandle: '.pg-node__drag-handle',
+      zIndex: 0,
+      width: size.width,
+      height: size.height,
+    });
+  }
+
+  for (const label of [...graph.labels].sort(compareSourceOrder)) {
+    if (codeOnlyFileIds.has(label.file_id)) {
+      continue;
+    }
+
+    const size = normalizeSize(label.visual.size);
+    nodes.push({
+      id: label.id,
+      type: 'labelFrame',
+      className: PROJECT_GRAPH_REACT_FLOW_NODE_CLASS,
+      parentId: label.parent_label_id ?? label.file_id,
+      position: clonePoint(label.visual.position),
+      data: {
+        kind: 'label',
+        name: label.name,
+        qualifiedName: label.qualified_name,
+        title: label.qualified_name,
+        scope: label.scope,
+        original: label,
+        layoutOrder: label.qualified_name,
+        layoutSourceLine: label.source_span?.start_line ?? Number.MAX_SAFE_INTEGER,
+      },
+      draggable: true,
+      selectable: true,
+      dragHandle: '.pg-node__drag-handle',
+      zIndex: 0,
+      width: size.width,
+      height: size.height,
+    });
+  }
+
+  for (const start of graph.label_starts) {
+    if (codeOnlyFileIds.has(start.file_id)) {
+      continue;
+    }
+
+    const size = normalizeSize(start.visual.size);
+    const label = labelsById.get(start.label_id);
+    nodes.push({
+      id: start.id,
+      type: 'labelStart',
+      className: PROJECT_GRAPH_REACT_FLOW_NODE_CLASS,
+      parentId: start.label_id,
+      position: clonePoint(start.visual.position),
+      data: {
+        kind: 'labelStart',
+        qualifiedName: start.qualified_name,
+        content: start.content,
+        title: start.qualified_name,
+        original: start,
+        layoutOrder: start.qualified_name,
+        layoutSourceLine: label?.source_span?.start_line ?? Number.MAX_SAFE_INTEGER,
+      },
+      draggable: true,
+      selectable: true,
+      dragHandle: '.pg-node__drag-handle',
+      zIndex: 5,
+      width: size.width,
+      height: size.height,
+    });
+  }
+
+  const scenarioDragGroups = buildScenarioDragGroups(graph);
+  const scenariosById = new Map(graph.nodes.map((scenario) => [scenario.id, scenario]));
+  const menuPromptByParentId = new Map<string, ScenarioNodeSnapshot>();
+  for (const scenario of graph.nodes) {
+    if (isMenuPromptScenario(scenario) && scenario.parent_node_id) {
+      menuPromptByParentId.set(scenario.parent_node_id, scenario);
+    }
+  }
+
+  for (const scenario of [...graph.nodes].sort(compareScenarioOrder)) {
+    if (isMenuPromptScenario(scenario) || codeOnlyFileIds.has(scenario.file_id)) {
+      continue;
+    }
+
+    const size = isFlowControlScenario(scenario)
+      ? { width: Math.max(scenario.visual.size.width, FLOW_CONTROL_NODE_MIN_WIDTH), height: FLOW_CONTROL_NODE_HEIGHT }
+      : isBranchHeaderScenario(scenario)
+        ? { width: Math.max(scenario.visual.size.width, 260), height: BRANCH_HEADER_HEIGHT }
+        : normalizeSize(scenario.visual.size);
+    const menuPrompt = isMenuScenario(scenario) ? menuPromptByParentId.get(scenario.id) : undefined;
+    const scenarioTitle = scenarioTitleFor(scenario);
+    nodes.push({
+      id: scenario.id,
+      type: 'scenarioNode',
+      className: PROJECT_GRAPH_REACT_FLOW_NODE_CLASS,
+      parentId: resolveScenarioVisualParentId(scenario, scenariosById),
+      position: clonePoint(scenario.visual.position),
+      data: {
+        kind: 'scenario',
+        scenarioType: scenario.type,
+        visualRole: isFlowControlScenario(scenario) ? 'flowControl' : isBranchHeaderScenario(scenario) ? 'branchHeader' : undefined,
+        content: scenario.content,
+        dragGroupIds: scenarioDragGroups.get(scenario.id) ?? [scenario.id],
+        menuPrompt: menuPrompt?.content,
+        title: scenarioTitle,
+        metadata: scenario.metadata,
+        original: scenario,
+        layoutOrder: scenario.order,
+        layoutSourceLine: scenario.source_span?.start_line ?? Number.MAX_SAFE_INTEGER,
+      },
+      draggable: true,
+      selectable: true,
+      dragHandle: '.pg-node__drag-handle',
+      zIndex: 5,
+      width: size.width,
+      height: size.height,
+    });
+  }
+
+  applyConditionalStoryLayout(nodes, graph);
+  const normalizedNodes = normalizeLayout(nodes);
+  applyRelationAwareLabelFrameLayout(normalizedNodes, graph);
+  applyRootFileFrameCalendarLayout(normalizedNodes);
+  enforceNoSiblingOverlaps(normalizedNodes);
+  const projectedNodes = normalizedNodes.map((node) => withFixedSize(node));
+  const projectedNodeIds = new Set(projectedNodes.map((node) => node.id));
+  const derivedEdges = deriveFlowEdges(projectedNodes, graph);
+  const relationEdges: Edge[] = graph.edges
+    .filter((edge) => projectedNodeIds.has(edge.source_node_id) && projectedNodeIds.has(edge.target_node_id))
+    .map((edge) => ({
+      id: edge.id,
+      source: edge.source_node_id,
+      target: edge.target_node_id,
+      type: 'relationCurve',
+      animated: false,
+      className: `project-edge project-edge--relation project-edge--${edge.kind}`,
+      markerEnd: { type: MarkerType.ArrowClosed },
+      selectable: false,
+      focusable: false,
+      interactionWidth: 10,
+      zIndex: 2,
+      sourceHandle: 'relation-out',
+      targetHandle: 'flow-in',
+      sourcePosition: Position.Right,
+      targetPosition: Position.Top,
+      style: {
+        opacity: edge.kind === 'call' ? 0.38 : 0.34,
+        strokeWidth: 1.8,
+        strokeDasharray: edge.kind === 'jump' ? '6 8' : '5 7',
+      },
+      data: {
+        kind: edge.kind,
+        metadata: edge.metadata,
+        original: edge,
+      },
+    }));
+
+  return { nodes: projectedNodes, edges: [...derivedEdges, ...relationEdges] };
+};
+
+export interface ProjectGraphProjectionReconcileResult {
+  mode: 'full' | 'presentation';
+  projection: ProjectGraphProjection;
+  stats: {
+    changedEdges: number;
+    changedNodes: number;
+    reusedEdges: number;
+    reusedNodes: number;
+  };
+}
+
+const graphPointEqual = (left: GraphPoint, right: GraphPoint): boolean =>
+  left.x === right.x && left.y === right.y;
+
+const graphVisualEqual = (left: GraphVisual, right: GraphVisual): boolean =>
+  graphPointEqual(left.position, right.position) &&
+  left.size.width === right.size.width &&
+  left.size.height === right.size.height;
+
+const sourceSpanEqual = (left: SourceSpan | null, right: SourceSpan | null): boolean =>
+  left === right || (!!left && !!right && left.start_line === right.start_line && left.end_line === right.end_line);
+
+const jsonValueEqual = (left: unknown, right: unknown): boolean => {
+  if (Object.is(left, right)) {
+    return true;
+  }
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return (
+      Array.isArray(left) &&
+      Array.isArray(right) &&
+      left.length === right.length &&
+      left.every((value, index) => jsonValueEqual(value, right[index]))
+    );
+  }
+  if (!left || !right || typeof left !== 'object' || typeof right !== 'object') {
+    return false;
+  }
+
+  const leftRecord = left as Record<string, unknown>;
+  const rightRecord = right as Record<string, unknown>;
+  const leftKeys = Object.keys(leftRecord);
+  const rightKeys = Object.keys(rightRecord);
+  return (
+    leftKeys.length === rightKeys.length &&
+    leftKeys.every(
+      (key) => Object.prototype.hasOwnProperty.call(rightRecord, key) && jsonValueEqual(leftRecord[key], rightRecord[key]),
+    )
+  );
+};
+
+const arraysMatch = <T>(left: T[], right: T[], equals: (leftValue: T, rightValue: T) => boolean): boolean =>
+  left.length === right.length && left.every((value, index) => equals(value, right[index]));
+
+const labelCountsByFileId = (graph: ProjectGraphSnapshot): Map<string, number> => {
+  const counts = new Map<string, number>();
+  for (const label of graph.labels) {
+    counts.set(label.file_id, (counts.get(label.file_id) ?? 0) + 1);
+  }
+  return counts;
+};
+
+const hasEquivalentProjectGraphLayoutInputs = (
+  previousGraph: ProjectGraphSnapshot,
+  nextGraph: ProjectGraphSnapshot,
+): boolean => {
+  if (previousGraph.project_id !== nextGraph.project_id) {
+    return false;
+  }
+
+  const previousLabelCounts = labelCountsByFileId(previousGraph);
+  const nextLabelCounts = labelCountsByFileId(nextGraph);
+  const filesMatch = arraysMatch(previousGraph.files, nextGraph.files, (previous, next) =>
+    previous.id === next.id &&
+    previous.order === next.order &&
+    graphVisualEqual(previous.visual, next.visual) &&
+    (codeOnlyReasonForFile(previous, previousLabelCounts) === null) ===
+      (codeOnlyReasonForFile(next, nextLabelCounts) === null),
+  );
+  if (!filesMatch) {
+    return false;
+  }
+
+  const labelsMatch = arraysMatch(previousGraph.labels, nextGraph.labels, (previous, next) =>
+    previous.id === next.id &&
+    previous.file_id === next.file_id &&
+    previous.parent_label_id === next.parent_label_id &&
+    previous.label_start_node_id === next.label_start_node_id &&
+    sourceSpanEqual(previous.source_span, next.source_span) &&
+    graphVisualEqual(previous.visual, next.visual),
+  );
+  if (!labelsMatch) {
+    return false;
+  }
+
+  const labelStartsMatch = arraysMatch(previousGraph.label_starts, nextGraph.label_starts, (previous, next) =>
+    previous.id === next.id &&
+    previous.file_id === next.file_id &&
+    previous.label_id === next.label_id &&
+    graphVisualEqual(previous.visual, next.visual),
+  );
+  if (!labelStartsMatch) {
+    return false;
+  }
+
+  const scenariosMatch = arraysMatch(previousGraph.nodes, nextGraph.nodes, (previous, next) =>
+    previous.id === next.id &&
+    previous.file_id === next.file_id &&
+    previous.label_id === next.label_id &&
+    previous.parent_node_id === next.parent_node_id &&
+    previous.type === next.type &&
+    previous.order === next.order &&
+    previous.metadata?._manual_position === next.metadata?._manual_position &&
+    sourceSpanEqual(previous.source_span, next.source_span) &&
+    graphVisualEqual(previous.visual, next.visual),
+  );
+  if (!scenariosMatch) {
+    return false;
+  }
+
+  return arraysMatch(previousGraph.edges, nextGraph.edges, (previous, next) =>
+    previous.id === next.id &&
+    previous.source_node_id === next.source_node_id &&
+    previous.target_node_id === next.target_node_id &&
+    previous.kind === next.kind,
+  );
+};
+
+const fullProjectionReconcileResult = (graph: ProjectGraphSnapshot): ProjectGraphProjectionReconcileResult => {
+  const projection = projectGraphToReactFlow(graph);
+  cacheProjectGraphProjectionIndexes(projection);
+  return {
+    mode: 'full',
+    projection,
+    stats: {
+      changedEdges: projection.edges.length,
+      changedNodes: projection.nodes.length,
+      reusedEdges: 0,
+      reusedNodes: 0,
+    },
+  };
+};
+
+interface ProjectGraphProjectionIndexes {
+  edgeIndexById: Map<string, number>;
+  nodeIndexById: Map<string, number>;
+}
+
+const projectionIndexes = new WeakMap<ProjectGraphProjection, ProjectGraphProjectionIndexes>();
+
+const cacheProjectGraphProjectionIndexes = (
+  projection: ProjectGraphProjection,
+  reusable?: ProjectGraphProjectionIndexes,
+): ProjectGraphProjectionIndexes => {
+  const indexes = reusable ?? {
+    edgeIndexById: new Map(projection.edges.map((edge, index) => [edge.id, index])),
+    nodeIndexById: new Map(projection.nodes.map((node, index) => [node.id, index])),
+  };
+  projectionIndexes.set(projection, indexes);
+  return indexes;
+};
+
+const getProjectGraphProjectionIndexes = (projection: ProjectGraphProjection): ProjectGraphProjectionIndexes =>
+  projectionIndexes.get(projection) ?? cacheProjectGraphProjectionIndexes(projection);
+
+const hintedPresentationFields: Record<ProjectGraphReadModelUpdate['dirtyEntities'][number]['kind'], ReadonlySet<string>> = {
+  file: new Set(['metadata', 'path']),
+  label: new Set(['name', 'qualified_name', 'scope']),
+  labelStart: new Set(['content', 'qualified_name']),
+  scenario: new Set(['content', 'content_text_key', 'metadata']),
+};
+
+const canUseDirtyProjectionHint = (
+  previousProjection: ProjectGraphProjection,
+  hint: ProjectGraphReadModelUpdate,
+): boolean => {
+  if (hint.mode !== 'incremental' || hint.fallbackReason !== null) {
+    return false;
+  }
+  if (hint.dirtyEntities.length !== hint.dirtyEntityIds.length) {
+    return false;
+  }
+  if (hint.dirtyMetaKeys.some((key) => !['diagnostics', 'project_id', 'source_index'].includes(key))) {
+    return false;
+  }
+
+  for (const dirty of hint.dirtyEntities) {
+    if (dirty.entity.id !== dirty.previousEntity.id) {
+      return false;
+    }
+    const fields = hint.entityFieldsById[dirty.entity.id] ?? [];
+    if (fields.some((field) => !hintedPresentationFields[dirty.kind].has(field))) {
+      return false;
+    }
+    if (dirty.kind === 'scenario') {
+      const previous = dirty.previousEntity as ScenarioNodeSnapshot;
+      const next = dirty.entity as ScenarioNodeSnapshot;
+      if (previous.metadata?._manual_position !== next.metadata?._manual_position) {
+        return false;
+      }
+    } else if (dirty.kind === 'file') {
+      const previous = dirty.previousEntity as FileFrameSnapshot;
+      const next = dirty.entity as FileFrameSnapshot;
+      if (
+        previous.metadata?.code_only !== next.metadata?.code_only ||
+        previous.metadata?.code_only_reason !== next.metadata?.code_only_reason
+      ) {
+        return false;
+      }
+    }
+  }
+
+  const indexes = getProjectGraphProjectionIndexes(previousProjection);
+  const dirtyEdgesById = new Map(hint.dirtyEdges.map((edge) => [edge.id, edge]));
+  for (const edgeId of hint.dirtyEdgeIds) {
+    const edgeIndex = indexes.edgeIndexById.get(edgeId);
+    const previous = edgeIndex === undefined
+      ? undefined
+      : previousProjection.edges[edgeIndex]?.data?.original as FlowEdgeSnapshot | undefined;
+    const next = dirtyEdgesById.get(edgeId);
+    if (
+      !previous ||
+      !next ||
+      previous.source_node_id !== next.source_node_id ||
+      previous.target_node_id !== next.target_node_id ||
+      previous.kind !== next.kind
+    ) {
+      return false;
+    }
+  }
+  return true;
+};
+
+const reconcileProjectGraphProjectionFromDirtyHint = (
+  previousProjection: ProjectGraphProjection,
+  nextGraph: ProjectGraphSnapshot,
+  hint: ProjectGraphReadModelUpdate,
+): ProjectGraphProjectionReconcileResult | null => {
+  if (!canUseDirtyProjectionHint(previousProjection, hint)) {
+    return null;
+  }
+
+  const indexes = getProjectGraphProjectionIndexes(previousProjection);
+  const dirtyEntitiesById = new Map(hint.dirtyEntities.map((dirty) => [dirty.entity.id, dirty]));
+  const promptByMenuId = new Map<string, ScenarioNodeSnapshot>();
+  const targetNodeIds = new Set<string>(hint.dirtySourceFileIds);
+  for (const dirty of hint.dirtyEntities) {
+    const entity = dirty.entity;
+    if (dirty.kind === 'scenario' && isMenuPromptScenario(entity as ScenarioNodeSnapshot)) {
+      const prompt = entity as ScenarioNodeSnapshot;
+      if (!prompt.parent_node_id) {
+        return null;
+      }
+      promptByMenuId.set(prompt.parent_node_id, prompt);
+      targetNodeIds.add(prompt.parent_node_id);
+    } else {
+      targetNodeIds.add(entity.id);
+    }
+  }
+
+  let nodes = previousProjection.nodes;
+  let changedNodes = 0;
+  for (const targetNodeId of targetNodeIds) {
+    const nodeIndex = indexes.nodeIndexById.get(targetNodeId);
+    if (nodeIndex === undefined) {
+      return null;
+    }
+    const projectedNode = previousProjection.nodes[nodeIndex];
+    const dirty = dirtyEntitiesById.get(targetNodeId);
+    let nextProjectedNode = projectedNode;
+
+    if (projectedNode.type === 'projectFrame') {
+      const previous = projectedNode.data?.original as FileFrameSnapshot | undefined;
+      const next = dirty?.kind === 'file' ? dirty.entity as FileFrameSnapshot : previous;
+      if (!previous || !next) {
+        return null;
+      }
+      const previousSourceContent = typeof projectedNode.data?.sourceContent === 'string'
+        ? projectedNode.data.sourceContent
+        : sourceContentForFile(nextGraph, previous);
+      const nextSourceContent = sourceContentForFile(nextGraph, next);
+      if (!jsonValueEqual(previous, next) || previousSourceContent !== nextSourceContent) {
+        nextProjectedNode = {
+          ...projectedNode,
+          data: {
+            ...projectedNode.data,
+            path: next.path,
+            title: next.path,
+            sourceContent: nextSourceContent,
+            metadata: next.metadata ?? {},
+            original: next,
+            layoutOrder: next.order,
+          },
+        };
+      }
+    } else if (projectedNode.type === 'labelFrame') {
+      if (!dirty || dirty.kind !== 'label') {
+        return null;
+      }
+      const previous = dirty.previousEntity as LabelFrameSnapshot;
+      const next = dirty.entity as LabelFrameSnapshot;
+      if (!jsonValueEqual(previous, next)) {
+        nextProjectedNode = {
+          ...projectedNode,
+          data: {
+            ...projectedNode.data,
+            name: next.name,
+            qualifiedName: next.qualified_name,
+            title: next.qualified_name,
+            scope: next.scope,
+            original: next,
+            layoutOrder: next.qualified_name,
+          },
+        };
+      }
+    } else if (projectedNode.type === 'labelStart') {
+      if (!dirty || dirty.kind !== 'labelStart') {
+        return null;
+      }
+      const previous = dirty.previousEntity as LabelStartNodeSnapshot;
+      const next = dirty.entity as LabelStartNodeSnapshot;
+      if (!jsonValueEqual(previous, next)) {
+        nextProjectedNode = {
+          ...projectedNode,
+          data: {
+            ...projectedNode.data,
+            qualifiedName: next.qualified_name,
+            content: next.content,
+            title: next.qualified_name,
+            original: next,
+            layoutOrder: next.qualified_name,
+          },
+        };
+      }
+    } else if (projectedNode.type === 'scenarioNode') {
+      const prompt = promptByMenuId.get(targetNodeId);
+      const previous = dirty?.kind === 'scenario'
+        ? dirty.previousEntity as ScenarioNodeSnapshot
+        : projectedNode.data?.original as ScenarioNodeSnapshot | undefined;
+      const next = dirty?.kind === 'scenario'
+        ? dirty.entity as ScenarioNodeSnapshot
+        : projectedNode.data?.original as ScenarioNodeSnapshot | undefined;
+      if (!previous || !next) {
+        return null;
+      }
+      const nextPrompt = prompt?.content ?? projectedNode.data?.menuPrompt;
+      const previousPrompt = prompt
+        ? (dirtyEntitiesById.get(prompt.id)?.previousEntity as ScenarioNodeSnapshot | undefined)?.content
+        : projectedNode.data?.menuPrompt;
+      if (!jsonValueEqual(previous, next) || previousPrompt !== nextPrompt) {
+        nextProjectedNode = {
+          ...projectedNode,
+          data: {
+            ...projectedNode.data,
+            content: next.content,
+            menuPrompt: nextPrompt,
+            title: scenarioTitleFor(next),
+            metadata: next.metadata,
+            original: next,
+            layoutOrder: next.order,
+          },
+        };
+      }
+    } else {
+      return null;
+    }
+
+    if (nextProjectedNode !== projectedNode) {
+      if (nodes === previousProjection.nodes) {
+        nodes = nodes.slice();
+      }
+      nodes[nodeIndex] = nextProjectedNode;
+      changedNodes += 1;
+    }
+  }
+
+  const dirtyEdgesById = new Map(hint.dirtyEdges.map((edge) => [edge.id, edge]));
+  let edges = previousProjection.edges;
+  let changedEdges = 0;
+  for (const edgeId of hint.dirtyEdgeIds) {
+    const edgeIndex = indexes.edgeIndexById.get(edgeId);
+    const next = dirtyEdgesById.get(edgeId);
+    if (edgeIndex === undefined || !next) {
+      return null;
+    }
+    const projectedEdge = previousProjection.edges[edgeIndex];
+    const previous = projectedEdge.data?.original as FlowEdgeSnapshot | undefined;
+    if (!previous) {
+      return null;
+    }
+    if (!jsonValueEqual(previous, next)) {
+      if (edges === previousProjection.edges) {
+        edges = edges.slice();
+      }
+      edges[edgeIndex] = {
+        ...projectedEdge,
+        data: {
+          ...projectedEdge.data,
+          kind: next.kind,
+          metadata: next.metadata,
+          original: next,
+        },
+      };
+      changedEdges += 1;
+    }
+  }
+
+  if (changedNodes === 0 && changedEdges === 0) {
+    return {
+      mode: 'presentation',
+      projection: previousProjection,
+      stats: {
+        changedEdges: 0,
+        changedNodes: 0,
+        reusedEdges: previousProjection.edges.length,
+        reusedNodes: previousProjection.nodes.length,
+      },
+    };
+  }
+
+  const projection = { nodes, edges };
+  cacheProjectGraphProjectionIndexes(projection, indexes);
+  return {
+    mode: 'presentation',
+    projection,
+    stats: {
+      changedEdges,
+      changedNodes,
+      reusedEdges: edges.length - changedEdges,
+      reusedNodes: nodes.length - changedNodes,
+    },
+  };
+};
+
+export const reconcileProjectGraphProjection = (
+  previousGraph: ProjectGraphSnapshot | null,
+  previousProjection: ProjectGraphProjection | null,
+  nextGraph: ProjectGraphSnapshot,
+  dirtyHint?: ProjectGraphReadModelUpdate | null,
+): ProjectGraphProjectionReconcileResult => {
+  if (!previousGraph || !previousProjection) {
+    return fullProjectionReconcileResult(nextGraph);
+  }
+  if (dirtyHint?.mode === 'no-change') {
+    return {
+      mode: 'presentation',
+      projection: previousProjection,
+      stats: {
+        changedEdges: 0,
+        changedNodes: 0,
+        reusedEdges: previousProjection.edges.length,
+        reusedNodes: previousProjection.nodes.length,
+      },
+    };
+  }
+  if (dirtyHint) {
+    const hinted = reconcileProjectGraphProjectionFromDirtyHint(previousProjection, nextGraph, dirtyHint);
+    if (hinted) {
+      return hinted;
+    }
+    return fullProjectionReconcileResult(nextGraph);
+  }
+  if (!hasEquivalentProjectGraphLayoutInputs(previousGraph, nextGraph)) {
+    return fullProjectionReconcileResult(nextGraph);
+  }
+
+  const previousFilesById = new Map(previousGraph.files.map((file) => [file.id, file]));
+  const nextFilesById = new Map(nextGraph.files.map((file) => [file.id, file]));
+  const previousLabelsById = new Map(previousGraph.labels.map((label) => [label.id, label]));
+  const nextLabelsById = new Map(nextGraph.labels.map((label) => [label.id, label]));
+  const previousStartsById = new Map(previousGraph.label_starts.map((start) => [start.id, start]));
+  const nextStartsById = new Map(nextGraph.label_starts.map((start) => [start.id, start]));
+  const previousScenariosById = new Map(previousGraph.nodes.map((scenario) => [scenario.id, scenario]));
+  const nextScenariosById = new Map(nextGraph.nodes.map((scenario) => [scenario.id, scenario]));
+  const previousPromptByMenuId = new Map(
+    previousGraph.nodes
+      .filter((scenario) => isMenuPromptScenario(scenario) && scenario.parent_node_id)
+      .map((scenario) => [scenario.parent_node_id as string, scenario]),
+  );
+  const nextPromptByMenuId = new Map(
+    nextGraph.nodes
+      .filter((scenario) => isMenuPromptScenario(scenario) && scenario.parent_node_id)
+      .map((scenario) => [scenario.parent_node_id as string, scenario]),
+  );
+  const nextLabelCounts = labelCountsByFileId(nextGraph);
+  let changedNodes = 0;
+
+  const nodes = previousProjection.nodes.map((projectedNode) => {
+    if (projectedNode.type === 'projectFrame') {
+      const previous = previousFilesById.get(projectedNode.id);
+      const next = nextFilesById.get(projectedNode.id);
+      if (!previous || !next) {
+        return projectedNode;
+      }
+      const previousSourceContent = sourceContentForFile(previousGraph, previous);
+      const nextSourceContent = sourceContentForFile(nextGraph, next);
+      if (jsonValueEqual(previous, next) && previousSourceContent === nextSourceContent) {
+        return projectedNode;
+      }
+      changedNodes += 1;
+      const codeOnlyReason = codeOnlyReasonForFile(next, nextLabelCounts);
+      return {
+        ...projectedNode,
+        data: {
+          ...projectedNode.data,
+          path: next.path,
+          title: next.path,
+          codeOnlyFile: codeOnlyReason !== null,
+          codeOnlyReason,
+          sourceContent: nextSourceContent,
+          metadata: next.metadata ?? {},
+          original: next,
+          layoutOrder: next.order,
+        },
+      };
+    }
+
+    if (projectedNode.type === 'labelFrame') {
+      const previous = previousLabelsById.get(projectedNode.id);
+      const next = nextLabelsById.get(projectedNode.id);
+      if (!previous || !next || jsonValueEqual(previous, next)) {
+        return projectedNode;
+      }
+      changedNodes += 1;
+      return {
+        ...projectedNode,
+        data: {
+          ...projectedNode.data,
+          name: next.name,
+          qualifiedName: next.qualified_name,
+          title: next.qualified_name,
+          scope: next.scope,
+          original: next,
+          layoutOrder: next.qualified_name,
+        },
+      };
+    }
+
+    if (projectedNode.type === 'labelStart') {
+      const previous = previousStartsById.get(projectedNode.id);
+      const next = nextStartsById.get(projectedNode.id);
+      if (!previous || !next || jsonValueEqual(previous, next)) {
+        return projectedNode;
+      }
+      changedNodes += 1;
+      return {
+        ...projectedNode,
+        data: {
+          ...projectedNode.data,
+          qualifiedName: next.qualified_name,
+          content: next.content,
+          title: next.qualified_name,
+          original: next,
+          layoutOrder: next.qualified_name,
+        },
+      };
+    }
+
+    if (projectedNode.type === 'scenarioNode') {
+      const previous = previousScenariosById.get(projectedNode.id);
+      const next = nextScenariosById.get(projectedNode.id);
+      if (!previous || !next) {
+        return projectedNode;
+      }
+      const previousPrompt = previousPromptByMenuId.get(projectedNode.id);
+      const nextPrompt = nextPromptByMenuId.get(projectedNode.id);
+      if (jsonValueEqual(previous, next) && jsonValueEqual(previousPrompt, nextPrompt)) {
+        return projectedNode;
+      }
+      changedNodes += 1;
+      return {
+        ...projectedNode,
+        data: {
+          ...projectedNode.data,
+          content: next.content,
+          menuPrompt: nextPrompt?.content,
+          title: scenarioTitleFor(next),
+          metadata: next.metadata,
+          original: next,
+          layoutOrder: next.order,
+        },
+      };
+    }
+
+    return projectedNode;
+  });
+
+  const previousEdgesById = new Map(previousGraph.edges.map((edge) => [edge.id, edge]));
+  const nextEdgesById = new Map(nextGraph.edges.map((edge) => [edge.id, edge]));
+  let changedEdges = 0;
+  const edges = previousProjection.edges.map((projectedEdge) => {
+    const previous = previousEdgesById.get(projectedEdge.id);
+    const next = nextEdgesById.get(projectedEdge.id);
+    if (!previous || !next || jsonValueEqual(previous, next)) {
+      return projectedEdge;
+    }
+    changedEdges += 1;
+    return {
+      ...projectedEdge,
+      data: {
+        ...projectedEdge.data,
+        kind: next.kind,
+        metadata: next.metadata,
+        original: next,
+      },
+    };
+  });
+
+  if (changedNodes === 0 && changedEdges === 0) {
+    return {
+      mode: 'presentation',
+      projection: previousProjection,
+      stats: {
+        changedEdges: 0,
+        changedNodes: 0,
+        reusedEdges: previousProjection.edges.length,
+        reusedNodes: previousProjection.nodes.length,
+      },
+    };
+  }
+
+  return {
+    mode: 'presentation',
+    projection: {
+      nodes: changedNodes > 0 ? nodes : previousProjection.nodes,
+      edges: changedEdges > 0 ? edges : previousProjection.edges,
+    },
+    stats: {
+      changedEdges,
+      changedNodes,
+      reusedEdges: edges.length - changedEdges,
+      reusedNodes: nodes.length - changedNodes,
+    },
+  };
+};

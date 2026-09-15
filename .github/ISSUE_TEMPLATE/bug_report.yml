@@ -1,0 +1,63 @@
+name: Bug report
+description: Report a reproducible problem in RenPy Visual Editor
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve the editor. Remove private story text, tokens and private project links before submitting.
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Tell us the smallest sequence that triggers the problem.
+      placeholder: |
+        1. Import ...
+        2. Select ...
+        3. Click ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected result
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual result
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      description: Use the version shown by the app or the Git commit used for a local build.
+  - type: dropdown
+    id: browser
+    attributes:
+      label: Browser
+      options:
+        - Chrome
+        - Edge
+        - Chromium-based browser
+        - Firefox
+        - Safari
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: sample
+    attributes:
+      label: Sanitized sample or screenshot
+      description: Optional. Attach only material you are comfortable making public.
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy check
+      options:
+        - label: I removed credentials, private project links and story content that should not be public.
+          required: true

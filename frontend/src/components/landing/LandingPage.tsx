@@ -1,340 +1,367 @@
-import React from 'react';
-import {
-  Box,
-  Button,
-  Card,
-  CardContent,
-  Chip,
-  Stack,
-  Typography,
-  useTheme,
-} from '@mui/material';
-import { alpha } from '@mui/material/styles';
-import CodeRoundedIcon from '@mui/icons-material/CodeRounded';
-import GestureRoundedIcon from '@mui/icons-material/GestureRounded';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Box, Button, Typography } from '@mui/material';
 import LoginRoundedIcon from '@mui/icons-material/LoginRounded';
-import PlayArrowRoundedIcon from '@mui/icons-material/PlayArrowRounded';
-import SecurityRoundedIcon from '@mui/icons-material/SecurityRounded';
-import SensorsRoundedIcon from '@mui/icons-material/SensorsRounded';
-import SyncAltRoundedIcon from '@mui/icons-material/SyncAltRounded';
-import PeopleAltRoundedIcon from '@mui/icons-material/PeopleAltRounded';
-import { motion } from 'framer-motion';
-import { useNavigate } from 'react-router-dom';
+import TranslateRoundedIcon from '@mui/icons-material/TranslateRounded';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 
-import DarkVeil from './DarkVeil';
+import brandLogoUrl from '../../assets/logo.svg';
+import {
+  loadClockworkLibraryDemoPreview,
+  type ClockworkLibraryDemoPreviewResponse,
+} from '../../services/api';
+import {
+  createProjectGraphCrdtDoc,
+  insertProjectGraphNextScenario,
+  projectGraphFromCrdtDoc,
+  updateScenarioNodeContent,
+  updateScenarioNodeMetadata,
+  type ProjectGraphCrdtDoc,
+} from '../../utils/projectGraphCrdt';
+import type { ProjectGraphSnapshot } from '../../utils/projectGraphProjection';
+import type { ActionEditorNextActionRequest } from '../actionEditor/ActionEditorSidebar';
+import { ProjectGraphCanvas } from '../projectGraph/ProjectGraphCanvas';
+import './LandingPage.css';
+
+const languageOptions = [
+  { code: 'en', key: 'language.english' },
+  { code: 'ru', key: 'language.russian' },
+  { code: 'ja', key: 'language.japanese' },
+  { code: 'zh', key: 'language.chinese' },
+  { code: 'de', key: 'language.german' },
+];
+
+const getClockworkLibraryHallFirstScenarioNodeId = (graph: ProjectGraphSnapshot | null): string | null => {
+  if (!graph) {
+    return null;
+  }
+
+  const libraryHallLabel = graph.labels.find((label) => label.qualified_name === 'library_hall');
+  if (!libraryHallLabel) {
+    return null;
+  }
+
+  const firstScenario = graph.nodes
+    .filter((node) => node.label_id === libraryHallLabel.id && node.parent_node_id === null)
+    .sort((left, right) => left.order.localeCompare(right.order))[0];
+
+  return firstScenario?.id ?? null;
+};
 
 const LandingPage: React.FC = () => {
-  const theme = useTheme();
   const navigate = useNavigate();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const [demoPreview, setDemoPreview] = useState<ClockworkLibraryDemoPreviewResponse | null>(null);
+  const [demoGraph, setDemoGraph] = useState<ProjectGraphSnapshot | null>(null);
+  const [demoPreviewFailed, setDemoPreviewFailed] = useState(false);
+  const [languageOpen, setLanguageOpen] = useState(false);
+  const demoCrdtDocRef = useRef<ProjectGraphCrdtDoc | null>(null);
 
-  const glassSurface = {
-    background: alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.25 : 0.6),
-    border: `1px solid ${alpha(theme.palette.primary.main, 0.2)}`,
-    boxShadow: '0 18px 60px rgba(0,0,0,0.28)',
-    backdropFilter: 'blur(16px)',
+  const handleOpenDemoIntent = () => {
+    navigate('/login');
   };
 
-  const roadmapBadges = [
-    { label: t('landing.badges.visualEditor'), color: theme.palette.primary.main },
-    { label: t('landing.badges.twoWay'), color: theme.palette.secondary.main },
-    { label: t('landing.badges.collab'), color: theme.palette.success.main },
-    { label: t('landing.badges.wysiwyg'), color: theme.palette.warning.main },
-  ];
+  useEffect(() => {
+    let isMounted = true;
 
-  const benefitCards = [
-    {
-      title: t('landing.cards.visualFirst.title'),
-      icon: <GestureRoundedIcon />,
-      text: t('landing.cards.visualFirst.text'),
-    },
-    {
-      title: t('landing.cards.twoWay.title'),
-      icon: <SyncAltRoundedIcon />,
-      text: t('landing.cards.twoWay.text'),
-    },
-    {
-      title: t('landing.cards.collab.title'),
-      icon: <PeopleAltRoundedIcon />,
-      text: t('landing.cards.collab.text'),
-    },
-  ];
+    loadClockworkLibraryDemoPreview()
+      .then((preview) => {
+        if (isMounted) {
+          const demoDoc = createProjectGraphCrdtDoc(preview.graph, { peerId: '9000001' });
+          demoCrdtDocRef.current = demoDoc;
+          setDemoPreview(preview);
+          setDemoGraph(projectGraphFromCrdtDoc(demoDoc));
+          setDemoPreviewFailed(false);
+        }
+      })
+      .catch(() => {
+        if (isMounted) {
+          demoCrdtDocRef.current = null;
+          setDemoGraph(null);
+          setDemoPreviewFailed(true);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const demoInitialFocusNodeId = useMemo(
+    () => getClockworkLibraryHallFirstScenarioNodeId(demoGraph),
+    [demoGraph],
+  );
+
+  const handleDemoScenarioContentChange = (nodeId: string, content: string) => {
+    const demoDoc = demoCrdtDocRef.current;
+    if (!demoDoc) {
+      return;
+    }
+    updateScenarioNodeContent(demoDoc, nodeId, content);
+    setDemoGraph(projectGraphFromCrdtDoc(demoDoc));
+  };
+
+  const handleDemoScenarioMetadataChange = (nodeId: string, metadataPatch: Record<string, unknown>) => {
+    const demoDoc = demoCrdtDocRef.current;
+    if (!demoDoc) {
+      return;
+    }
+    updateScenarioNodeMetadata(demoDoc, nodeId, metadataPatch);
+    setDemoGraph(projectGraphFromCrdtDoc(demoDoc));
+  };
+
+  const handleDemoActionEditorNextAction = (sourceNodeId: string, request: ActionEditorNextActionRequest) => {
+    const demoDoc = demoCrdtDocRef.current;
+    if (!demoDoc) {
+      return null;
+    }
+
+    const result = insertProjectGraphNextScenario(demoDoc, {
+      action: request.action,
+      conditionalDraft: request.conditionalDraft,
+      menuDraft: request.menuDraft,
+      sourceNodeId,
+      target: request.target,
+      targetLabelId: request.targetLabelId,
+    });
+    setDemoGraph(projectGraphFromCrdtDoc(demoDoc));
+    return result.selectedNodeId;
+  };
 
   return (
     <Box
+      className="landing-root"
       sx={{
         position: 'relative',
-        minHeight: '100vh',
+        height: '100dvh',
         overflow: 'hidden',
-        color: theme.palette.text.primary,
-        backgroundColor: theme.palette.mode === 'dark' ? '#0c1122' : '#3d3d3e',
-        background: theme.palette.mode === 'dark'
-          ? 'radial-gradient(circle at 20% 20%, rgba(76,29,149,0.35), transparent 35%), radial-gradient(circle at 80% 10%, rgba(14,165,233,0.25), transparent 30%), #0b1021'
-          : 'radial-gradient(circle at 20% 20%, rgba(59,130,246,0.12), transparent 35%), radial-gradient(circle at 80% 10%, rgba(236,72,153,0.1), transparent 30%), #f4f7fb',
+        background: '#f7f8fb',
+        color: '#121826',
       }}
     >
       <Box
+        className="landing-demo-stage"
+        aria-label={t('landing.demoAria')}
         sx={{
           position: 'absolute',
           inset: 0,
-          opacity: theme.palette.mode === 'dark' ? 0.7 : 0.8,
-          pointerEvents: 'none',
+          zIndex: 0,
         }}
       >
-        <DarkVeil
-          hueShift={theme.palette.mode === 'dark' ? 220 : 180}
-          scanlineIntensity={0.25}
-          noiseIntensity={0.05}
-          speed={0.55}
-          scanlineFrequency={1.8}
-          warpAmount={0.9}
-        />
+        {demoPreview && demoGraph ? (
+          <ProjectGraphCanvas
+            allowLandingInspector
+            allowLandingActionEditor
+            assetCatalog={demoPreview.asset_catalog}
+            className="landing-project-graph-canvas"
+            graph={demoGraph}
+            initialFocusNodeId={demoInitialFocusNodeId}
+            onlyRenderVisibleElements
+            onActionEditorNextAction={handleDemoActionEditorNextAction}
+            onScenarioContentChange={handleDemoScenarioContentChange}
+            onScenarioMetadataChange={handleDemoScenarioMetadataChange}
+            presentationMode="landing"
+            projectName="DEMO"
+          />
+        ) : (
+          <Box
+            sx={{
+              display: 'grid',
+              height: '100%',
+              placeItems: 'center',
+              px: 3,
+              textAlign: 'center',
+            }}
+          >
+            <Typography sx={{ color: '#64748b', fontSize: 13, fontWeight: 800 }}>
+              {demoPreviewFailed ? t('landing.demoUnavailable') : t('landing.demoLoading')}
+            </Typography>
+          </Box>
+        )}
+      </Box>
+
+      <Box className="landing-top-left-chrome">
+        <Box
+          className="landing-demo-brand-bubble"
+          sx={{
+            display: 'flex',
+            height: 46,
+            boxSizing: 'border-box',
+            alignItems: 'center',
+            gap: '12px',
+            border: '1px solid rgba(15, 23, 42, 0.1)',
+            borderRadius: '8px',
+            background: 'rgba(255, 255, 255, 0.86)',
+            padding: '8px 12px',
+            boxShadow: '0 10px 28px rgba(15, 23, 42, 0.1)',
+            backdropFilter: 'blur(10px)',
+          }}
+        >
+          <Box
+            component="img"
+            src={brandLogoUrl}
+            alt="renpy.online"
+            sx={{ display: 'block', width: 150, height: 'auto', maxHeight: 28, objectFit: 'contain' }}
+          />
+          <Box
+            sx={{
+              minWidth: 0,
+              borderLeft: '1px solid rgba(15, 23, 42, 0.12)',
+              pl: '12px',
+              color: '#0f172a',
+              fontSize: 13,
+              fontWeight: 800,
+              lineHeight: 1.2,
+            }}
+          >
+            DEMO
+          </Box>
+        </Box>
+
+        <Button
+          className="landing-demo-login-bubble"
+          variant="contained"
+          startIcon={<LoginRoundedIcon />}
+          onClick={handleOpenDemoIntent}
+          sx={{
+            height: 46,
+            minHeight: 46,
+            borderRadius: '8px',
+            background: '#0f172a',
+            px: 2,
+            py: 0,
+            boxShadow: '0 12px 28px rgba(15, 23, 42, 0.16)',
+            color: '#ffffff',
+            fontSize: 13,
+            fontWeight: 800,
+            lineHeight: 1,
+            letterSpacing: 0,
+            textTransform: 'none',
+            '& .MuiButton-startIcon': {
+              display: 'inline-flex',
+              alignItems: 'center',
+              mr: '7px',
+            },
+            '&:hover': {
+              background: '#1e293b',
+              boxShadow: '0 14px 32px rgba(15, 23, 42, 0.2)',
+            },
+          }}
+        >
+          {t('landing.login')}
+        </Button>
+      </Box>
+
+      <Box className="landing-language-control">
+        <button
+          className="landing-language-bubble"
+          type="button"
+          aria-label={t('mainMenu.language.change')}
+          aria-expanded={languageOpen}
+          onClick={() => setLanguageOpen((current) => !current)}
+        >
+          <TranslateRoundedIcon fontSize="small" />
+        </button>
+        {languageOpen ? (
+          <div className="landing-language-popover">
+            {languageOptions.map((language) => (
+              <button
+                className="landing-language-option"
+                type="button"
+                key={language.code}
+                onClick={() => {
+                  void i18n.changeLanguage(language.code);
+                  setLanguageOpen(false);
+                }}
+              >
+                {t(language.key)}
+              </button>
+            ))}
+          </div>
+        ) : null}
       </Box>
 
       <Box
+        className="landing-hero-bubble"
         sx={{
           position: 'absolute',
-          inset: 0,
-          background: `linear-gradient(145deg, ${alpha(theme.palette.background.default, 0.6)} 0%, ${alpha(theme.palette.background.default, 0.2)} 50%, transparent 100%)`,
-          pointerEvents: 'none',
-        }}
-      />
-
-      <Box
-        sx={{
-          position: 'relative',
-          zIndex: 1,
-          maxWidth: 1050,
-          mx: 'auto',
-          px: { xs: 3, md: 5 },
-          py: { xs: 6, md: 8 },
-          mt: { xs: 8, md: 8 }, // offset for fixed top bar (64px)
+          zIndex: 18,
+          top: '50%',
+          width: { xs: 'min(360px, calc(100vw - 36px))', md: 390 },
+          transform: 'translateY(-50%)',
+          border: '1px solid rgba(15, 23, 42, 0.1)',
+          borderRadius: '8px',
+          background: 'rgba(255, 255, 255, 0.84)',
+          boxShadow: '0 18px 48px rgba(15, 23, 42, 0.12)',
+          backdropFilter: 'blur(10px)',
+          p: { xs: '22px', md: '28px' },
         }}
       >
-        <Stack spacing={4}>
-          <motion.div initial={{ opacity: 0, y: 28 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }}>
-            <Box
+        <Typography
+          component="h1"
+          sx={{
+            maxWidth: 330,
+            color: '#0b1020',
+            fontFamily: '"Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif',
+            fontSize: { xs: 42, md: 56 },
+            fontWeight: 500,
+            letterSpacing: 0,
+            lineHeight: 0.98,
+            m: 0,
+          }}
+        >
+          {t('landing.hero.title')}
+        </Typography>
+        <Typography
+          sx={{
+            maxWidth: 330,
+            mt: 2,
+            color: '#526071',
+            fontSize: 15,
+            fontWeight: 560,
+            letterSpacing: 0,
+            lineHeight: 1.5,
+          }}
+        >
+          {t('landing.hero.description')}
+        </Typography>
+        <Box sx={{ display: 'grid', gap: 0.85, mt: 3 }}>
+          {[t('landing.storyTags.realtime'), t('landing.storyTags.fullProject')].map((tag) => (
+            <Typography
+              key={tag}
               sx={{
-                ...glassSurface,
-                borderRadius: 4,
-                p: { xs: 3, md: 4 },
-                pb: { xs: 4, md: 4.5 },
-                display: 'grid',
-                gridTemplateColumns: { xs: '1fr', md: '1.1fr 0.9fr' },
-                gridTemplateRows: { xs: 'auto auto auto', md: 'auto 1fr auto' },
-                gap: 3,
-                alignItems: 'stretch',
-                position: 'relative',
+                color: '#8b96a8',
+                fontSize: 12,
+                fontWeight: 760,
+                letterSpacing: 0,
+                lineHeight: 1.35,
               }}
             >
-              <Stack
-                spacing={2}
-                sx={{
-                  height: '100%',
-                  justifyContent: 'space-between',
-                }}
-              >
-                <Typography variant="h3" sx={{ fontWeight: 700, lineHeight: 1.2 }}>
-                  {t('landing.hero.title')}
-                  <br />
-                  <Typography component="span" variant="h4" sx={{ fontWeight: 500, color: theme.palette.text.secondary }}>
-                    {t('landing.hero.subtitle')}
-                  </Typography>
-                </Typography>
-                <Typography variant="body1" sx={{ maxWidth: 720, color: alpha(theme.palette.text.primary, 0.85) }}>
-                  {t('landing.hero.description')}
-                </Typography>
-
-                <Stack
-                  direction="row"
-                  spacing={2}
-                flexWrap="wrap"
-                alignItems="flex-end"
-                sx={{ mt: 'auto' }}
-              >
-                <Button
-                    variant="contained"
-                    size="large"
-                    startIcon={<PlayArrowRoundedIcon />}
-                    onClick={() => navigate('/register')}
-                  >
-                    {t('menu.register')}
-                  </Button>
-                  <Button
-                    variant="outlined"
-                    size="large"
-                    startIcon={<LoginRoundedIcon />}
-                    onClick={() => navigate('/login')}
-                    sx={{ borderColor: alpha(theme.palette.primary.main, 0.5) }}
-                  >
-                    {t('menu.login')}
-                  </Button>
-                </Stack>
-              </Stack>
-
-              <Stack spacing={2} alignItems="stretch" justifyContent="center">
-                <Box
-                  sx={{
-                    ...glassSurface,
-                    borderRadius: 3,
-                    p: 0,
-                    overflow: 'hidden',
-                    position: 'relative',
-                    minHeight: { xs: 200, md: 220 },
-                    mb: { xs: 1, md: 0 },
-                  }}
-                >
-                  <Box
-                    component="iframe"
-                    src="https://www.youtube.com/embed/TYLyjyfUyfQ"
-                    title={t('landing.hero.videoTitle')}
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                    allowFullScreen
-                    sx={{
-                      border: 0,
-                      width: '100%',
-                      height: '100%',
-                      minHeight: { xs: 200, md: 220 },
-                    }}
-                  />
-                </Box>
-              </Stack>
-
-              <Stack
-                direction="row"
-                spacing={1}
-                flexWrap="wrap"
-                rowGap={1}
-                justifyContent="center"
-                sx={{
-                  gridColumn: '1 / -1',
-                  position: { xs: 'static', md: 'absolute' },
-                  left: { md: '50%' },
-                  transform: { md: 'translateX(-50%)' },
-                  bottom: { md: 12 },
-                  mt: { xs: 2, md: 0 },
-                  mb: { xs: 1.5, md: 0 },
-                  px: 1.5,
-                  width: '100%',
-                }}
-              >
-                {roadmapBadges.map((badge) => (
-                  <Chip
-                    key={badge.label}
-                    label={badge.label}
-                    size="small"
-                    sx={{
-                      color: badge.color,
-                      borderColor: alpha(badge.color, 0.5),
-                      background: alpha(badge.color, 0.08),
-                      fontWeight: 600,
-                    }}
-                    variant="outlined"
-                  />
-                ))}
-              </Stack>
-            </Box>
-          </motion.div>
-
-          <Box
-            display="grid"
-            gridTemplateColumns={{
-              xs: '1fr',
-              sm: 'repeat(2, minmax(0, 1fr))',
-              md: 'repeat(3, minmax(0, 1fr))',
-            }}
-            gap={3}
-          >
-            {benefitCards.map((card) => (
-              <Box key={card.title}>
-                <Card
-                  sx={{
-                    height: '100%',
-                    borderRadius: 3,
-                    ...glassSurface,
-                    background: alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.15 : 0.75),
-                  }}
-                >
-                  <CardContent>
-                    <Stack direction="row" spacing={1.5} alignItems="center" mb={1}>
-                      <Box
-                        sx={{
-                          width: 46,
-                          height: 46,
-                          minWidth: 46,
-                          borderRadius: '50%',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          background: alpha(theme.palette.primary.main, 0.12),
-                          color: theme.palette.primary.main,
-                          aspectRatio: '1 / 1',
-                        }}
-                      >
-                        {card.icon}
-                      </Box>
-                      <Typography variant="h6" sx={{ fontWeight: 700 }}>
-                        {card.title}
-                      </Typography>
-                    </Stack>
-                    <Typography variant="body2" color="text.secondary">
-                      {card.text}
-                    </Typography>
-                  </CardContent>
-                </Card>
-              </Box>
-            ))}
-          </Box>
-
-          <Card
-            sx={{
-              ...glassSurface,
-              borderRadius: 4,
-              p: { xs: 3, md: 4 },
-              display: 'grid',
-              gridTemplateColumns: { xs: '1fr', md: '1.2fr 0.8fr' },
-              gap: 3,
-            }}
-          >
-            <Stack spacing={1.5}>
-              <Stack direction="row" alignItems="center" spacing={1}>
-                <SensorsRoundedIcon color="primary" />
-                <Typography variant="h6" sx={{ fontWeight: 700 }}>
-                  {t('landing.realtime.title')}
-                </Typography>
-              </Stack>
-              <Typography variant="body2" color="text.secondary">
-                {t('landing.realtime.description')}
-              </Typography>
-            </Stack>
-            <Stack spacing={2} justifyContent="center">
-              <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-                {t('landing.realtime.ready')}
-              </Typography>
-              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-                <Button
-                  fullWidth
-                  variant="contained"
-                  startIcon={<PlayArrowRoundedIcon />}
-                  onClick={() => navigate('/register')}
-                >
-                  {t('menu.register')}
-                </Button>
-                <Button
-                  fullWidth
-                  variant="text"
-                  startIcon={<CodeRoundedIcon />}
-                  onClick={() => navigate('/login')}
-                  sx={{ color: theme.palette.text.primary }}
-                >
-                  {t('menu.login')}
-                </Button>
-              </Stack>
-            </Stack>
-          </Card>
-        </Stack>
+              {tag}
+            </Typography>
+          ))}
+        </Box>
       </Box>
+
+      <Typography
+        component="small"
+        sx={{
+          position: 'absolute',
+          zIndex: 20,
+          left: { xs: 24, lg: 64 },
+          right: { xs: 24, lg: 64 },
+          bottom: { xs: 18, lg: 22 },
+          color: '#9aa4b2',
+          fontSize: 11,
+          fontWeight: 600,
+          letterSpacing: 0,
+          lineHeight: 1.35,
+          textAlign: { xs: 'left', lg: 'center' },
+          pointerEvents: 'none',
+        }}
+      >
+        {t('landing.legal')}
+      </Typography>
     </Box>
   );
 };

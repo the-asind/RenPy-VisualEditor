@@ -1,0 +1,12 @@
+apiVersion: 1
+
+providers:
+  - name: RenPy Visual Editor
+    orgId: 1
+    folder: RenPy Visual Editor
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: false
+    options:
+      path: /var/lib/grafana/dashboards

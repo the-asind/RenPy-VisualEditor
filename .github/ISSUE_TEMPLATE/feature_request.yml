@@ -1,0 +1,26 @@
+name: Feature request
+description: Suggest an improvement based on an authoring workflow
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: workflow
+    attributes:
+      label: Authoring workflow
+      description: What are you trying to do in a Ren'Py project?
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What gets in the way?
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: Useful result
+      description: Describe the outcome rather than a required implementation.
+    validations:
+      required: true

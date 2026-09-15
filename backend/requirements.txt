@@ -10,5 +10,7 @@ passlib[bcrypt]
 python-jose[cryptography]
 pytest
 pytest-asyncio
+httpx>=0.28,<1.0
 pydantic[email]
 websockets
+prometheus-client

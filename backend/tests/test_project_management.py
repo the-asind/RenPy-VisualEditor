@@ -52,8 +52,8 @@ async def override_get_current_user(token: str = Depends(oauth2_scheme)):
     return user
 
 
+from app.api.routes import auth as auth_routes
 from app.api.routes import projects
-from app.api.routes import scripts
 
 
 app.dependency_overrides[get_current_user] = override_get_current_user
@@ -64,12 +64,16 @@ client = TestClient(app)
 def override_app_db_service(temp_db):
     """Override the app's database service with our test database instance."""
     
+    original_auth_db = auth_routes.db_service
+    original_auth_service = auth_routes.auth_service
     original_projects_db = projects.db_service
-    original_scripts_db = scripts.db_service
     
     
+    from app.services.auth import AuthService
+
+    auth_routes.db_service = temp_db
+    auth_routes.auth_service = AuthService(temp_db)
     projects.db_service = temp_db
-    scripts.db_service = temp_db
     
     
     def get_db_service():
@@ -98,8 +102,9 @@ def override_app_db_service(temp_db):
     yield
     
     
+    auth_routes.db_service = original_auth_db
+    auth_routes.auth_service = original_auth_service
     projects.db_service = original_projects_db
-    scripts.db_service = original_scripts_db
     projects.get_project = original_get_project
     if hasattr(projects, 'get_db_service'):
         projects.get_db_service = original_get_db_service
@@ -150,6 +155,7 @@ def temp_db():
                 
                 roles = [
                     ('role_owner', 'Owner', 'Full control over the project'),
+                    ('role_admin', 'Admin', 'Full control over the project except ownership transfer'),
                     ('role_editor', 'Editor', 'Can edit project content'),
                     ('role_viewer', 'Viewer', 'Can view project content'),
                 ]
@@ -280,6 +286,332 @@ class TestProjectManagement:
         projects = response.json()
         assert len(projects) >= 3, "Not all created projects returned"
 
+    def test_main_menu_projects_sort_by_last_opened(self, auth_token):
+        """The main menu project list is ordered by the user's latest project open."""
+        headers = {"Authorization": f"Bearer {auth_token}"}
+
+        first_resp = client.post(
+            "/api/projects/",
+            headers=headers,
+            json={"name": "Mouse Archives", "description": "Opened after creation"},
+        )
+        assert first_resp.status_code == 200
+        first_project_id = first_resp.json()["id"]
+
+        second_resp = client.post(
+            "/api/projects/",
+            headers=headers,
+            json={"name": "Clockwork Library", "description": "Created later"},
+        )
+        assert second_resp.status_code == 200
+
+        open_resp = client.post(f"/api/projects/{first_project_id}/open", headers=headers)
+        assert open_resp.status_code == 200, open_resp.text
+        assert open_resp.json()["last_opened_at"]
+
+        list_resp = client.get("/api/projects/", headers=headers)
+        assert list_resp.status_code == 200
+        projects = list_resp.json()
+        assert projects[0]["id"] == first_project_id
+        assert projects[0]["last_opened_at"] == open_resp.json()["last_opened_at"]
+
+    def test_project_detail_returns_members_with_named_roles(self, auth_token):
+        """Expanded project cuts need member avatars and clickable role names."""
+        headers = {"Authorization": f"Bearer {auth_token}"}
+
+        create_resp = client.post(
+            "/api/projects/",
+            headers=headers,
+            json={"name": "Role Cut", "description": "Members visible under the caret"},
+        )
+        assert create_resp.status_code == 200
+        project_id = create_resp.json()["id"]
+
+        detail_resp = client.get(f"/api/projects/{project_id}", headers=headers)
+        assert detail_resp.status_code == 200
+        members = detail_resp.json()["active_users"]
+        assert members
+        assert members[0]["username"] == "admin"
+        assert members[0]["role"] == "Owner"
+        assert members[0]["email"] == "admin@example.com"
+
+    def test_main_menu_list_returns_members_for_collapsed_project_rows(self, auth_token):
+        """Collapsed project rows need member avatars without waiting for the caret details call."""
+        headers = {"Authorization": f"Bearer {auth_token}"}
+
+        create_resp = client.post(
+            "/api/projects/",
+            headers=headers,
+            json={"name": "Collapsed Members", "description": "Members visible before expand"},
+        )
+        assert create_resp.status_code == 200
+        project_id = create_resp.json()["id"]
+
+        list_resp = client.get("/api/projects/", headers=headers)
+        assert list_resp.status_code == 200
+        project = next(project for project in list_resp.json() if project["id"] == project_id)
+        assert project["active_users"]
+        assert project["active_users"][0]["username"] == "admin"
+        assert project["active_users"][0]["role"] == "Owner"
+
+    def test_admin_role_can_manage_project_members_assets_and_delete(self, auth_token, temp_db):
+        """Admin is a full project role for the main menu cut and editor asset updates."""
+        headers_owner = {"Authorization": f"Bearer {auth_token}"}
+
+        create_resp = client.post(
+            "/api/projects/",
+            headers=headers_owner,
+            json={"name": "Admin Managed", "description": "Project an admin can fully manage"},
+        )
+        assert create_resp.status_code == 200
+        project_id = create_resp.json()["id"]
+
+        from app.services.auth import AuthService
+
+        admin_user_id = str(uuid.uuid4())
+        editor_user_id = str(uuid.uuid4())
+        with temp_db._get_connection() as conn:
+            conn.execute(
+                "INSERT INTO users (id, username, email, password_hash) VALUES (?, ?, ?, ?)",
+                (admin_user_id, "admin_two", "admin_two@example.com", "$2b$12$dummyhashadmin"),
+            )
+            conn.execute(
+                "INSERT INTO users (id, username, email, password_hash) VALUES (?, ?, ?, ?)",
+                (editor_user_id, "writer_three", "writer_three@example.com", "$2b$12$dummyhasheditor"),
+            )
+            conn.commit()
+
+        share_admin_resp = client.post(
+            f"/api/projects/{project_id}/share",
+            headers=headers_owner,
+            json={"user_id": "admin_two", "role": "Admin"},
+        )
+        assert share_admin_resp.status_code == 200, share_admin_resp.text
+
+        auth_service = AuthService(temp_db)
+        token_admin = auth_service.create_access_token({"sub": admin_user_id, "username": "admin_two"})
+        headers_admin = {"Authorization": f"Bearer {token_admin}"}
+
+        update_resp = client.patch(
+            f"/api/projects/{project_id}",
+            headers=headers_admin,
+            json={"name": "Admin Renamed", "description": "Admin updated settings"},
+        )
+        assert update_resp.status_code == 200, update_resp.text
+        assert update_resp.json()["name"] == "Admin Renamed"
+
+        invite_resp = client.post(
+            f"/api/projects/{project_id}/share",
+            headers=headers_admin,
+            json={"user_id": "writer_three", "role": "Editor"},
+        )
+        assert invite_resp.status_code == 200, invite_resp.text
+
+        catalog_resp = client.put(
+            f"/api/projects/{project_id}/asset-catalog",
+            headers=headers_admin,
+            json={
+                "root_kind": "renpy-game-root",
+                "game_directory": "game",
+                "entries": [
+                    {
+                        "path": "images/renpy/bright.png",
+                        "name": "bright.png",
+                        "extension": ".png",
+                        "kind": "image",
+                        "size": 100,
+                        "lastModified": 0,
+                    }
+                ],
+            },
+        )
+        assert catalog_resp.status_code == 200, catalog_resp.text
+        assert catalog_resp.json()["updated_by"] == admin_user_id
+
+        delete_resp = client.delete(f"/api/projects/{project_id}", headers=headers_admin)
+        assert delete_resp.status_code == 200, delete_resp.text
+
+    def test_owner_can_remove_project_member_with_null_role(self, auth_token, temp_db):
+        """The member hover x removes access by posting a null role through the share route."""
+        headers = {"Authorization": f"Bearer {auth_token}"}
+
+        create_resp = client.post(
+            "/api/projects/",
+            headers=headers,
+            json={"name": "Member Removal", "description": "Remove user from expanded cut"},
+        )
+        assert create_resp.status_code == 200
+        project_id = create_resp.json()["id"]
+
+        user_id = str(uuid.uuid4())
+        username = "writer_two"
+        with temp_db._get_connection() as conn:
+            conn.execute(
+                "INSERT INTO users (id, username, email, password_hash) VALUES (?, ?, ?, ?)",
+                (user_id, username, "writer_two@example.com", "$2b$12$dummyhashforwriter"),
+            )
+            conn.commit()
+
+        share_resp = client.post(
+            f"/api/projects/{project_id}/share",
+            headers=headers,
+            json={"user_id": username, "role": "Editor"},
+        )
+        assert share_resp.status_code == 200, share_resp.text
+
+        remove_resp = client.post(
+            f"/api/projects/{project_id}/share",
+            headers=headers,
+            json={"user_id": username, "role": None},
+        )
+        assert remove_resp.status_code == 200, remove_resp.text
+
+        with temp_db._get_connection() as conn:
+            row = conn.execute(
+                "SELECT role_id FROM project_access WHERE project_id = ? AND user_id = ?",
+                (project_id, user_id),
+            ).fetchone()
+        assert row is None
+
+    def test_project_invite_validation_checks_user_and_role_before_project_creation(self, auth_token, temp_db):
+        """The create-project wizard validates member names when Add is clicked, before a project exists."""
+        headers = {"Authorization": f"Bearer {auth_token}"}
+
+        user_id = str(uuid.uuid4())
+        with temp_db._get_connection() as conn:
+            conn.execute(
+                "INSERT INTO users (id, username, email, password_hash) VALUES (?, ?, ?, ?)",
+                (user_id, "writer_before_create", "writer_before_create@example.com", "$2b$12$dummyhashforwriter"),
+            )
+            conn.commit()
+
+        valid_resp = client.post(
+            "/api/projects/validate-share-target",
+            headers=headers,
+            json={"user_id": "writer_before_create", "role": "Editor"},
+        )
+        assert valid_resp.status_code == 200, valid_resp.text
+        assert valid_resp.json()["username"] == "writer_before_create"
+        assert valid_resp.json()["role"] == "Editor"
+        assert "email" not in valid_resp.json()
+
+        missing_resp = client.post(
+            "/api/projects/validate-share-target",
+            headers=headers,
+            json={"user_id": "missing_before_create", "role": "Editor"},
+        )
+        assert missing_resp.status_code == 404
+        assert "missing_before_create" in missing_resp.json()["detail"]
+
+    def test_legacy_script_mutation_routes_reject_viewer_role(self, auth_token, temp_db):
+        """Viewer access must not be enough to mutate legacy script content routes."""
+        headers_owner = {"Authorization": f"Bearer {auth_token}"}
+        create_resp = client.post(
+            "/api/projects/",
+            headers=headers_owner,
+            json={"name": "Legacy Viewer Write Gate", "description": "Viewer cannot write scripts"},
+        )
+        assert create_resp.status_code == 200
+        project_id = create_resp.json()["id"]
+
+        owner_user_id = create_resp.json()["owner_id"]
+        script_id = temp_db.save_script(
+            project_id,
+            "viewer_gate.rpy",
+            'label start:\n    "RenPy Mouse keeps viewer role read-only."\n    return\n',
+            owner_user_id,
+        )
+
+        from app.services.auth import AuthService
+
+        viewer_user_id = str(uuid.uuid4())
+        with temp_db._get_connection() as conn:
+            conn.execute(
+                "INSERT INTO users (id, username, email, password_hash) VALUES (?, ?, ?, ?)",
+                (viewer_user_id, "viewer_script_gate", "viewer_script_gate@example.com", "$2b$12$dummyhashviewer"),
+            )
+            conn.commit()
+        temp_db.grant_project_access(project_id, viewer_user_id, "role_viewer")
+        viewer_token = AuthService(temp_db).create_access_token(
+            {"sub": viewer_user_id, "username": "viewer_script_gate"}
+        )
+        headers_viewer = {"Authorization": f"Bearer {viewer_token}"}
+
+        parse_resp = client.post(
+            "/api/scripts/parse",
+            headers=headers_viewer,
+            files={"file": ("viewer_gate.rpy", b"label start:\n    return\n", "text/plain")},
+            data={"project_id": project_id},
+        )
+        update_resp = client.post(
+            f"/api/scripts/update-node/{script_id}?start_line=1&end_line=1",
+            headers=headers_viewer,
+            json={"content": '    "Viewer should not overwrite RenPy Mouse."'},
+        )
+        insert_resp = client.post(
+            f"/api/scripts/insert-node/{script_id}?insertion_line=1",
+            headers=headers_viewer,
+            json={"content": '    "Viewer should not insert."', "node_type": "Action"},
+        )
+
+        assert parse_resp.status_code == 404
+        assert update_resp.status_code == 404
+        assert insert_resp.status_code == 404
+        assert "Viewer should not" not in temp_db.get_script(script_id)["content"]
+
+    def test_owner_can_update_project_name_and_description_from_main_menu(self, auth_token):
+        """The expanded project settings edit must call a real backend patch route."""
+        headers = {"Authorization": f"Bearer {auth_token}"}
+
+        create_resp = client.post(
+            "/api/projects/",
+            headers=headers,
+            json={"name": "Old Name", "description": "Old description"},
+        )
+        assert create_resp.status_code == 200
+        project_id = create_resp.json()["id"]
+
+        update_resp = client.patch(
+            f"/api/projects/{project_id}",
+            headers=headers,
+            json={"name": "New Name", "description": "New description"},
+        )
+        assert update_resp.status_code == 200, update_resp.text
+        assert update_resp.json()["name"] == "New Name"
+        assert update_resp.json()["description"] == "New description"
+
+    def test_auth_routes_verify_recaptcha_when_secret_is_configured(self, temp_db, monkeypatch):
+        """Login and registration pass the v2 response token to backend verification."""
+        monkeypatch.setenv("RECAPTCHA_SECRET_KEY", "test-secret")
+        observed_tokens = []
+
+        def fake_verify_recaptcha(token):
+            observed_tokens.append(token)
+
+        monkeypatch.setattr(auth_routes, "verify_recaptcha_token", fake_verify_recaptcha, raising=False)
+
+        register_resp = client.post(
+            "/api/auth/register",
+            json={
+                "username": "captcha_mouse",
+                "email": "captcha_mouse@example.com",
+                "password": "mousepassword",
+                "recaptcha_token": "register-token",
+            },
+        )
+        assert register_resp.status_code == 200, register_resp.text
+
+        login_resp = client.post(
+            "/api/auth/token",
+            data={
+                "username": "captcha_mouse",
+                "password": "mousepassword",
+                "recaptcha_token": "login-token",
+            },
+        )
+        assert login_resp.status_code == 200, login_resp.text
+        assert observed_tokens == ["register-token", "login-token"]
+
     def test_get_project(self, auth_token):
         """Test getting a single project through API."""
         headers = {"Authorization": f"Bearer {auth_token}"}
@@ -313,78 +645,18 @@ class TestProjectManagement:
         assert project["name"] == project_name, "Project name doesn't match"
         assert project["description"] == project_description, "Project description doesn't match"
 
-    @patch('app.api.routes.scripts.parse_script')
-    def test_script_upload_with_project(self, mock_parse_script, auth_token):
-        """Test uploading a script with explicit project selection."""
-        
-        mock_parse_script.return_value = {
-            "script_id": str(uuid.uuid4()),
-            "filename": "test_script.rpy",
-            "tree": {"id": "mock_tree", "node_type": "LabelBlock", "label_name": "root", "children": []}
-        }
-        
+    def test_legacy_script_upload_is_unavailable_even_to_owner(self, auth_token):
+        """Retired upload must neither parse nor persist an owner's file."""
         headers = {"Authorization": f"Bearer {auth_token}"}
-        
-        
-        project_name = "Script Project"
-        project_description = "Project for script testing"
-        
+        project = client.post("/api/projects/", headers=headers, json={"name": "Mouse RenPy"}).json()
         response = client.post(
-            "/api/projects/",
-            headers=headers,
-            json={"name": project_name, "description": project_description}
+            "/api/scripts/parse", headers=headers,
+            files={"file": ("mouse.rpy", b'label start:\n    "RenPy Mouse retires the old entrance."\n    return\n')},
+            data={"project_id": project["id"]},
         )
-        assert response.status_code == 200, f"Failed to create project: {response.text}"
-        project_data = response.json()
-        project_id = project_data["id"]
-        
-        
-        script_content = """
-label start:
-    "Hello, this is a test script."
-    return
-"""
-        with tempfile.NamedTemporaryFile(suffix=".rpy", delete=False, mode="w+") as temp_file:
-            temp_file.write(script_content)
-            temp_file_path = temp_file.name
-        
-        try:
-            
-            with open(temp_file_path, "rb") as f:
-                response = client.post(
-                    "/api/scripts/parse",
-                    headers=headers,
-                    files={"file": f},
-                    data={"project_id": project_id}  
-                )
-            
-            assert response.status_code == 200, f"Script upload failed: {response.text}"
-            data = response.json()
-            assert "script_id" in data, "Script ID not returned"
-            assert "filename" in data, "Filename not returned"
-            assert "tree" in data, "Parsed tree not returned"
-            
-            
-            response = client.get(
-                f"/api/projects/{project_id}",
-                headers=headers
-            )
-            project = response.json()
-            assert "scripts" in project, "Scripts not included in project details"
-            assert len(project["scripts"]) > 0, "No scripts associated with project"
-            script_found = False
-            for script in project["scripts"]:
-                if script["id"] == data["script_id"]:
-                    script_found = True
-                    break
-            assert script_found, "Uploaded script not found in project scripts"
-        
-        finally:
-            
-            try:
-                os.unlink(temp_file_path)
-            except:
-                pass
+        assert response.status_code == 404
+        detail = client.get(f"/api/projects/{project['id']}", headers=headers).json()
+        assert detail["scripts"] == []
 
     def test_upload_without_project_id_fails(self, auth_token):
         """Test that uploading a script without a project_id fails."""
@@ -404,9 +676,8 @@ label start:
                     data={}
                 )
             
-            assert response.status_code == 422
-            assert response.json()["detail"][0]['loc'] == ["body", "project_id"]
-            assert response.json()["detail"][0]['msg'] == "Field required"
+            assert response.status_code == 404
+            assert response.json()["detail"] == "Not Found"
 
         finally:
             try:
@@ -544,26 +815,16 @@ label start:
             assert project_user_entry["role_id"] == expected_role_id_in_db, f"Incorrect role_id in database. Expected {expected_role_id_in_db}, got {project_user_entry['role_id']}"
 
 
-    def test_create_script_endpoint(self, auth_token):
-        """Test creating a script via the projects/{project_id}/scripts endpoint."""
-        
+    def test_legacy_create_script_endpoint_is_unavailable_to_owner(self, auth_token):
         headers = {"Authorization": f"Bearer {auth_token}"}
-        resp = client.post("/api/projects/", headers=headers, json={"name":"ScriptProj"})
-        project_id = resp.json()["id"]
-
-        
-        payload = {"filename":"a.rpy", "content":"label a:\n    return"}
-        create_resp = client.post(
-            f"/api/projects/{project_id}/scripts",
-            headers=headers,
-            json=payload
+        project = client.post("/api/projects/", headers=headers, json={"name": "Mouse RenPy"}).json()
+        response = client.post(
+            f"/api/projects/{project['id']}/scripts", headers=headers,
+            json={"filename": "mouse.rpy", "content": "label start:\n    return"},
         )
-        assert create_resp.status_code == 200
-        script_id = create_resp.json()["id"]
-
-        
-        proj = client.get(f"/api/projects/{project_id}", headers=headers).json()
-        assert any(s["id"] == script_id for s in proj["scripts"])
+        assert response.status_code == 404
+        detail = client.get(f"/api/projects/{project['id']}", headers=headers).json()
+        assert detail["scripts"] == []
 
     def test_delete_project_endpoint(self, auth_token, temp_db):
         """Test deleting a project via the projects/{project_id} endpoint."""

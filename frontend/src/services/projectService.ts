@@ -22,6 +22,8 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
+export type ProjectRole = 'Owner' | 'Admin' | 'Editor' | 'Viewer';
+
 export interface Project {
   id: number | string;
   name: string;
@@ -29,12 +31,40 @@ export interface Project {
   scriptCount?: number;  // Derived from the number of scripts associated with a project
   hasEditAccess?: boolean; // Derived from role
   owner_id?: string;
-  role?: string;
+  role?: ProjectRole | string;
   created_at?: string;
   updated_at?: string;
+  last_opened_at?: string | null;
   active_users?: any[];
   scripts?: any[];
 }
+
+export interface ProjectMember {
+  id: string;
+  username: string;
+  email?: string;
+  role: ProjectRole | string;
+  granted_at?: string;
+}
+
+export interface ProjectShareTarget {
+  id: string;
+  username: string;
+  email?: string;
+  role: ProjectRole | string;
+}
+
+const hasProjectEditAccess = (project: { role?: ProjectRole | string }): boolean =>
+  project.role === 'Owner' || project.role === 'Admin' || project.role === 'Editor';
+
+const BUILT_IN_DEMO_DESCRIPTIONS = new Set([
+  "Action-focused Ren'Py demo with rich dialogue, images, and audio.",
+  "Branchy Ren'Py demo with server-hosted images and audio.",
+]);
+
+const isBuiltInDemoProject = (project: any): boolean =>
+  project?.name === 'Clockwork Library Demo' &&
+  BUILT_IN_DEMO_DESCRIPTIONS.has(project?.description);
 
 const projectService = {  
   /**
@@ -53,18 +83,20 @@ const projectService = {
       // and calculate additional properties
       // Ensure uniqueness of projects by ID
       const uniqueProjects = new Map<string | number, Project>();
-      projectsArray.forEach((project: any) => {
+      projectsArray.filter((project: any) => !isBuiltInDemoProject(project)).forEach((project: any) => {
         if (!uniqueProjects.has(project.id)) {
           uniqueProjects.set(project.id, {
             id: project.id,
             name: project.name,
             description: project.description || '',
             scriptCount: project.scriptCount || 0,
-            hasEditAccess: project.role === 'Owner' || project.role === 'Editor',
+            hasEditAccess: hasProjectEditAccess(project),
             owner_id: project.owner_id,
             role: project.role,
             created_at: project.created_at,
             updated_at: project.updated_at,
+            last_opened_at: project.last_opened_at,
+            active_users: project.active_users ?? [],
           });
         }
       });
@@ -110,11 +142,12 @@ const projectService = {
         name: response.data.name,
         description: response.data.description || '',
         scriptCount: response.data.scripts ? response.data.scripts.length : 0,
-        hasEditAccess: response.data.role === 'Owner' || response.data.role === 'Editor',
+        hasEditAccess: hasProjectEditAccess(response.data),
         owner_id: response.data.owner_id,
         role: response.data.role,
         created_at: response.data.created_at,
         updated_at: response.data.updated_at,
+        last_opened_at: response.data.last_opened_at,
         active_users: response.data.active_users,
         scripts: response.data.scripts,
       };
@@ -136,6 +169,9 @@ const projectService = {
         id: response.data.id,
         name: response.data.name,
         description: response.data.description || '',
+        owner_id: response.data.owner_id,
+        created_at: response.data.created_at,
+        updated_at: response.data.updated_at,
         hasEditAccess: true
       };
     } catch (error) {
@@ -149,6 +185,19 @@ const projectService = {
    */
   async deleteProject(projectId: string | number): Promise<void> {
     await api.delete(`/projects/${projectId}`);
+  },
+
+  async validateProjectShareTarget(username: string, roleId: string): Promise<ProjectShareTarget> {
+    try {
+      const response = await api.post('/projects/validate-share-target', {
+        user_id: username,
+        role: roleId,
+      });
+      return response.data;
+    } catch (error: any) {
+      console.error(`Error validating project share target ${username} (role: ${roleId}):`, error.response?.data || error.message);
+      throw error;
+    }
   },
 
   /**
@@ -169,22 +218,15 @@ const projectService = {
     }
   },
 
-  /**
-   * Create a new script in a project
-   */
-  async createScript(projectId: string | number, filename: string, content: string): Promise<any> {
-    try {
-      const response = await api.post(`/projects/${projectId}/scripts`, {
-        filename,
-        content
-      });
-      
-      return response.data;
-    } catch (error) {
-      console.error(`Error creating script in project ${projectId}:`, error);
-      throw error;
-    }
-  }
+  async removeProjectMember(projectId: string | number, username: string): Promise<void> {
+    await this.shareProject(projectId, username, null);
+  },
+
+  async markProjectOpened(projectId: string | number): Promise<{ last_opened_at: string }> {
+    const response = await api.post(`/projects/${projectId}/open`);
+    return { last_opened_at: response.data.last_opened_at };
+  },
+
 };
 
 export default projectService;

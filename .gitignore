@@ -3,15 +3,26 @@ venv/
 *.py[cod]
 *.pyo
 *.pyd
+docs/
+!docs/
+docs/*
+!docs/quick-start.md
 *.egg-info/
 dist/
 build/
 *.egg
 .vscode/
 .idea/
+.superpowers/
+.artifacts/
+.agents/
+.codex/
 reactflow-DOCS/
 .pytest_cache/
 node_modules/
+test-results/
+playwright-report/
+artifacts/
 *.log
 backend/uploads/
 debug_temp*
@@ -19,6 +30,11 @@ debug_temp*
 .notes/
 .env
 s.sh
+
+# Private release-working documents retained outside the public Git tree
+AGENTS.md
+UPDATES.md
+design-qa.md
 
 # DB backups
 *.db.bak*

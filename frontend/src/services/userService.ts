@@ -73,6 +73,7 @@ const userService = {
       
       return [
         { id: 'role_owner', name: 'Owner' },
+        { id: 'role_admin', name: 'Admin' },
         { id: 'role_editor', name: 'Editor' },
         { id: 'role_viewer', name: 'Viewer' }
       ];

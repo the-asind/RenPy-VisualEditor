@@ -4,13 +4,17 @@ from unittest.mock import MagicMock, patch, AsyncMock
 import json
 from datetime import datetime, timedelta
 
-from app.services.websocket import ConnectionManager
+from app.api.routes import websocket as websocket_routes
+from app.services.observability.metrics import generate_metrics
+from app.services.websocket import ConnectionManager, WebSocketConnectionLimitError
 
 class MockWebSocket:
     """Mock WebSocket class for testing."""
     
-    def __init__(self):
+    def __init__(self, received_events=None):
         self.sent_messages = []
+        self.sent_bytes = []
+        self.received_events = list(received_events or [])
         self.closed = False
         self.close_code = None
         self.close_reason = None
@@ -22,12 +26,26 @@ class MockWebSocket:
     async def send_text(self, text):
         """Record sent messages."""
         self.sent_messages.append(text)
+
+    async def send_bytes(self, data):
+        """Record sent binary messages."""
+        self.sent_bytes.append(data)
+
+    async def receive(self):
+        """Return the next queued WebSocket event."""
+        if not self.received_events:
+            return {"type": "websocket.disconnect"}
+        return self.received_events.pop(0)
     
     async def close(self, code=1000, reason=None):
         """Record connection close."""
         self.closed = True
         self.close_code = code
         self.close_reason = reason
+
+
+def metrics_text():
+    return generate_metrics().decode("utf-8")
 
 
 @pytest.mark.asyncio
@@ -82,8 +100,7 @@ class TestConnectionManager:
         assert active_message["type"] == "active_users"
     
     async def test_disconnect(self, connection_manager):
-        """Test disconnecting from a project and script."""
-        # Setup - connect to both project and script
+        """Disconnecting a legacy script socket must preserve the user's project socket."""
         project_ws = MockWebSocket()
         script_ws = MockWebSocket()
         project_id = "project123"
@@ -92,23 +109,49 @@ class TestConnectionManager:
         username = "testuser"
         
         await connection_manager.connect_project(project_ws, project_id, user_id, username)
+        await connection_manager.connect_script(script_ws, script_id, user_id, username)
         
-        # Update user session to include both connections
-        connection_manager.user_sessions[user_id].update({
-            "script_id": script_id,
-            "ws": script_ws  # Last connected websocket
-        })
-        
-        # Add to script connections
-        if script_id not in connection_manager.script_connections:
-            connection_manager.script_connections[script_id] = set()
-        connection_manager.script_connections[script_id].add(script_ws)
-        
-        # Disconnect
         await connection_manager.disconnect(script_ws, user_id)
         
-        # Verify user was removed from sessions
-        assert user_id not in connection_manager.user_sessions
+        assert script_ws not in connection_manager.script_connections.get(script_id, set())
+        assert project_ws in connection_manager.project_connections[project_id]
+        assert connection_manager.user_sessions[user_id]["ws"] is project_ws
+
+    async def test_disconnect_keeps_another_project_tab_for_the_same_user(self, connection_manager):
+        """Closing one tab must remove that socket without orphaning another project tab."""
+        first_tab = MockWebSocket()
+        second_tab = MockWebSocket()
+
+        await connection_manager.connect_project(first_tab, "project-a", "same-user", "Same User")
+        await connection_manager.connect_project(second_tab, "project-b", "same-user", "Same User")
+
+        await connection_manager.disconnect(first_tab, "same-user")
+
+        assert first_tab not in connection_manager.project_connections.get("project-a", set())
+        assert second_tab in connection_manager.project_connections["project-b"]
+        assert connection_manager.user_sessions["same-user"]["ws"] is second_tab
+        assert connection_manager._project_connection_total() == 1
+        assert connection_manager._project_room_count() == 1
+
+    async def test_project_connection_limits_apply_per_user_and_room(self):
+        manager = ConnectionManager(max_connections_per_user=2, max_connections_per_project=2)
+        first = MockWebSocket()
+        second = MockWebSocket()
+        over_user_limit = MockWebSocket()
+        over_room_limit = MockWebSocket()
+
+        await manager.connect_project(first, "mouse-project", "mouse-user", "Mouse User")
+        await manager.connect_project(second, "mouse-project", "mouse-user", "Mouse User")
+
+        with pytest.raises(WebSocketConnectionLimitError) as user_error:
+            await manager.connect_project(over_user_limit, "other-project", "mouse-user", "Mouse User")
+        assert user_error.value.scope == "user"
+
+        with pytest.raises(WebSocketConnectionLimitError) as room_error:
+            await manager.connect_project(over_room_limit, "mouse-project", "other-user", "Other User")
+        assert room_error.value.scope == "project"
+        assert over_user_limit not in manager.websocket_sessions
+        assert over_room_limit not in manager.websocket_sessions
     
     async def test_lock_node(self, connection_manager):
         """Test locking a node for editing."""
@@ -618,6 +661,342 @@ class TestConnectionManager:
         assert last["type"] == "active_users"
         assert len(last["users"]) == 1
         assert last["users"][0]["id"] == "u1"
+
+    async def test_project_binary_crdt_update_relay_is_byte_for_byte(self, connection_manager):
+        """Binary CRDT updates should relay to project peers without JSON wrapping."""
+        ws_sender = MockWebSocket()
+        ws_peer = MockWebSocket()
+        ws_other_project = MockWebSocket()
+
+        await connection_manager.connect_project(ws_sender, "project-a", "u1", "User1")
+        await connection_manager.connect_project(ws_peer, "project-a", "u2", "User2")
+        await connection_manager.connect_project(ws_other_project, "project-b", "u3", "User3")
+
+        ws_sender.sent_messages.clear()
+        ws_peer.sent_messages.clear()
+        ws_other_project.sent_messages.clear()
+
+        payload = b"\x00loro-update\xff\x10"
+        await connection_manager.handle_project_crdt_update(
+            websocket=ws_sender,
+            project_id="project-a",
+            update=payload,
+        )
+
+        assert ws_sender.sent_bytes == [payload]
+        assert ws_peer.sent_bytes == [payload]
+        assert ws_other_project.sent_bytes == []
+        assert ws_sender.sent_messages == []
+        assert ws_peer.sent_messages == []
+        assert ws_other_project.sent_messages == []
+
+    async def test_project_binary_crdt_update_over_limit_is_rejected(self, connection_manager, monkeypatch):
+        """Oversized binary CRDT frames should not be relayed to room participants."""
+        monkeypatch.setattr("app.services.websocket.MAX_WS_BINARY_UPDATE_BYTES", 4, raising=False)
+        ws_sender = MockWebSocket()
+        ws_peer = MockWebSocket()
+
+        await connection_manager.connect_project(ws_sender, "project-limit", "u1", "User1")
+        await connection_manager.connect_project(ws_peer, "project-limit", "u2", "User2")
+        ws_sender.sent_messages.clear()
+        ws_peer.sent_messages.clear()
+
+        await connection_manager.handle_project_crdt_update(
+            websocket=ws_sender,
+            project_id="project-limit",
+            update=b"12345",
+        )
+
+        assert ws_sender.sent_bytes == []
+        assert ws_peer.sent_bytes == []
+        assert json.loads(ws_sender.sent_messages[0]) == {
+            "type": "error",
+            "message": "Project CRDT update is too large",
+        }
+
+    async def test_project_presence_json_and_binary_crdt_updates_share_room_without_cross_pollution(
+        self,
+        connection_manager,
+    ):
+        """Project presence JSON and binary CRDT updates should stay on separate frame types."""
+        ws_sender = MockWebSocket()
+        ws_peer = MockWebSocket()
+
+        await connection_manager.connect_project(ws_sender, "project-mixed", "u1", "User1")
+        await connection_manager.connect_project(ws_peer, "project-mixed", "u2", "User2")
+        ws_sender.sent_messages.clear()
+        ws_peer.sent_messages.clear()
+
+        await connection_manager.broadcast_project_active_users("project-mixed")
+        await connection_manager.handle_project_crdt_update(
+            websocket=ws_sender,
+            project_id="project-mixed",
+            update=b"\x01loro-mixed-frame\x02",
+        )
+
+        sender_json = [json.loads(message) for message in ws_sender.sent_messages]
+        peer_json = [json.loads(message) for message in ws_peer.sent_messages]
+        assert sender_json == [
+            {
+                "type": "active_users",
+                "users": sender_json[0]["users"],
+            }
+        ]
+        assert peer_json == [
+            {
+                "type": "active_users",
+                "users": peer_json[0]["users"],
+            }
+        ]
+        assert ws_sender.sent_bytes == [b"\x01loro-mixed-frame\x02"]
+        assert ws_peer.sent_bytes == [b"\x01loro-mixed-frame\x02"]
+
+    async def test_project_connection_metrics_set_current_and_disconnect(self, connection_manager):
+        """Project WebSocket connection metrics should track current totals without ID labels."""
+        ws = MockWebSocket()
+
+        await connection_manager.connect_project(ws, "metrics-project", "u1", "User1")
+        await connection_manager.disconnect(ws, "u1")
+
+        metrics = metrics_text()
+        assert 'rve_ws_project_connections_total{result="success"}' in metrics
+        assert 'rve_ws_project_disconnects_total{reason="client_disconnect"}' in metrics
+        assert "rve_ws_project_connections_current 0.0" in metrics
+        assert "rve_ws_project_rooms_current 0.0" in metrics
+
+    async def test_project_binary_crdt_update_records_binary_metrics(self, connection_manager):
+        """Binary CRDT relay should record frame and byte metrics without parsing update bytes."""
+        ws_sender = MockWebSocket()
+        ws_peer = MockWebSocket()
+        payload = b"\x00metrics-loro-update\xff"
+
+        await connection_manager.connect_project(ws_sender, "metrics-binary-project", "u1", "User1")
+        await connection_manager.connect_project(ws_peer, "metrics-binary-project", "u2", "User2")
+        ws_sender.sent_messages.clear()
+        ws_peer.sent_messages.clear()
+
+        await connection_manager.handle_project_crdt_update(
+            websocket=ws_sender,
+            project_id="metrics-binary-project",
+            update=payload,
+        )
+
+        metrics = metrics_text()
+        assert ws_peer.sent_bytes == [payload]
+        assert 'rve_ws_messages_total{direction="incoming",frame_type="binary",result="success"}' in metrics
+        assert 'rve_ws_messages_total{direction="outgoing",frame_type="binary",result="success"}' in metrics
+        assert 'rve_ws_binary_update_bytes_count{direction="incoming"}' in metrics
+        assert 'rve_ws_binary_update_bytes_count{direction="outgoing"}' in metrics
+        assert 'rve_ws_broadcast_duration_seconds_count{frame_type="binary",result="success"}' in metrics
+
+    async def test_project_websocket_route_records_json_ping_and_invalid_json_metrics(
+        self,
+        connection_manager,
+        monkeypatch,
+    ):
+        """Project WebSocket route should count normalized JSON message types and invalid JSON."""
+        route_manager = ConnectionManager()
+        ws = MockWebSocket(
+            received_events=[
+                {"type": "websocket.receive", "text": json.dumps({"type": "auth", "token": "token"})},
+                {"type": "websocket.receive", "text": json.dumps({"type": "ping"})},
+                {"type": "websocket.receive", "text": "{not-json"},
+                {"type": "websocket.disconnect"},
+            ]
+        )
+
+        class FakeAuthService:
+            def validate_session_token(self, token, project_id):
+                return "route-user"
+
+        class FakeDatabase:
+            def get_user_by_id(self, user_id):
+                return {"id": user_id, "username": "Route User"}
+
+            def get_user_projects(self, user_id):
+                return [{"id": "metrics-route-project"}]
+
+        monkeypatch.setattr(websocket_routes, "auth_service", FakeAuthService())
+        monkeypatch.setattr(websocket_routes, "db_service", FakeDatabase())
+        monkeypatch.setattr(websocket_routes, "connection_manager", route_manager)
+
+        await websocket_routes.project_websocket(ws, "metrics-route-project")
+
+        metrics = metrics_text()
+        assert any(json.loads(message)["type"] == "pong" for message in ws.sent_messages)
+        assert 'rve_ws_json_messages_total{direction="incoming",message_type="ping",result="success"}' in metrics
+        assert 'rve_ws_json_messages_total{direction="outgoing",message_type="pong",result="success"}' in metrics
+        assert 'rve_ws_json_messages_total{direction="incoming",message_type="invalid_json",result="invalid_json"}' in metrics
+
+    async def test_project_websocket_route_uses_session_token_validation(self, monkeypatch):
+        """Project WebSocket auth should use a first-frame session token instead of a URL query token."""
+        route_manager = ConnectionManager()
+        ws = MockWebSocket(
+            received_events=[
+                {"type": "websocket.receive", "text": json.dumps({"type": "auth", "token": "session-token"})},
+                {"type": "websocket.disconnect"},
+            ]
+        )
+        session_tokens = []
+
+        async def fail_if_access_token_path_is_used(token):
+            raise AssertionError("project websocket should not use the login access-token dependency")
+
+        class FakeAuthService:
+            def validate_session_token(self, token, project_id):
+                session_tokens.append((token, project_id))
+                return "route-user"
+
+        class FakeDatabase:
+            def get_user_by_id(self, user_id):
+                return {"id": user_id, "username": "Route User"}
+
+            def get_user_projects(self, user_id):
+                return [{"id": "metrics-route-project"}]
+
+        monkeypatch.setattr(websocket_routes, "get_current_user", fail_if_access_token_path_is_used, raising=False)
+        monkeypatch.setattr(websocket_routes, "auth_service", FakeAuthService(), raising=False)
+        monkeypatch.setattr(websocket_routes, "db_service", FakeDatabase())
+        monkeypatch.setattr(websocket_routes, "connection_manager", route_manager)
+
+        await websocket_routes.project_websocket(ws, "metrics-route-project")
+
+        assert session_tokens == [("session-token", "metrics-route-project")]
+        assert ws.close_code is None
+
+    async def test_project_cursor_activity_relays_typed_action_target(self, monkeypatch):
+        """Action editor presence should keep a typed activity and stable node target."""
+        route_manager = ConnectionManager()
+        peer = MockWebSocket()
+        await route_manager.connect_project(peer, "presence-project", "peer-user", "Peer User")
+        peer.sent_messages.clear()
+        sender = MockWebSocket(
+            received_events=[
+                {"type": "websocket.receive", "text": json.dumps({"type": "auth", "token": "token"})},
+                {
+                    "type": "websocket.receive",
+                    "text": json.dumps({
+                        "type": "cursor_update",
+                        "x": 120,
+                        "y": 240,
+                        "activity": "editing_action",
+                        "targetNodeId": "node-intro",
+                    }),
+                },
+                {"type": "websocket.disconnect"},
+            ]
+        )
+
+        class FakeAuthService:
+            def validate_session_token(self, token, project_id):
+                return "sender-user"
+
+        class FakeDatabase:
+            def get_user_by_id(self, user_id):
+                return {"id": user_id, "username": "Sender User"}
+
+            def get_user_projects(self, user_id):
+                return [{"id": "presence-project", "role": "Editor"}]
+
+        monkeypatch.setattr(websocket_routes, "auth_service", FakeAuthService(), raising=False)
+        monkeypatch.setattr(websocket_routes, "db_service", FakeDatabase())
+        monkeypatch.setattr(websocket_routes, "connection_manager", route_manager)
+
+        await websocket_routes.project_websocket(sender, "presence-project")
+
+        cursor_messages = [
+            json.loads(message)
+            for message in peer.sent_messages
+            if json.loads(message).get("type") == "cursor_update"
+        ]
+        assert cursor_messages == [{
+            "type": "cursor_update",
+            "userId": "sender-user",
+            "userName": "Sender User",
+            "x": 120,
+            "y": 240,
+            "activity": "editing_action",
+            "targetNodeId": "node-intro",
+        }]
+
+    async def test_project_websocket_viewer_cannot_relay_binary_crdt_updates(self, monkeypatch):
+        """Viewers may observe a project room but must not mutate peers through binary updates."""
+        route_manager = ConnectionManager()
+        peer = MockWebSocket()
+        await route_manager.connect_project(peer, "viewer-project", "editor-user", "Editor User")
+        peer.sent_messages.clear()
+
+        viewer = MockWebSocket(
+            received_events=[
+                {"type": "websocket.receive", "text": json.dumps({"type": "auth", "token": "viewer-token"})},
+                {"type": "websocket.receive", "bytes": b"viewer-must-not-write"},
+                {"type": "websocket.disconnect"},
+            ]
+        )
+
+        class FakeAuthService:
+            def validate_session_token(self, token, project_id):
+                return "viewer-user"
+
+        class FakeDatabase:
+            def get_user_by_id(self, user_id):
+                return {"id": user_id, "username": "Viewer User"}
+
+            def get_user_projects(self, user_id):
+                return [{"id": "viewer-project", "role": "Viewer"}]
+
+        monkeypatch.setattr(websocket_routes, "auth_service", FakeAuthService(), raising=False)
+        monkeypatch.setattr(websocket_routes, "db_service", FakeDatabase())
+        monkeypatch.setattr(websocket_routes, "connection_manager", route_manager)
+
+        await websocket_routes.project_websocket(viewer, "viewer-project")
+
+        assert peer.sent_bytes == []
+        assert viewer.sent_bytes == []
+        assert any("permission" in json.loads(message).get("message", "").lower() for message in viewer.sent_messages)
+
+    async def test_project_websocket_share_project_requires_admin_role(self, monkeypatch):
+        """Project WebSocket share messages must use the same Owner/Admin boundary as REST sharing."""
+        route_manager = ConnectionManager()
+        ws = MockWebSocket(
+            received_events=[
+                {"type": "websocket.receive", "text": json.dumps({"type": "auth", "token": "viewer-token"})},
+                {
+                    "type": "websocket.receive",
+                    "text": json.dumps({
+                        "type": "share_project",
+                        "target_user_id": "target-user",
+                        "role_id": "role_editor",
+                    }),
+                },
+                {"type": "websocket.disconnect"},
+            ]
+        )
+        grants = []
+
+        class FakeAuthService:
+            def validate_session_token(self, token, project_id):
+                return "viewer-user"
+
+        class FakeDatabase:
+            def get_user_by_id(self, user_id):
+                return {"id": user_id, "username": "Viewer User"}
+
+            def get_user_projects(self, user_id):
+                return [{"id": "shared-project", "role": "Viewer"}]
+
+            def grant_project_access(self, project_id, target_user_id, role_id):
+                grants.append((project_id, target_user_id, role_id))
+                return True
+
+        monkeypatch.setattr(websocket_routes, "auth_service", FakeAuthService(), raising=False)
+        monkeypatch.setattr(websocket_routes, "db_service", FakeDatabase())
+        monkeypatch.setattr(websocket_routes, "connection_manager", route_manager)
+
+        await websocket_routes.project_websocket(ws, "shared-project")
+
+        assert grants == []
+        assert any("permission" in json.loads(message).get("message", "").lower() for message in ws.sent_messages)
 
     async def test_script_active_users_updates(self, connection_manager):
         """Users editing the same script should see updated active user lists."""

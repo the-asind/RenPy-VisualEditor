@@ -1,0 +1,10 @@
+RenPy Visual Editor
+Copyright 2026 the-asind and contributors.
+
+Licensed under the Apache License, Version 2.0.
+Third-party dependencies retain their respective licenses and notices.
+Frontend dependency license texts are provided in
+frontend/public/THIRD_PARTY_NOTICES.txt and served at /THIRD_PARTY_NOTICES.txt.
+
+Clockwork Library demo scripts, images and audio were generated with AI
+specifically for this project, as confirmed by the project creator.

@@ -6,18 +6,19 @@ import ru from './locales/ru.json';
 import ja from './locales/ja.json';
 import zh from './locales/zh.json';
 import de from './locales/de.json';
+import { editorTranslations } from './locales/editorTranslations';
 
-const savedLanguage = localStorage.getItem('language') || 'en';
+const savedLanguage = typeof localStorage === 'undefined' ? 'en' : localStorage.getItem('language') || 'en';
 
 i18n
   .use(initReactI18next)
   .init({
     resources: {
-      en: { translation: en },
-      ru: { translation: ru },
-      ja: { translation: ja },
-      zh: { translation: zh },
-      de: { translation: de },
+      en: { translation: { ...en, ...editorTranslations.en } },
+      ru: { translation: { ...ru, ...editorTranslations.ru } },
+      ja: { translation: { ...ja, ...editorTranslations.ja } },
+      zh: { translation: { ...zh, ...editorTranslations.zh } },
+      de: { translation: { ...de, ...editorTranslations.de } },
     },
     lng: savedLanguage,
     fallbackLng: 'en',
@@ -25,7 +26,9 @@ i18n
   });
 
 i18n.on('languageChanged', (lng) => {
-  localStorage.setItem('language', lng);
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem('language', lng);
+  }
 });
 
 export default i18n;

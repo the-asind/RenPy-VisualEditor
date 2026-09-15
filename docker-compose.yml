@@ -6,24 +6,65 @@ services:
       args:
         VITE_API_URL: ${VITE_API_URL}
         VITE_WS_URL: ${VITE_WS_URL}
+        VITE_HELP_URL: ${VITE_HELP_URL:-https://github.com/the-asind/RenPy-VisualEditor/blob/main/docs/quick-start.md}
+        VITE_BUG_REPORT_URL: ${VITE_BUG_REPORT_URL:-https://github.com/the-asind/RenPy-VisualEditor/issues/new?template=bug_report.yml&title=%5BBug%5D%20}
     restart: unless-stopped
+    mem_limit: 128m
+    cpus: 0.50
+    pids_limit: 64
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
     ports:
-      - "5137:80"
+      - "127.0.0.1:5137:80"
     environment:
       - VITE_API_URL=${VITE_API_URL}
       - VITE_WS_URL=${VITE_WS_URL}
 
   backend:
     build:
-      context: ./backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: backend/Dockerfile
     restart: unless-stopped
+    mem_limit: 1g
+    cpus: 1.50
+    pids_limit: 128
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
     ports:
-      - "9000:9000"
+      - "127.0.0.1:9000:9000"
     volumes:
-      - db-data:/app/database
+      - db-data:/app/data
     environment:
-      - DATABASE_PATH=/app/database/renpy_editor.db
+      - DATABASE_PATH=/app/data/renpy_editor.db
+      - APP_ENV=production
+      - FORWARDED_ALLOW_IPS=${FORWARDED_ALLOW_IPS:-127.0.0.1}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?JWT_SECRET_KEY is required}
+      - CORS_ALLOW_ORIGINS=${CORS_ALLOW_ORIGINS:?CORS_ALLOW_ORIGINS is required}
+      - MAX_OWNED_PROJECTS_PER_USER=${MAX_OWNED_PROJECTS_PER_USER:-10}
+      - MAX_OWNER_STORAGE_BYTES=${MAX_OWNER_STORAGE_BYTES:-33554432}
+      - MAX_HTTP_BODY_BYTES=${MAX_HTTP_BODY_BYTES:-10485760}
+      - MAX_HEAVY_REQUESTS=${MAX_HEAVY_REQUESTS:-2}
+      - MAX_WS_CONNECTIONS_TOTAL=${MAX_WS_CONNECTIONS_TOTAL:-200}
+      - MAX_WS_CONNECTIONS_PER_IP=${MAX_WS_CONNECTIONS_PER_IP:-20}
+      - MAX_WS_CONNECTIONS_PER_USER=${MAX_WS_CONNECTIONS_PER_USER:-5}
+      - MAX_WS_CONNECTIONS_PER_PROJECT=${MAX_WS_CONNECTIONS_PER_PROJECT:-100}
+      - MAX_WS_MESSAGES_PER_WINDOW=${MAX_WS_MESSAGES_PER_WINDOW:-300}
+      - MAX_WS_BYTES_PER_WINDOW=${MAX_WS_BYTES_PER_WINDOW:-8388608}
+      - WS_RATE_WINDOW_SECONDS=${WS_RATE_WINDOW_SECONDS:-10}
+      - RATE_LIMIT_REGISTRATION_REQUESTS=${RATE_LIMIT_REGISTRATION_REQUESTS:-10}
+      - RATE_LIMIT_REGISTRATION_WINDOW_SECONDS=${RATE_LIMIT_REGISTRATION_WINDOW_SECONDS:-3600}
+      - RATE_LIMIT_LOGIN_REQUESTS=${RATE_LIMIT_LOGIN_REQUESTS:-30}
+      - RATE_LIMIT_LOGIN_WINDOW_SECONDS=${RATE_LIMIT_LOGIN_WINDOW_SECONDS:-60}
+      - RATE_LIMIT_PROJECT_CREATE_REQUESTS=${RATE_LIMIT_PROJECT_CREATE_REQUESTS:-30}
+      - RATE_LIMIT_PROJECT_CREATE_WINDOW_SECONDS=${RATE_LIMIT_PROJECT_CREATE_WINDOW_SECONDS:-60}
+      - RATE_LIMIT_DEMO_PREVIEW_REQUESTS=${RATE_LIMIT_DEMO_PREVIEW_REQUESTS:-120}
+      - RATE_LIMIT_DEMO_PREVIEW_WINDOW_SECONDS=${RATE_LIMIT_DEMO_PREVIEW_WINDOW_SECONDS:-60}
       - LOG_LEVEL=info
 
 volumes:

@@ -1,0 +1,58 @@
+services:
+  zabbix-db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${ZABBIX_POSTGRES_DB:-zabbix}
+      POSTGRES_USER: ${ZABBIX_POSTGRES_USER:-zabbix}
+      POSTGRES_PASSWORD: ${ZABBIX_POSTGRES_PASSWORD:-zabbix}
+    volumes:
+      - zabbix-db-data:/var/lib/postgresql/data
+
+  zabbix-server:
+    image: zabbix/zabbix-server-pgsql:alpine-7.4-latest
+    restart: unless-stopped
+    ports:
+      - "10051:10051"
+    environment:
+      DB_SERVER_HOST: zabbix-db
+      POSTGRES_DB: ${ZABBIX_POSTGRES_DB:-zabbix}
+      POSTGRES_USER: ${ZABBIX_POSTGRES_USER:-zabbix}
+      POSTGRES_PASSWORD: ${ZABBIX_POSTGRES_PASSWORD:-zabbix}
+      ZBX_STARTHTTPPOLLERS: 5
+    volumes:
+      - ./ops/zabbix/scripts:/usr/lib/zabbix/externalscripts:ro
+    depends_on:
+      - zabbix-db
+
+  zabbix-web:
+    image: zabbix/zabbix-web-nginx-pgsql:alpine-7.4-latest
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      DB_SERVER_HOST: zabbix-db
+      POSTGRES_DB: ${ZABBIX_POSTGRES_DB:-zabbix}
+      POSTGRES_USER: ${ZABBIX_POSTGRES_USER:-zabbix}
+      POSTGRES_PASSWORD: ${ZABBIX_POSTGRES_PASSWORD:-zabbix}
+      ZBX_SERVER_HOST: zabbix-server
+      PHP_TZ: ${ZABBIX_PHP_TZ:-Asia/Novosibirsk}
+    depends_on:
+      - zabbix-db
+      - zabbix-server
+
+  zabbix-agent2:
+    image: zabbix/zabbix-agent2:alpine-7.4-latest
+    restart: unless-stopped
+    environment:
+      ZBX_HOSTNAME: renpy-visual-editor-local
+      ZBX_SERVER_HOST: zabbix-server
+      ZBX_ACTIVEALLOW: "true"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      - zabbix-server
+
+volumes:
+  zabbix-db-data:
+    name: renpy_editor_zabbix_db

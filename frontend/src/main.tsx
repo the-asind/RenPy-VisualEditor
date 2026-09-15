@@ -6,7 +6,6 @@ import './index.css';
 import './i18n';
 import { ThemeProviderWrapper } from './contexts/ThemeContext';
 import { AuthProvider } from './contexts/AuthContext';
-import { CollabProvider } from './contexts/CollabContext';
 
 const rootElement = document.getElementById('root');
 
@@ -15,11 +14,9 @@ if (rootElement) {
     <React.StrictMode>
       <BrowserRouter> {/* Wrap with BrowserRouter */} 
         <AuthProvider>
-          <CollabProvider>
-            <ThemeProviderWrapper>
-              <App />
-            </ThemeProviderWrapper>
-          </CollabProvider>
+          <ThemeProviderWrapper>
+            <App />
+          </ThemeProviderWrapper>
         </AuthProvider>
       </BrowserRouter>
     </React.StrictMode>,

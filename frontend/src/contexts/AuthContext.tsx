@@ -12,8 +12,10 @@ type AuthContextType = {
   isAuthenticated: boolean;
   token: string | null;
   user: UserInfo | null;
-  login: (username: string, password: string) => Promise<boolean>;
-  register: (username: string, email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  login: (username: string, password: string, recaptchaToken?: string) => Promise<boolean>;
+  register: (username: string, email: string, password: string, recaptchaToken?: string) => Promise<{ success: boolean; error?: string }>;
+  updateAccount: (data: { username?: string; email?: string }) => Promise<{ success: boolean; error?: string }>;
+  deleteAccount: () => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
 };
 
@@ -63,11 +65,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [token]);
 
   // Login function
-  const login = async (username: string, password: string): Promise<boolean> => {
+  const login = async (username: string, password: string, recaptchaToken?: string): Promise<boolean> => {
     try {
       const formData = new FormData();
       formData.append('username', username);
       formData.append('password', password);
+      if (recaptchaToken) {
+        formData.append('recaptcha_token', recaptchaToken);
+      }
       
       const response = await fetch(`${API_URL}/auth/token`, {
         method: 'POST',
@@ -102,19 +107,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   // Register function
-  const register = async (username: string, email: string, password: string): Promise<{ success: boolean; error?: string }> => {
+  const register = async (username: string, email: string, password: string, recaptchaToken?: string): Promise<{ success: boolean; error?: string }> => {
     try {
       const response = await fetch(`${API_URL}/auth/register`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ username, email, password })
+        body: JSON.stringify({ username, email, password, recaptcha_token: recaptchaToken })
       });
       
       if (response.ok) {
         // Auto-login after registration
-        const loginSuccess = await login(username, password);
+        const loginSuccess = await login(username, password, recaptchaToken);
         return { success: loginSuccess };
       }
       
@@ -139,6 +144,64 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const formatApiError = async (response: Response): Promise<string> => {
+    const errorData: ApiError = await response.json().catch(() => ({ detail: 'Unknown error' }));
+    if (Array.isArray(errorData.detail)) {
+      return errorData.detail.map(err => err.msg).join(', ');
+    }
+    return String(errorData.detail);
+  };
+
+  const updateAccount = async (data: { username?: string; email?: string }): Promise<{ success: boolean; error?: string }> => {
+    if (!token) {
+      return { success: false, error: 'Not authenticated' };
+    }
+    try {
+      const response = await fetch(`${API_URL}/auth/me`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(data)
+      });
+      if (response.ok) {
+        const userData = await response.json();
+        setUser(userData);
+        return { success: true };
+      }
+      return { success: false, error: await formatApiError(response) };
+    } catch (error) {
+      console.error('Account update failed:', error);
+      return { success: false, error: 'Network error. Please check your connection.' };
+    }
+  };
+
+  const deleteAccount = async (): Promise<{ success: boolean; error?: string }> => {
+    if (!token) {
+      return { success: false, error: 'Not authenticated' };
+    }
+    try {
+      const response = await fetch(`${API_URL}/auth/me`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+      if (response.ok) {
+        localStorage.removeItem('auth_token');
+        setToken(null);
+        setUser(null);
+        navigate('/login');
+        return { success: true };
+      }
+      return { success: false, error: await formatApiError(response) };
+    } catch (error) {
+      console.error('Account deletion failed:', error);
+      return { success: false, error: 'Network error. Please check your connection.' };
+    }
+  };
+
   // Logout function
   const logout = () => {
     localStorage.removeItem('auth_token');
@@ -155,6 +218,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         user,
         login,
         register,
+        updateAccount,
+        deleteAccount,
         logout
       }}
     >

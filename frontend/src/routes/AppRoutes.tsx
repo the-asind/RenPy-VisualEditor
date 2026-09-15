@@ -3,7 +3,6 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import EditorPage from '../components/EditorPage';
 import { HomePage, LoginPage, RegisterPage } from '../pages';
-import { useTranslation } from 'react-i18next';
 
 // Authentication guard component
 const RequireAuth: React.FC<{ children: JSX.Element }> = ({ children }) => {
@@ -12,7 +11,6 @@ const RequireAuth: React.FC<{ children: JSX.Element }> = ({ children }) => {
 };
 
 const AppRoutes = () => {
-  const { t } = useTranslation();
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
@@ -27,7 +25,7 @@ const AppRoutes = () => {
         path="/projects"
         element={
           <RequireAuth>
-            <div>{t('placeholder.projects')}</div>
+            <Navigate to="/" replace />
           </RequireAuth>
         }
       />
@@ -35,7 +33,7 @@ const AppRoutes = () => {
         path="/users"
         element={
           <RequireAuth>
-            <div>{t('placeholder.users')}</div>
+            <Navigate to="/" replace />
           </RequireAuth>
         }
       />
@@ -43,7 +41,7 @@ const AppRoutes = () => {
         path="/profile"
         element={
           <RequireAuth>
-            <div>{t('placeholder.profile')}</div>
+            <Navigate to="/" replace />
           </RequireAuth>
         }
       />

@@ -1,0 +1,392 @@
+zabbix_export:
+  version: '7.4'
+  template_groups:
+    - uuid: 1f1c93b0e95f4e66875918cf3dcb9e15
+      name: RenPy Visual Editor
+  templates:
+    - uuid: 13aa56c8a33b4e87a221b5c6216bf546
+      template: Template App RenPy Visual Editor SaaS
+      name: Template App RenPy Visual Editor SaaS
+      groups:
+        - name: RenPy Visual Editor
+      tags:
+        - tag: service
+          value: renpy-visual-editor
+      macros:
+        - macro: '{$RVE_FRONTEND_URL}'
+          value: http://frontend/
+          description: Frontend URL reachable from Zabbix.
+        - macro: '{$RVE_BACKEND_URL}'
+          value: http://backend:9000
+          description: Backend URL reachable from Zabbix.
+        - macro: '{$RVE_PROMETHEUS_URL}'
+          value: http://prometheus:9090
+          description: Prometheus URL reachable from Zabbix.
+        - macro: '{$RVE_GRAFANA_URL}'
+          value: http://grafana:3000
+          description: Grafana URL reachable from Zabbix.
+        - macro: '{$RVE_HEALTH_WARN_MS}'
+          value: '1000'
+          description: Backend health latency warning threshold in milliseconds.
+        - macro: '{$RVE_FRONTEND_WARN_MS}'
+          value: '2000'
+          description: Frontend latency warning threshold in milliseconds.
+        - macro: '{$RVE_PROMETHEUS_QUERY_WARN}'
+          value: '0'
+          description: Non-zero Prometheus bridge values create incident warnings.
+        - macro: '{$RVE_SYNTH_USERNAME}'
+          value: ''
+          description: Optional synthetic account username. Keep empty until configured outside the repository.
+        - macro: '{$RVE_SYNTH_PASSWORD}'
+          value: ''
+          type: SECRET_TEXT
+          description: Optional synthetic account password. Keep empty until configured outside the repository.
+      items:
+        - uuid: bb5f7c31735045f9b0d2b6d21307a7c1
+          name: Frontend root HTTP body
+          type: HTTP_AGENT
+          key: rve.frontend.status
+          delay: 1m
+          history: 7d
+          trends: '0'
+          value_type: TEXT
+          url: '{$RVE_FRONTEND_URL}'
+          status_codes: '200,301,302,304'
+          tags:
+            - tag: component
+              value: frontend
+            - tag: layer
+              value: http
+        - uuid: 6a95cf7c1c2c4774b1a26ec226163b4f
+          name: Backend health HTTP body
+          type: HTTP_AGENT
+          key: rve.backend.health.status
+          delay: 30s
+          history: 7d
+          trends: '0'
+          value_type: TEXT
+          url: '{$RVE_BACKEND_URL}/health'
+          status_codes: '200'
+          tags:
+            - tag: component
+              value: backend
+            - tag: layer
+              value: http
+        - uuid: 59a9b4d8ef204dfe94c64cf66dd0acb6
+          name: Backend health response time
+          type: HTTP_AGENT
+          key: rve.backend.health.time
+          delay: 30s
+          history: 7d
+          value_type: FLOAT
+          units: s
+          url: '{$RVE_BACKEND_URL}/health'
+          status_codes: '200'
+          retrieve_mode: HEADERS
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - 'return Number(value.length >= 0 ? 0 : 0);'
+          tags:
+            - tag: component
+              value: backend
+            - tag: layer
+              value: http
+        - uuid: f1a7d1b5e2e84250a1d934ef084b778e
+          name: Backend metrics endpoint body
+          type: HTTP_AGENT
+          key: rve.backend.metrics.status
+          delay: 1m
+          history: 7d
+          trends: '0'
+          value_type: TEXT
+          url: '{$RVE_BACKEND_URL}/metrics'
+          status_codes: '200'
+          tags:
+            - tag: component
+              value: backend
+            - tag: layer
+              value: http
+        - uuid: cbb91310c17d4fd3a2b3e87fc9053b77
+          name: Prometheus ready body
+          type: HTTP_AGENT
+          key: rve.prometheus.ready.status
+          delay: 1m
+          history: 7d
+          trends: '0'
+          value_type: TEXT
+          url: '{$RVE_PROMETHEUS_URL}/-/ready'
+          status_codes: '200'
+          tags:
+            - tag: component
+              value: prometheus
+            - tag: layer
+              value: http
+        - uuid: 947b87ed6f1b48229ce99814d3e135c4
+          name: Prometheus backend target health
+          type: HTTP_AGENT
+          key: rve.prometheus.backend.target.health
+          delay: 1m
+          history: 7d
+          trends: '0'
+          value_type: TEXT
+          url: '{$RVE_PROMETHEUS_URL}/api/v1/targets'
+          status_codes: '200'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.data.activeTargets[?(@.labels.job=="renpy-visual-editor-backend")].health.first()'
+          tags:
+            - tag: component
+              value: prometheus
+            - tag: layer
+              value: prometheus-bridge
+        - uuid: d6f1a8196e964533a436c4ecdf2f9f31
+          name: Grafana health body
+          type: HTTP_AGENT
+          key: rve.grafana.health.status
+          delay: 1m
+          history: 7d
+          trends: '0'
+          value_type: TEXT
+          url: '{$RVE_GRAFANA_URL}/api/health'
+          status_codes: '200'
+          tags:
+            - tag: component
+              value: grafana
+            - tag: layer
+              value: http
+        - uuid: 09f626907b164ae28ed7d3dd706ed899
+          name: Prometheus backend 5xx rate
+          type: HTTP_AGENT
+          key: rve.prometheus.backend.5xx.rate
+          delay: 1m
+          history: 7d
+          value_type: FLOAT
+          url: '{$RVE_PROMETHEUS_URL}/api/v1/query?query=sum(rate(rve_http_requests_total{status_class="5xx"}[5m]))'
+          status_codes: '200'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.data.result[0].value[1]'
+          tags:
+            - tag: component
+              value: backend
+            - tag: layer
+              value: prometheus-bridge
+        - uuid: b2dd558a6242498e9c2d2bb3f4120879
+          name: Prometheus snapshot save failure rate
+          type: HTTP_AGENT
+          key: rve.prometheus.snapshot.save.failure.rate
+          delay: 1m
+          history: 7d
+          value_type: FLOAT
+          url: '{$RVE_PROMETHEUS_URL}/api/v1/query?query=sum(rate(rve_crdt_snapshot_saves_total{result!="success"}[5m]))'
+          status_codes: '200'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.data.result[0].value[1]'
+          tags:
+            - tag: component
+              value: storage
+            - tag: layer
+              value: prometheus-bridge
+        - uuid: 87e9b5f1924d479f9c13b991cc0e59ad
+          name: Prometheus Loro bridge failure rate
+          type: HTTP_AGENT
+          key: rve.prometheus.loro.bridge.failure.rate
+          delay: 1m
+          history: 7d
+          value_type: FLOAT
+          url: '{$RVE_PROMETHEUS_URL}/api/v1/query?query=sum(rate(rve_loro_bridge_runs_total{result!="success"}[5m]))'
+          status_codes: '200'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.data.result[0].value[1]'
+          tags:
+            - tag: component
+              value: backend
+            - tag: layer
+              value: prometheus-bridge
+        - uuid: d8bb6368d9a141bca34e0f72e0ca204c
+          name: Prometheus import failure rate
+          type: HTTP_AGENT
+          key: rve.prometheus.import.failure.rate
+          delay: 1m
+          history: 7d
+          value_type: FLOAT
+          url: '{$RVE_PROMETHEUS_URL}/api/v1/query?query=sum(rate(rve_graph_import_requests_total{result!="success"}[5m]))'
+          status_codes: '200'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.data.result[0].value[1]'
+          tags:
+            - tag: component
+              value: backend
+            - tag: layer
+              value: prometheus-bridge
+        - uuid: 9cf5f3e7d5f243eeb75fa30905d8b68c
+          name: Prometheus export failure rate
+          type: HTTP_AGENT
+          key: rve.prometheus.export.failure.rate
+          delay: 1m
+          history: 7d
+          value_type: FLOAT
+          url: '{$RVE_PROMETHEUS_URL}/api/v1/query?query=sum(rate(rve_graph_export_requests_total{result!="success"}[5m]))'
+          status_codes: '200'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.data.result[0].value[1]'
+          tags:
+            - tag: component
+              value: backend
+            - tag: layer
+              value: prometheus-bridge
+        - uuid: fd74207a083c4472a55899d924f7f6ce
+          name: Auth synthetic status
+          type: EXTERNAL
+          key: 'auth_synthetic_check.py["{$RVE_BACKEND_URL}","{$RVE_SYNTH_USERNAME}","{$RVE_SYNTH_PASSWORD}"]'
+          delay: 5m
+          history: 7d
+          value_type: UNSIGNED
+          status: DISABLED
+          description: Enable only after configuring a dedicated synthetic account on the host.
+          tags:
+            - tag: component
+              value: synthetic
+            - tag: layer
+              value: http
+        - uuid: c9a55d88727e4d22ac8edddae95a5bc5
+          name: ProjectGraph synthetic status
+          type: EXTERNAL
+          key: 'projectgraph_synthetic_check.py["{$RVE_BACKEND_URL}","{$RVE_SYNTH_USERNAME}","{$RVE_SYNTH_PASSWORD}"]'
+          delay: 15m
+          history: 7d
+          value_type: UNSIGNED
+          status: DISABLED
+          description: Staging-only disposable ProjectGraph import, snapshot, export, and cleanup check.
+          tags:
+            - tag: component
+              value: synthetic
+            - tag: layer
+              value: http
+      httptests:
+        - uuid: 83cb9b9697b847109b1b1a6c7b5bfa94
+          name: Frontend availability
+          delay: 1m
+          steps:
+            - name: Frontend root
+              url: '{$RVE_FRONTEND_URL}'
+              status_codes: '200,301,302,304'
+        - uuid: a044a489c6aa4d96b3f8b5664ed53415
+          name: Backend health
+          delay: 30s
+          steps:
+            - name: Backend health
+              url: '{$RVE_BACKEND_URL}/health'
+              status_codes: '200'
+        - uuid: d0ae7bd9e8214dbe8c4b3e4af8475012
+          name: Prometheus readiness
+          delay: 1m
+          steps:
+            - name: Prometheus ready
+              url: '{$RVE_PROMETHEUS_URL}/-/ready'
+              status_codes: '200'
+        - uuid: 263f1a09368a4972a4f117a170d30bd7
+          name: Grafana health
+          delay: 1m
+          steps:
+            - name: Grafana health
+              url: '{$RVE_GRAFANA_URL}/api/health'
+              status_codes: '200'
+      triggers:
+        - uuid: b9bd77b08fed4d7fafabdfd8bd27b5bc
+          expression: 'last(/Template App RenPy Visual Editor SaaS/web.test.fail[Backend health])<>0'
+          name: Backend health is unavailable
+          priority: HIGH
+          tags:
+            - tag: component
+              value: backend
+        - uuid: bb3b221df24240eeb8e91165dc85e5a8
+          expression: 'last(/Template App RenPy Visual Editor SaaS/web.test.fail[Frontend availability])<>0'
+          name: Frontend is unavailable
+          priority: HIGH
+          tags:
+            - tag: component
+              value: frontend
+        - uuid: a3766b3932a44935974b39be9cd8de9b
+          expression: 'last(/Template App RenPy Visual Editor SaaS/web.test.fail[Prometheus readiness])<>0'
+          name: Prometheus is unavailable
+          priority: WARNING
+          tags:
+            - tag: component
+              value: prometheus
+        - uuid: 9421fd72840248e595ddfac208771e09
+          expression: 'last(/Template App RenPy Visual Editor SaaS/web.test.fail[Grafana health])<>0'
+          name: Grafana is unavailable
+          priority: WARNING
+          tags:
+            - tag: component
+              value: grafana
+        - uuid: f9f44decc6054c73930515a59e83b75a
+          expression: 'last(/Template App RenPy Visual Editor SaaS/rve.prometheus.backend.target.health,#2)<>"up"'
+          name: Prometheus backend scrape target is not up
+          priority: HIGH
+          tags:
+            - tag: component
+              value: prometheus
+        - uuid: 8f553822a6e449ba96b2efac5ece783e
+          expression: 'last(/Template App RenPy Visual Editor SaaS/rve.prometheus.backend.5xx.rate)>0'
+          name: Backend 5xx rate is above zero
+          priority: AVERAGE
+          tags:
+            - tag: component
+              value: backend
+        - uuid: 6040e7c2bbd54b85a754bcf4a188ca87
+          expression: 'last(/Template App RenPy Visual Editor SaaS/rve.prometheus.snapshot.save.failure.rate)>0'
+          name: Snapshot save failures are above zero
+          priority: HIGH
+          tags:
+            - tag: component
+              value: storage
+        - uuid: 993f36a7dc5e4ae7a876c78e2a0fe22e
+          expression: 'last(/Template App RenPy Visual Editor SaaS/rve.prometheus.loro.bridge.failure.rate)>0'
+          name: Loro bridge failures are above zero
+          priority: AVERAGE
+          tags:
+            - tag: component
+              value: backend
+        - uuid: 470694964f9943389a7445c225f8534
+          expression: 'last(/Template App RenPy Visual Editor SaaS/rve.prometheus.import.failure.rate)>0'
+          name: ProjectGraph import failures are above zero
+          priority: AVERAGE
+          tags:
+            - tag: component
+              value: backend
+        - uuid: 01368f5ebf994b6f999677ca5b540794
+          expression: 'last(/Template App RenPy Visual Editor SaaS/rve.prometheus.export.failure.rate)>0'
+          name: ProjectGraph export failures are above zero
+          priority: AVERAGE
+          tags:
+            - tag: component
+              value: backend
+        - uuid: e602f34657eb456a97366b9cf5c9cd5c
+          expression: 'last(/Template App RenPy Visual Editor SaaS/auth_synthetic_check.py["{$RVE_BACKEND_URL}","{$RVE_SYNTH_USERNAME}","{$RVE_SYNTH_PASSWORD}"])=0'
+          name: Auth synthetic check failed
+          priority: HIGH
+          status: DISABLED
+          tags:
+            - tag: component
+              value: synthetic
+        - uuid: fb7cdbef3de04b8aa38ebf5795fdca62
+          expression: 'last(/Template App RenPy Visual Editor SaaS/projectgraph_synthetic_check.py["{$RVE_BACKEND_URL}","{$RVE_SYNTH_USERNAME}","{$RVE_SYNTH_PASSWORD}"])=0'
+          name: ProjectGraph synthetic check failed
+          priority: HIGH
+          status: DISABLED
+          tags:
+            - tag: component
+              value: synthetic

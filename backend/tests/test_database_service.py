@@ -4,11 +4,12 @@ import pytest
 import sqlite3
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from datetime import datetime, timedelta
 from unittest.mock import patch
 
-from app.services.database import DatabaseService, ScriptCache
+from app.services.database import DatabaseService, ProjectQuotaExceededError, ScriptCache
 
 class TestScriptCache:
     """Test suite for ScriptCache."""
@@ -285,6 +286,33 @@ class TestDatabaseService:
         assert project is not None
         assert project['name'] == project_name
         assert project['owner_id'] == user_id
+
+    def test_owned_project_quota_is_atomic_for_concurrent_creates(self, populated_db):
+        """Two concurrent requests cannot consume the same final project slot."""
+        db_service = populated_db['db_service']
+        user_id = populated_db['user2_id']
+
+        def create_project(project_name):
+            try:
+                db_service.create_project(
+                    project_name,
+                    user_id,
+                    max_owned_projects=1,
+                )
+                return "created"
+            except ProjectQuotaExceededError:
+                return "limited"
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            outcomes = list(executor.map(create_project, ["RenPy Mouse A", "RenPy Mouse B"]))
+
+        assert sorted(outcomes) == ["created", "limited"]
+        with db_service._get_connection() as conn:
+            owned_count = conn.execute(
+                "SELECT COUNT(*) FROM projects WHERE owner_id = ?",
+                (user_id,),
+            ).fetchone()[0]
+        assert owned_count == 1
     
     def test_save_and_get_script(self, populated_db):
         """Test saving and retrieving a script."""

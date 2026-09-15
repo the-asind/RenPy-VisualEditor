@@ -98,15 +98,47 @@ CREATE TABLE IF NOT EXISTS node_locks (
     UNIQUE(node_id, session_id)
 );
 
+-- Per-user project activity used by the pre-canvas main menu ordering
+CREATE TABLE IF NOT EXISTS user_project_activity (
+    user_id TEXT NOT NULL,
+    project_id TEXT NOT NULL,
+    last_opened_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (user_id, project_id),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+
+-- ProjectGraph CRDT snapshots
+CREATE TABLE IF NOT EXISTS project_crdt_snapshots (
+    project_id TEXT PRIMARY KEY,
+    snapshot BLOB NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+
+-- Text-only local Ren'Py game asset catalogs
+CREATE TABLE IF NOT EXISTS project_asset_catalogs (
+    project_id TEXT PRIMARY KEY,
+    catalog_json TEXT NOT NULL,
+    revision INTEGER NOT NULL DEFAULT 1,
+    updated_by TEXT NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+    FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE CASCADE
+);
+
 -- Indices for common queries
 CREATE INDEX IF NOT EXISTS idx_scripts_project ON scripts(project_id);
 CREATE INDEX IF NOT EXISTS idx_versions_script ON versions(script_id);
 CREATE INDEX IF NOT EXISTS idx_project_access_user ON project_access(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_project_activity_user ON user_project_activity(user_id, last_opened_at);
 CREATE INDEX IF NOT EXISTS idx_participants_session ON participants(session_id);
 CREATE INDEX IF NOT EXISTS idx_node_locks_session ON node_locks(session_id);
 
 -- Insert default roles
 INSERT OR IGNORE INTO roles (id, name, description) VALUES 
     ('role_owner', 'Owner', 'Full control over project and can manage access'),
+    ('role_admin', 'Admin', 'Full control over project operations and access'),
     ('role_editor', 'Editor', 'Can edit scripts and create new versions'),
     ('role_viewer', 'Viewer', 'Read-only access to scripts');

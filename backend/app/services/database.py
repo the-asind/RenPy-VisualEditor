@@ -2,13 +2,30 @@ import sqlite3
 import uuid
 import os
 import logging
+import json
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Tuple
 from datetime import datetime, timedelta
 import time
+from ..security import MAX_OWNER_STORAGE_BYTES, MAX_CRDT_SNAPSHOT_BYTES, MAX_ASSET_CATALOG_BYTES
+from ..models.exceptions import BaseAppException
+
+
+class StorageQuotaExceededError(BaseAppException):
+    def __init__(self, limit=MAX_OWNER_STORAGE_BYTES):
+        super().__init__(413, {"code": "storage_quota_exceeded", "limit": limit})
 
 DATABASE_PATH = os.environ.get('DATABASE_PATH', 'database/renpy_editor.db')
 logger = logging.getLogger(__name__)
+
+
+class ProjectQuotaExceededError(RuntimeError):
+    """Raised when an owner has no remaining project slots."""
+
+    def __init__(self, limit: int):
+        self.limit = limit
+        super().__init__(f"Owned project quota exceeded (limit: {limit})")
+
 
 class SimpleCache:
     """Simple in-memory cache implementation."""
@@ -148,6 +165,8 @@ class DatabaseService:
                         
                     logger.info(f"Found existing database with tables: {', '.join(tables)}")
                     if tables:  # If tables exist, we don't need to initialize again
+                        self._ensure_project_graph_metadata_schema()
+                        self._ensure_main_menu_schema()
                         return
                 except Exception as e:
                     logger.warning(f"Error checking existing database: {e}")
@@ -218,11 +237,87 @@ class DatabaseService:
                 missing_tables = [table for table in required_tables if table not in tables]
                 if missing_tables:
                     raise RuntimeError(f"Failed to create required tables: {', '.join(missing_tables)}")
+
+                self._ensure_project_graph_metadata_schema()
+                self._ensure_main_menu_schema()
                 
             logger.info(f"Database initialized successfully at {self.db_path}")
         except Exception as e:
             logger.error(f"Database initialization failed: {str(e)}")
             raise
+
+    def _ensure_project_graph_metadata_schema(self):
+        """Ensure MVP 2.0 ProjectGraph metadata persistence tables exist."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("PRAGMA foreign_keys = ON")
+            conn.execute(
+                '''
+                CREATE TABLE IF NOT EXISTS project_crdt_snapshots (
+                    project_id TEXT PRIMARY KEY,
+                    snapshot BLOB NOT NULL,
+                    revision INTEGER NOT NULL DEFAULT 1,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+                )
+                '''
+            )
+            cursor = conn.execute("PRAGMA table_info(project_crdt_snapshots)")
+            crdt_columns = {row[1] for row in cursor.fetchall()}
+            if "revision" not in crdt_columns:
+                conn.execute(
+                    "ALTER TABLE project_crdt_snapshots ADD COLUMN revision INTEGER NOT NULL DEFAULT 1"
+                )
+            conn.execute(
+                '''
+                CREATE TABLE IF NOT EXISTS project_asset_catalogs (
+                    project_id TEXT PRIMARY KEY,
+                    catalog_json TEXT NOT NULL,
+                    revision INTEGER NOT NULL DEFAULT 1,
+                    updated_by TEXT NOT NULL,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+                    FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE CASCADE
+                )
+                '''
+            )
+            conn.commit()
+
+    def _ensure_main_menu_schema(self):
+        """Ensure pre-canvas main menu persistence tables exist."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("PRAGMA foreign_keys = ON")
+            conn.executemany(
+                '''
+                INSERT OR IGNORE INTO roles (id, name, description)
+                VALUES (?, ?, ?)
+                ''',
+                [
+                    ("role_owner", "Owner", "Full control over project and can manage access"),
+                    ("role_admin", "Admin", "Full control over project operations and access"),
+                    ("role_editor", "Editor", "Can edit scripts and create new versions"),
+                    ("role_viewer", "Viewer", "Read-only access to scripts"),
+                ],
+            )
+            conn.execute(
+                '''
+                CREATE TABLE IF NOT EXISTS user_project_activity (
+                    user_id TEXT NOT NULL,
+                    project_id TEXT NOT NULL,
+                    last_opened_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (user_id, project_id),
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                    FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+                )
+                '''
+            )
+            conn.execute(
+                '''
+                CREATE INDEX IF NOT EXISTS idx_user_project_activity_user
+                ON user_project_activity(user_id, last_opened_at)
+                '''
+            )
+            conn.commit()
     
     def _get_connection(self):
         """Get a new database connection with proper settings."""
@@ -248,21 +343,68 @@ class DatabaseService:
         # No connection to close here anymore due to removal of caching
         pass
     
-    def create_project(self, name: str, owner_id: str, description: str = None) -> str:
+    def create_project(
+        self,
+        name: str,
+        owner_id: str,
+        description: str = None,
+        max_owned_projects: Optional[int] = None,
+    ) -> str:
         """Create a new project and return its ID."""
         project_id = str(uuid.uuid4())
         try:
             # Handle None description by setting it to an empty string
             description = description or ""
-            with sqlite3.connect(self.db_path) as conn:
+            with self._get_connection() as conn:
+                # Serialize the quota check and insert so concurrent requests cannot
+                # both consume the same final slot.
+                conn.execute("BEGIN IMMEDIATE")
+                if max_owned_projects is not None:
+                    owned_count = conn.execute(
+                        "SELECT COUNT(*) FROM projects WHERE owner_id = ?",
+                        (owner_id,),
+                    ).fetchone()[0]
+                    if owned_count >= max_owned_projects:
+                        raise ProjectQuotaExceededError(max_owned_projects)
                 conn.execute(
                     'INSERT INTO projects (id, name, description, owner_id) VALUES (?, ?, ?, ?)',
                     (project_id, name, description, owner_id)
                 )
+                conn.commit()
             logger.info(f"Created project {name} with ID {project_id}")
             return project_id
         except Exception as e:
             logger.error(f"Failed to create project: {str(e)}")
+            raise
+
+    def update_project(self, project_id: str, name: Optional[str] = None, description: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """Update project metadata and return the updated project details."""
+        updates = []
+        params: List[Any] = []
+        if name is not None:
+            updates.append("name = ?")
+            params.append(name)
+        if description is not None:
+            updates.append("description = ?")
+            params.append(description)
+
+        if not updates:
+            return self.get_project_details(project_id)
+
+        updates.append("updated_at = CURRENT_TIMESTAMP")
+        params.append(project_id)
+
+        try:
+            with self._get_connection() as conn:
+                result = conn.execute(
+                    f"UPDATE projects SET {', '.join(updates)} WHERE id = ?",
+                    params,
+                )
+                if result.rowcount == 0:
+                    return None
+            return self.get_project_details(project_id)
+        except Exception as e:
+            logger.error(f"Failed to update project {project_id}: {str(e)}")
             raise
     
     def save_script(self, project_id: str, filename: str, content: str, user_id: Optional[str] = None) -> str:
@@ -503,49 +645,107 @@ class DatabaseService:
         except Exception as e:
             logger.error(f"Failed to get user by ID: {str(e)}")
             raise
+
+    def update_user(self, user_id: str, username: Optional[str] = None, email: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """Update basic user profile fields."""
+        updates = []
+        params: List[Any] = []
+        if username is not None:
+            updates.append("username = ?")
+            params.append(username)
+        if email is not None:
+            updates.append("email = ?")
+            params.append(email)
+
+        if not updates:
+            return self.get_user_by_id(user_id)
+
+        updates.append("updated_at = CURRENT_TIMESTAMP")
+        params.append(user_id)
+
+        try:
+            with self._get_connection() as conn:
+                result = conn.execute(
+                    f"UPDATE users SET {', '.join(updates)} WHERE id = ?",
+                    params,
+                )
+                if result.rowcount == 0:
+                    return None
+            return self.get_user_by_id(user_id)
+        except sqlite3.IntegrityError:
+            raise ValueError("Username or email already exists")
+        except Exception as e:
+            logger.error(f"Failed to update user {user_id}: {str(e)}")
+            raise
+
+    def delete_user(self, user_id: str) -> bool:
+        """Delete a user account and records covered by foreign-key cascades."""
+        try:
+            with self._get_connection() as conn:
+                result = conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+                return result.rowcount > 0
+        except Exception as e:
+            logger.error(f"Failed to delete user {user_id}: {str(e)}")
+            raise
     
     def get_user_projects(self, user_id: str) -> List[Dict[str, Any]]:
         """Get all projects accessible by a user."""
         try:
             with self._get_connection() as conn:
-                # Get projects owned by user
-                owned_cursor = conn.execute(
+                cursor = conn.execute(
                     '''
-                    SELECT p.id, p.name, p.description, p.created_at, p.updated_at, p.owner_id,
-                           'Owner' as role
+                    SELECT
+                        p.id,
+                        p.name,
+                        p.description,
+                        p.created_at,
+                        p.updated_at,
+                        p.owner_id,
+                        CASE WHEN p.owner_id = ? THEN 'Owner' ELSE r.name END as role,
+                        upa.last_opened_at
                     FROM projects p
-                    WHERE p.owner_id = ?
+                    LEFT JOIN project_access pa
+                        ON p.id = pa.project_id AND pa.user_id = ?
+                    LEFT JOIN roles r ON pa.role_id = r.id
+                    LEFT JOIN user_project_activity upa
+                        ON upa.project_id = p.id AND upa.user_id = ?
+                    WHERE p.owner_id = ? OR pa.user_id = ?
+                    ORDER BY
+                        COALESCE(upa.last_opened_at, p.updated_at, p.created_at) DESC,
+                        p.name COLLATE NOCASE ASC
                     ''',
-                    (user_id,)
+                    (user_id, user_id, user_id, user_id, user_id,)
                 )
-                owned_projects = [dict(row) for row in owned_cursor.fetchall()]
-                
-                # Get projects shared with user
-                shared_cursor = conn.execute(
-                    '''
-                    SELECT p.id, p.name, p.description, p.created_at, p.updated_at, p.owner_id,
-                           r.name as role
-                    FROM projects p
-                    JOIN project_access pa ON p.id = pa.project_id
-                    JOIN roles r ON pa.role_id = r.id
-                    WHERE pa.user_id = ?
-                    ''',
-                    (user_id,)
-                )
-                shared_projects = [dict(row) for row in shared_cursor.fetchall()]
-                
-                # Combine and ensure uniqueness (a user could be owner and also have explicit access)
-                all_projects_dict = {p["id"]: p for p in owned_projects}
-                for p in shared_projects:
-                    if p["id"] not in all_projects_dict:
-                        all_projects_dict[p["id"]] = p
-                    # Potentially update role if a more specific one is granted than just 'Owner'
-                    # For now, owner role takes precedence if listed as owned.
-                    # Or, if a user is an owner, their role is 'Owner' regardless of project_access entries.
-
-                return list(all_projects_dict.values())
+                return [dict(row) for row in cursor.fetchall()]
         except Exception as e:
             logger.error(f"Failed to get user projects: {str(e)}")
+            raise
+
+    def mark_project_opened(self, project_id: str, user_id: str) -> str:
+        """Record that a user opened a project and return the stored timestamp."""
+        try:
+            with self._get_connection() as conn:
+                conn.execute(
+                    '''
+                    INSERT INTO user_project_activity (user_id, project_id, last_opened_at)
+                    VALUES (?, ?, STRFTIME('%Y-%m-%d %H:%M:%f', 'now'))
+                    ON CONFLICT(user_id, project_id)
+                    DO UPDATE SET last_opened_at = STRFTIME('%Y-%m-%d %H:%M:%f', 'now')
+                    ''',
+                    (user_id, project_id),
+                )
+                cursor = conn.execute(
+                    '''
+                    SELECT last_opened_at
+                    FROM user_project_activity
+                    WHERE user_id = ? AND project_id = ?
+                    ''',
+                    (user_id, project_id),
+                )
+                row = cursor.fetchone()
+                return row["last_opened_at"]
+        except Exception as e:
+            logger.error(f"Failed to mark project {project_id} opened by user {user_id}: {str(e)}")
             raise
     
     def get_role_by_id(self, role_id: str) -> Optional[Dict[str, Any]]:
@@ -610,6 +810,19 @@ class DatabaseService:
         finally:
             if conn:
                 conn.close()
+
+    def revoke_project_access(self, project_id: str, user_id: str) -> bool:
+        """Remove a user's explicit access to a project."""
+        try:
+            with self._get_connection() as conn:
+                result = conn.execute(
+                    "DELETE FROM project_access WHERE project_id = ? AND user_id = ?",
+                    (project_id, user_id),
+                )
+                return result.rowcount > 0
+        except sqlite3.Error as e:
+            logger.error(f"Database error revoking access for project {project_id} from user {user_id}: {e}", exc_info=True)
+            raise
     
     def get_project_scripts(self, project_id: str) -> List[Dict[str, Any]]:
         """Get all scripts for a project."""
@@ -662,6 +875,124 @@ class DatabaseService:
         except sqlite3.Error as e:
             logger.error(f"Error fetching project details for project_id {project_id}: {e}", exc_info=True)
             return None
+
+    def save_project_crdt_snapshot(self, project_id: str, snapshot: bytes) -> None:
+        """Persist the latest opaque binary ProjectGraph CRDT snapshot for a project."""
+        self.save_project_graph_data(project_id, snapshot)
+        return
+
+    def get_project_crdt_snapshot(self, project_id: str) -> Optional[bytes]:
+        """Load the latest opaque binary ProjectGraph CRDT snapshot for a project."""
+        try:
+            self._ensure_project_graph_metadata_schema()
+            with self._get_connection() as conn:
+                cursor = conn.execute(
+                    'SELECT snapshot FROM project_crdt_snapshots WHERE project_id = ?',
+                    (project_id,)
+                )
+                row = cursor.fetchone()
+                if not row:
+                    return None
+                return bytes(row["snapshot"])
+        except Exception as e:
+            logger.error(f"Failed to load ProjectGraph CRDT snapshot: {str(e)}")
+            raise
+
+    def get_project_crdt_snapshot_record(self, project_id: str) -> Optional[Dict[str, Any]]:
+        """Load the latest ProjectGraph CRDT snapshot with its optimistic concurrency revision."""
+        try:
+            self._ensure_project_graph_metadata_schema()
+            with self._get_connection() as conn:
+                cursor = conn.execute(
+                    'SELECT snapshot, revision FROM project_crdt_snapshots WHERE project_id = ?',
+                    (project_id,)
+                )
+                row = cursor.fetchone()
+                if not row:
+                    return None
+                return {"snapshot": bytes(row["snapshot"]), "revision": int(row["revision"])}
+        except Exception as e:
+            logger.error(f"Failed to load ProjectGraph CRDT snapshot record: {str(e)}")
+            raise
+
+    def compare_and_swap_project_crdt_snapshot(self, project_id: str, snapshot: bytes, expected_revision: int) -> bool:
+        """Replace a ProjectGraph CRDT snapshot only if the persisted revision still matches."""
+        return self.save_project_graph_data(project_id, snapshot, expected_revision=expected_revision)
+
+    def save_project_asset_catalog(self, project_id: str, catalog: Dict[str, Any], updated_by: str) -> None:
+        """Persist the latest text-only local Ren'Py asset catalog for a project."""
+        self.save_project_graph_data(project_id, catalog=catalog, updated_by=updated_by)
+        return
+
+    def save_project_graph_data(self, project_id, snapshot=None, catalog=None, updated_by=None, *, expected_revision=None):
+        """Atomically replace graph/catalog and charge the project's owner.
+
+        BEGIN IMMEDIATE serializes quota checks across connections/processes.
+        Replacements consume only their size delta; rollback preserves revisions.
+        Legacy script text also counts toward the owner's persisted payload.
+        """
+        catalog_json = json.dumps(catalog, ensure_ascii=False, sort_keys=True) if catalog is not None else None
+        with self._get_connection() as conn:
+            conn.execute('BEGIN IMMEDIATE')
+            project = conn.execute('SELECT owner_id FROM projects WHERE id = ?', (project_id,)).fetchone()
+            if project is None:
+                raise BaseAppException(404, 'Project not found')
+            old = conn.execute('SELECT snapshot, revision FROM project_crdt_snapshots WHERE project_id = ?', (project_id,)).fetchone()
+            if expected_revision is not None and (old is None or old['revision'] != expected_revision):
+                return False
+            if snapshot is not None and len(snapshot) > MAX_CRDT_SNAPSHOT_BYTES:
+                raise StorageQuotaExceededError(MAX_CRDT_SNAPSHOT_BYTES)
+            if catalog_json is not None and len(catalog_json.encode('utf-8')) > MAX_ASSET_CATALOG_BYTES:
+                raise StorageQuotaExceededError(MAX_ASSET_CATALOG_BYTES)
+            before = conn.execute('''SELECT
+                COALESCE((SELECT SUM(length(s.snapshot)) FROM project_crdt_snapshots s JOIN projects p ON p.id=s.project_id WHERE p.owner_id=?),0) +
+                COALESCE((SELECT SUM(length(CAST(c.catalog_json AS BLOB))) FROM project_asset_catalogs c JOIN projects p ON p.id=c.project_id WHERE p.owner_id=?),0) +
+                COALESCE((SELECT SUM(length(CAST(s.content AS BLOB))) FROM scripts s JOIN projects p ON p.id=s.project_id WHERE p.owner_id=?),0)
+                ''', (project['owner_id'],) * 3).fetchone()[0]
+            delta = 0
+            if snapshot is not None:
+                delta += len(snapshot) - (len(old['snapshot']) if old else 0)
+            if catalog_json is not None:
+                previous = conn.execute('SELECT length(CAST(catalog_json AS BLOB)) FROM project_asset_catalogs WHERE project_id=?', (project_id,)).fetchone()
+                delta += len(catalog_json.encode('utf-8')) - (previous[0] if previous else 0)
+            # Existing oversized owners can still shrink data or delete projects.
+            if delta > 0 and before + delta > MAX_OWNER_STORAGE_BYTES:
+                raise StorageQuotaExceededError(MAX_OWNER_STORAGE_BYTES)
+            if snapshot is not None:
+                conn.execute('''INSERT INTO project_crdt_snapshots(project_id,snapshot,revision) VALUES(?,?,1)
+                    ON CONFLICT(project_id) DO UPDATE SET snapshot=excluded.snapshot,
+                    revision=project_crdt_snapshots.revision+1, updated_at=CURRENT_TIMESTAMP''', (project_id, sqlite3.Binary(snapshot)))
+            if catalog_json is not None:
+                conn.execute('''INSERT INTO project_asset_catalogs(project_id,catalog_json,revision,updated_by) VALUES(?,?,1,?)
+                    ON CONFLICT(project_id) DO UPDATE SET catalog_json=excluded.catalog_json,
+                    revision=project_asset_catalogs.revision+1, updated_by=excluded.updated_by, updated_at=CURRENT_TIMESTAMP''', (project_id, catalog_json, updated_by))
+        return True
+
+    def get_project_asset_catalog(self, project_id: str) -> Optional[Dict[str, Any]]:
+        """Load the latest text-only local Ren'Py asset catalog for a project."""
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.execute(
+                    '''
+                    SELECT project_id, catalog_json, revision, updated_by, updated_at
+                    FROM project_asset_catalogs
+                    WHERE project_id = ?
+                    ''',
+                    (project_id,)
+                )
+                row = cursor.fetchone()
+                if not row:
+                    return None
+                return {
+                    "project_id": row["project_id"],
+                    "catalog": json.loads(row["catalog_json"]),
+                    "revision": row["revision"],
+                    "updated_by": row["updated_by"],
+                    "updated_at": row["updated_at"],
+                }
+        except Exception as e:
+            logger.error(f"Failed to load ProjectGraph asset catalog: {str(e)}")
+            raise
 
     def delete_project(self, project_id: str) -> bool:
         """
@@ -771,24 +1102,36 @@ class DatabaseService:
             )
             return [dict(row) for row in cursor.fetchall()]
     
-    def get_active_project_users(self, project_id: str) -> List[Dict[str, Any]]:
-        """Get users currently active in a project."""
+    def get_project_members(self, project_id: str) -> List[Dict[str, Any]]:
+        """Get users with project access and their display role names."""
         try:
             with self._get_connection() as conn:
-                # Get users with access to this project
                 cursor = conn.execute(
                     '''
-                    SELECT u.id, u.username, pa.role_id as role
+                    SELECT u.id, u.username, u.email, r.name as role, pa.granted_at
                     FROM users u
                     JOIN project_access pa ON u.id = pa.user_id
+                    JOIN roles r ON pa.role_id = r.id
                     WHERE pa.project_id = ?
+                    ORDER BY
+                        CASE r.name
+                            WHEN 'Owner' THEN 0
+                            WHEN 'Admin' THEN 1
+                            WHEN 'Editor' THEN 2
+                            ELSE 3
+                        END,
+                        u.username COLLATE NOCASE ASC
                     ''',
                     (project_id,)
                 )
                 return [dict(row) for row in cursor.fetchall()]
         except Exception as e:
-            logger.error(f"Failed to get active project users: {str(e)}")
+            logger.error(f"Failed to get project members: {str(e)}")
             return []  # Return empty list on error to ensure API doesn't completely fail
+
+    def get_active_project_users(self, project_id: str) -> List[Dict[str, Any]]:
+        """Backward-compatible alias for project member listing."""
+        return self.get_project_members(project_id)
 
     # TODO: Add usage statistics tracking methods - #issue/130
     def track_script_edit(self, script_id: str, user_id: str, action_type: str, metadata: Optional[Dict] = None) -> None:

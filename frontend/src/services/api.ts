@@ -1,31 +1,153 @@
 /// <reference types="vite/client" />
 import axios, { AxiosError } from 'axios';
+import {
+  importProjectGraphCrdtSnapshot,
+  type ProjectGraphCrdtDoc,
+  projectGraphFromCrdtDoc,
+} from '../utils/projectGraphCrdt';
+import type { ProjectGraphSnapshot } from '../utils/projectGraphProjection';
+import type { ProjectAssetCatalogPayload } from '../utils/localRenpyDirectory';
+import type { ActionEditorNextActionRequest } from '../components/actionEditor/ActionEditorSidebar';
+import type { ProjectGraphStructureCommand } from '../utils/projectGraphStructure';
 
-export interface ParsedScriptResponse {
-  script_id: string;
-  filename: string;
-  tree: any;
+export const validateProjectGraphContinuation = async (
+  projectId: string,
+  request: ActionEditorNextActionRequest,
+): Promise<void> => {
+  await apiClient.post(`/projects/${projectId}/validate-continuation`, request);
+};
+
+export interface CommitProjectGraphContinuationRequest extends ActionEditorNextActionRequest {
+  sourceNodeId: string;
+  baseRevision?: number;
 }
 
-// Интерфейс для ответа при получении содержимого узла
-export interface NodeContentResponse {
-  content: string;
-  start_line: number;
-  end_line: number;
+export interface CommitProjectGraphContinuationResult {
+  createdNodeIds: string[];
+  selectedNodeId: string;
+  createdTargetIds: {
+    files: string[];
+    labels: string[];
+    labelStarts: string[];
+  };
 }
 
-// Интерфейс для ответа при обновлении содержимого узла
-export interface UpdateNodeResponse {
-  message: string;
-  line_diff: number;
-  content: string;
+export interface CommitProjectGraphContinuationResponse {
+  update: Uint8Array;
+  revision: number | null;
+  result: CommitProjectGraphContinuationResult;
 }
 
-export interface InsertNodeResponse {
-  start_line: number;
-  end_line: number;
-  line_count: number;
-  tree: any;
+const decodeBase64JsonHeader = <T,>(value: unknown): T => {
+  if (typeof value !== 'string' || !value) {
+    throw new Error('Missing ProjectGraph command result header');
+  }
+  const binary = atob(value);
+  const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+  return JSON.parse(new TextDecoder().decode(bytes)) as T;
+};
+
+export const commitProjectGraphContinuation = async (
+  projectId: string,
+  request: CommitProjectGraphContinuationRequest,
+): Promise<CommitProjectGraphContinuationResponse> => {
+  const response = await apiClient.post<ArrayBuffer>(
+    `/projects/${projectId}/continuation-commands`,
+    request,
+    { responseType: 'arraybuffer' },
+  );
+  const revisionHeader = response.headers['x-project-graph-revision'];
+  const revision = typeof revisionHeader === 'string' ? Number.parseInt(revisionHeader, 10) : null;
+  return {
+    update: new Uint8Array(response.data),
+    revision: Number.isFinite(revision) ? revision : null,
+    result: decodeBase64JsonHeader<CommitProjectGraphContinuationResult>(
+      response.headers['x-project-graph-command-result'],
+    ),
+  };
+};
+
+export type CommitProjectGraphStructureRequest = ProjectGraphStructureCommand & { baseRevision?: number };
+
+export interface CommitProjectGraphStructureResult {
+  selectedEntityId: string | null;
+  createdEntityIds: {
+    files: string[];
+    labels: string[];
+    labelStarts: string[];
+    nodes: string[];
+  };
+  deletedEntityIds?: {
+    files: string[];
+    labels: string[];
+    labelStarts: string[];
+    nodes: string[];
+    edges: string[];
+    diagnostics: string[];
+  };
+}
+
+export interface CommitProjectGraphStructureResponse {
+  update: Uint8Array;
+  revision: number | null;
+  result: CommitProjectGraphStructureResult;
+}
+
+export const commitProjectGraphStructure = async (
+  projectId: string,
+  request: CommitProjectGraphStructureRequest,
+): Promise<CommitProjectGraphStructureResponse> => {
+  const response = await apiClient.post<ArrayBuffer>(
+    `/projects/${projectId}/structure-commands`, request, { responseType: 'arraybuffer' },
+  );
+  const revisionHeader = response.headers['x-project-graph-revision'];
+  const revision = typeof revisionHeader === 'string' ? Number.parseInt(revisionHeader, 10) : null;
+  return {
+    update: new Uint8Array(response.data),
+    revision: Number.isFinite(revision) ? revision : null,
+    result: decodeBase64JsonHeader<CommitProjectGraphStructureResult>(
+      response.headers['x-project-graph-command-result'],
+    ),
+  };
+};
+
+export interface ProjectGraphDiagnosticsSummary {
+  total: number;
+  blocking: number;
+  info: number;
+  warning: number;
+  error: number;
+}
+
+export interface ProjectGraphImportResult {
+  project_id: string;
+  file_count: number;
+  label_count: number;
+  label_start_count: number;
+  node_count: number;
+  edge_count: number;
+  diagnostics: ProjectGraphDiagnosticsSummary;
+  snapshot_available: boolean;
+  catalog_entry_count?: number;
+}
+
+export interface ProjectAssetCatalogResponse {
+  project_id: string;
+  catalog: ProjectAssetCatalogPayload;
+  revision: number;
+  updated_by: string;
+  updated_at: string | null;
+}
+
+export interface ClockworkLibraryDemoPreviewResponse {
+  project_id: string;
+  graph: ProjectGraphSnapshot;
+  asset_catalog: ProjectAssetCatalogPayload;
+}
+
+export interface AuthTokenResponse {
+  access_token: string;
+  token_type: string;
 }
 
 const runtimeConfig = typeof window !== 'undefined' ? (window as any).RUNTIME_CONFIG : undefined;
@@ -51,162 +173,92 @@ apiClient.interceptors.request.use((config) => {
   return Promise.reject(error);
 });
 
-/**
- * Parses an uploaded RenPy script file.
- * @param file - The .rpy file to parse.
- * @param projectId - Optional project ID to associate the script with.
- * @returns The parsed script data (script_id, filename, tree).
- */
-export const parseScript = async (file: File, projectId?: string): Promise<ParsedScriptResponse> => {
+export const createProjectSessionToken = async (projectId: string): Promise<AuthTokenResponse> => {
+  const response = await apiClient.post<AuthTokenResponse>('/auth/session-token', { project_id: projectId });
+  return response.data;
+};
+
+export const getProjectGraphCrdtSnapshot = async (projectId: string): Promise<Uint8Array> => {
+  const targetUrl = `${apiClient.defaults.baseURL}/projects/${projectId}/graph-snapshot`;
+  console.log(`[API Request] GET ${targetUrl} for ProjectGraph CRDT snapshot`);
+
+  try {
+    const response = await apiClient.get<ArrayBuffer>(`/projects/${projectId}/graph-snapshot`, {
+      responseType: 'arraybuffer',
+    });
+    return new Uint8Array(response.data);
+  } catch (error) {
+    console.error('[API Error] Failed during getProjectGraphCrdtSnapshot call.');
+    console.error('Project ID:', projectId);
+
+    const axiosError = error as AxiosError;
+
+    if (axiosError.response) {
+      console.error('Error Response Data:', axiosError.response.data);
+      console.error('Error Response Status:', axiosError.response.status);
+    } else if (axiosError.request) {
+      console.error('Error Request:', axiosError.request);
+    } else {
+      console.error('Error Message:', axiosError.message);
+    }
+
+    throw axiosError.response?.data || new Error(`Failed to load ProjectGraph snapshot. Status: ${axiosError.response?.status || 'unknown'}. ${axiosError.message}`);
+  }
+};
+
+export const loadProjectGraphSnapshot = async (projectId: string): Promise<ProjectGraphSnapshot> => {
+  const snapshot = await getProjectGraphCrdtSnapshot(projectId);
+  const doc = importProjectGraphCrdtSnapshot(snapshot);
+  return projectGraphFromCrdtDoc(doc);
+};
+
+export const loadProjectGraphCrdtDocument = async (projectId: string): Promise<ProjectGraphCrdtDoc> => {
+  const snapshot = await getProjectGraphCrdtSnapshot(projectId);
+  return importProjectGraphCrdtSnapshot(snapshot);
+};
+
+export const importProjectGraphFiles = async (
+  projectId: string,
+  files: File[],
+  options?: {
+    filePaths?: string[];
+    assetCatalog?: ProjectAssetCatalogPayload;
+  },
+): Promise<ProjectGraphImportResult> => {
   const formData = new FormData();
-  formData.append('file', file);
-  
-  // Add project_id if provided
-  if (projectId) {
-    formData.append('project_id', projectId);
+  for (const file of files) {
+    formData.append('files', file);
+  }
+  if (options?.filePaths) {
+    for (const filePath of options.filePaths) {
+      formData.append('file_paths', filePath);
+    }
+  }
+  if (options?.assetCatalog) {
+    formData.append('asset_catalog', JSON.stringify(options.assetCatalog));
   }
 
-  const targetUrl = apiClient.defaults.baseURL + '/scripts/parse'; // Construct full URL for logging
-  console.log(`[API Request] POST ${targetUrl} with file: ${file.name}${projectId ? ` for project: ${projectId}` : ''}`);
+  const targetUrl = `${apiClient.defaults.baseURL}/projects/${projectId}/graph-import`;
+  console.log(`[API Request] POST ${targetUrl} with ${files.length} ProjectGraph import file(s)`);
 
   try {
-    const response = await apiClient.post<ParsedScriptResponse>('/scripts/parse', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
+    const response = await apiClient.post<ProjectGraphImportResult>(
+      `/projects/${projectId}/graph-import`,
+      formData,
+      {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
       },
-    });
-    console.log('[API Response] parseScript successful:', response.data);
-    return response.data;
-  } catch (error) {
-    // --- Enhanced Error Logging ---
-    console.error('[API Error] Failed during parseScript call.');
-    console.error('Target URL:', targetUrl);
-    console.error('File Name:', file.name);
-    
-    const axiosError = error as AxiosError;
-    
-    if (axiosError.response) {
-      // The request was made and the server responded with a status code
-      // that falls out of the range of 2xx
-      console.error('Error Response Data:', axiosError.response.data);
-      console.error('Error Response Status:', axiosError.response.status);
-      console.error('Error Response Headers:', axiosError.response.headers);
-    } else if (axiosError.request) {
-      // The request was made but no response was received
-      console.error('Error Request:', axiosError.request);
-      console.error('No response received from server. Check network connection and backend status.');
-    } else {
-      // Something happened in setting up the request that triggered an Error
-      console.error('Error Message:', axiosError.message);
-    }
-    console.error('Full Error Object:', error);
-    // --- End Enhanced Error Logging ---
-
-    // Re-throw a more informative error if possible, otherwise the original
-    throw axiosError.response?.data || new Error(`Failed to parse script '${file.name}'. Status: ${axiosError.response?.status || 'unknown'}. ${axiosError.message}`);
-  }
-};
-
-/**
- * Creates a new script file with default content.
- * @param filename - The desired filename.
- * @param projectId - Optional project ID to associate the script with.
- * @returns The parsed script data for the new file.
- */
-export const createNewScript = async (filename: string = 'new_script.rpy', projectId?: string): Promise<ParsedScriptResponse> => {
-  console.log(`[API Action] Attempting to create new script: ${filename}${projectId ? ` for project: ${projectId}` : ''}`);
-  const defaultContent = 'label Start:\n    return'; // Basic Renpy script
-  const blob = new Blob([defaultContent], { type: 'text/plain' });
-  const file = new File([blob], filename, { type: 'text/plain' });
-
-  // parseScript already has enhanced logging, so errors here will be detailed
-  try {
-    const result = await parseScript(file, projectId);
-    console.log(`[API Action] Successfully created and parsed new script: ${filename}`);
-    return result;
-  } catch (error) {
-    console.error(`[API Error] Failed during createNewScript for ${filename}. Error originated from parseScript call.`);
-    // Re-throw the error caught from parseScript
-    throw error; // Re-throw the detailed error from parseScript
-  }
-};
-
-/**
- * Получает содержимое узла на основе его начальной и конечной строки.
- * @param scriptId - ID скрипта, к которому принадлежит узел.
- * @param startLine - Начальная строка узла.
- * @param endLine - Конечная строка узла.
- * @returns Обещание с содержимым узла.
- */
-export const getNodeContent = async (
-  scriptId: string, 
-  startLine: number, 
-  endLine: number
-): Promise<NodeContentResponse> => {
-  const targetUrl = `${apiClient.defaults.baseURL}/scripts/node-content/${scriptId}`;
-  console.log(`[API Request] GET ${targetUrl} for node lines ${startLine}-${endLine}`);
-  
-  try {
-    const response = await apiClient.get<NodeContentResponse>(`/scripts/node-content/${scriptId}`, {
-      params: { start_line: startLine, end_line: endLine },
-    });
-    console.log('[API Response] getNodeContent successful:', response.data);
-    return response.data;
-  } catch (error) {
-    console.error('[API Error] Failed during getNodeContent call.');
-    console.error('Script ID:', scriptId);
-    console.error('Start line:', startLine);
-    console.error('End line:', endLine);
-    
-    const axiosError = error as AxiosError;
-    
-    if (axiosError.response) {
-      console.error('Error Response Data:', axiosError.response.data);
-      console.error('Error Response Status:', axiosError.response.status);
-    } else if (axiosError.request) {
-      console.error('Error Request:', axiosError.request);
-    } else {
-      console.error('Error Message:', axiosError.message);
-    }
-    
-    throw axiosError.response?.data || new Error(`Failed to get node content. Status: ${axiosError.response?.status || 'unknown'}. ${axiosError.message}`);
-  }
-};
-
-/**
- * Обновляет содержимое узла в скрипте.
- * @param scriptId - ID скрипта, к которому принадлежит узел.
- * @param startLine - Начальная строка узла (до редактирования).
- * @param endLine - Конечная строка узла (до редактирования).
- * @param content - Новое содержимое узла.
- * @returns Обещание с информацией об обновлении.
- */
-export const updateNodeContent = async (
-  scriptId: string,
-  startLine: number,
-  endLine: number,
-  content: string
-): Promise<UpdateNodeResponse> => {
-  const targetUrl = `${apiClient.defaults.baseURL}/scripts/update-node/${scriptId}`;
-  console.log(`[API Request] POST ${targetUrl} to update node lines ${startLine}-${endLine}`);
-  
-  try {
-    const response = await apiClient.post<UpdateNodeResponse>(
-      `/scripts/update-node/${scriptId}`,
-      { content }, // Отправляем содержимое в теле запроса
-      { params: { start_line: startLine, end_line: endLine } } // Строки в параметрах запроса
     );
-    console.log('[API Response] updateNodeContent successful:', response.data);
     return response.data;
   } catch (error) {
-    console.error('[API Error] Failed during updateNodeContent call.');
-    console.error('Script ID:', scriptId);
-    console.error('Start line:', startLine);
-    console.error('End line:', endLine);
-    console.error('Content length:', content.length);
-    
+    console.error('[API Error] Failed during importProjectGraphFiles call.');
+    console.error('Project ID:', projectId);
+    console.error('Files:', files.map((file) => file.name).join(', '));
+
     const axiosError = error as AxiosError;
-    
+
     if (axiosError.response) {
       console.error('Error Response Data:', axiosError.response.data);
       console.error('Error Response Status:', axiosError.response.status);
@@ -215,33 +267,108 @@ export const updateNodeContent = async (
     } else {
       console.error('Error Message:', axiosError.message);
     }
-    
-    throw axiosError.response?.data || new Error(`Failed to update node content. Status: ${axiosError.response?.status || 'unknown'}. ${axiosError.message}`);
+
+    throw axiosError.response?.data || new Error(`Failed to import ProjectGraph. Status: ${axiosError.response?.status || 'unknown'}. ${axiosError.message}`);
   }
 };
 
-export const insertNode = async (
-  scriptId: string,
-  insertionLine: number,
-  nodeType: string,
-  content: string,
-): Promise<InsertNodeResponse> => {
-  const targetUrl = `${apiClient.defaults.baseURL}/scripts/insert-node/${scriptId}`;
-  console.log(`[API Request] POST ${targetUrl} to insert ${nodeType} at line ${insertionLine}`);
+export const openClockworkLibraryDemoProject = async (): Promise<ProjectGraphImportResult> => {
+  try {
+    const response = await apiClient.post<ProjectGraphImportResult>('/projects/demo/clockwork-library');
+    return response.data;
+  } catch (error) {
+    const axiosError = error as AxiosError;
+    throw axiosError.response?.data || error;
+  }
+};
+
+export const loadClockworkLibraryDemoPreview = async (): Promise<ClockworkLibraryDemoPreviewResponse> => {
+  try {
+    const response = await apiClient.get<ClockworkLibraryDemoPreviewResponse>('/projects/demo/clockwork-library/preview');
+    return response.data;
+  } catch (error) {
+    const axiosError = error as AxiosError;
+    throw axiosError.response?.data || error;
+  }
+};
+
+export const getProjectAssetCatalog = async (projectId: string): Promise<ProjectAssetCatalogResponse | null> => {
+  try {
+    const response = await apiClient.get<ProjectAssetCatalogResponse>(`/projects/${projectId}/asset-catalog`);
+    return response.data;
+  } catch (error) {
+    const axiosError = error as AxiosError;
+    if (axiosError.response?.status === 404) {
+      return null;
+    }
+    throw axiosError.response?.data || error;
+  }
+};
+
+export const updateProjectAssetCatalog = async (
+  projectId: string,
+  assetCatalog: ProjectAssetCatalogPayload,
+): Promise<ProjectAssetCatalogResponse> => {
+  try {
+    const response = await apiClient.put<ProjectAssetCatalogResponse>(`/projects/${projectId}/asset-catalog`, assetCatalog);
+    return response.data;
+  } catch (error) {
+    const axiosError = error as AxiosError;
+    throw axiosError.response?.data || error;
+  }
+};
+
+export const saveProjectGraphCrdtSnapshot = async (
+  projectId: string,
+  snapshot: Uint8Array,
+): Promise<{ status: string }> => {
+  const targetUrl = `${apiClient.defaults.baseURL}/projects/${projectId}/graph-snapshot`;
+  console.log(`[API Request] PUT ${targetUrl} for ProjectGraph CRDT snapshot`);
 
   try {
-    const response = await apiClient.post<InsertNodeResponse>(
-      `/scripts/insert-node/${scriptId}`,
-      { content, node_type: nodeType },
-      { params: { insertion_line: insertionLine } },
+    const body = snapshot.buffer.slice(snapshot.byteOffset, snapshot.byteOffset + snapshot.byteLength);
+    const response = await apiClient.put<{ status: string }>(`/projects/${projectId}/graph-snapshot`, body, {
+      headers: {
+        'Content-Type': 'application/octet-stream',
+      },
+      transformRequest: [() => body],
+    });
+    return response.data;
+  } catch (error) {
+    console.error('[API Error] Failed during saveProjectGraphCrdtSnapshot call.');
+    console.error('Project ID:', projectId);
+
+    const axiosError = error as AxiosError;
+
+    if (axiosError.response) {
+      console.error('Error Response Data:', axiosError.response.data);
+      console.error('Error Response Status:', axiosError.response.status);
+    } else if (axiosError.request) {
+      console.error('Error Request:', axiosError.request);
+    } else {
+      console.error('Error Message:', axiosError.message);
+    }
+
+    throw axiosError.response?.data || new Error(`Failed to save ProjectGraph snapshot. Status: ${axiosError.response?.status || 'unknown'}. ${axiosError.message}`);
+  }
+};
+
+export const exportProjectGraphFiles = async (
+  projectId: string,
+  graph: ProjectGraphSnapshot,
+): Promise<Record<string, string>> => {
+  const targetUrl = `${apiClient.defaults.baseURL}/projects/${projectId}/graph-export`;
+  console.log(`[API Request] POST ${targetUrl} to export ProjectGraph`);
+
+  try {
+    const response = await apiClient.post<{ files: Record<string, string> }>(
+      `/projects/${projectId}/graph-export`,
+      graph,
     );
-    console.log('[API Response] insertNode successful:', response.data);
-    return response.data;
+    return response.data.files;
   } catch (error) {
-    console.error('[API Error] Failed during insertNode call.');
-    console.error('Script ID:', scriptId);
-    console.error('Insertion line:', insertionLine);
-    console.error('Node type:', nodeType);
+    console.error('[API Error] Failed during exportProjectGraphFiles call.');
+    console.error('Project ID:', projectId);
 
     const axiosError = error as AxiosError;
 
@@ -254,71 +381,7 @@ export const insertNode = async (
       console.error('Error Message:', axiosError.message);
     }
 
-    throw axiosError.response?.data || new Error(`Failed to insert node. Status: ${axiosError.response?.status || 'unknown'}. ${axiosError.message}`);
-  }
-};
-
-/**
- * Получает полное содержимое скрипта для сохранения на локальный диск.
- * @param scriptId - ID скрипта.
- * @returns Обещание с полным содержимым скрипта.
- */
-export const getScriptContent = async (scriptId: string): Promise<string> => {
-  const targetUrl = `${apiClient.defaults.baseURL}/scripts/download/${scriptId}`;
-  console.log(`[API Request] GET ${targetUrl} for full script content`);
-  
-  try {
-    const response = await apiClient.get<{content: string, filename: string}>(`/scripts/download/${scriptId}`);
-    console.log('[API Response] getScriptContent successful');
-    return response.data.content;
-  } catch (error) {
-    console.error('[API Error] Failed during getScriptContent call.');
-    console.error('Script ID:', scriptId);
-    
-    const axiosError = error as AxiosError;
-    
-    if (axiosError.response) {
-      console.error('Error Response Data:', axiosError.response.data);
-      console.error('Error Response Status:', axiosError.response.status);
-    } else if (axiosError.request) {
-      console.error('Error Request:', axiosError.request);
-    } else {
-      console.error('Error Message:', axiosError.message);
-    }
-    
-    throw axiosError.response?.data || new Error(`Failed to get full script content. Status: ${axiosError.response?.status || 'unknown'}. ${axiosError.message}`);
-  }
-};
-
-/**
- * Loads an existing script by its ID and returns parsed data.
- * @param scriptId - The ID of the script to load.
- * @returns The script content and parsed tree data.
- */
-export const loadExistingScript = async (scriptId: string): Promise<ParsedScriptResponse> => {
-  const targetUrl = `${apiClient.defaults.baseURL}/scripts/load/${scriptId}`;
-  console.log(`[API Request] GET ${targetUrl} to load existing script`);
-  
-  try {
-    const response = await apiClient.get<ParsedScriptResponse>(`/scripts/load/${scriptId}`);
-    console.log('[API Response] loadExistingScript successful:', response.data);
-    return response.data;
-  } catch (error) {
-    console.error('[API Error] Failed during loadExistingScript call.');
-    console.error('Script ID:', scriptId);
-    
-    const axiosError = error as AxiosError;
-    
-    if (axiosError.response) {
-      console.error('Error Response Data:', axiosError.response.data);
-      console.error('Error Response Status:', axiosError.response.status);
-    } else if (axiosError.request) {
-      console.error('Error Request:', axiosError.request);
-    } else {
-      console.error('Error Message:', axiosError.message);
-    }
-    
-    throw axiosError.response?.data || new Error(`Failed to load script. Status: ${axiosError.response?.status || 'unknown'}. ${axiosError.message}`);
+    throw axiosError.response?.data || new Error(`Failed to export ProjectGraph. Status: ${axiosError.response?.status || 'unknown'}. ${axiosError.message}`);
   }
 };
 
