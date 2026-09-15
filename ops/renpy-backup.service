@@ -1,0 +1,10 @@
+[Unit]
+Description=Consistent RenPy database backup
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /usr/local/lib/renpy-release-host.py backup
+UMask=0077
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=15min

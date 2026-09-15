@@ -1,0 +1,10 @@
+[Unit]
+Description=RenPy host and backup health metrics
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /usr/local/lib/renpy-release-host.py metrics
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/renpy-monitor
+ProtectHome=true

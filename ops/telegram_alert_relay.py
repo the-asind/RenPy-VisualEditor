@@ -29,6 +29,8 @@ def make_handler(allowed_ip, deliver):
                 return
             try:
                 deliver('\n'.join(lines)[:4000])
+                status = payload.get('status')
+                print('Alert delivered: ' + (status if status in {'firing', 'resolved'} else 'unknown'), flush=True)
             except Exception:
                 self.send_error(502, 'Notification delivery failed')
                 return
@@ -42,7 +44,7 @@ def make_handler(allowed_ip, deliver):
 
 
 def telegram(message):
-    body = json.dumps({'chat_id': os.environ['TELEGRAM_CHAT_ID'], 'text': message}).encode()
+    body = json.dumps({'chat_id': os.environ['TELEGRAM_CHAT_ID'], 'text': message, 'disable_notification': True}).encode()
     request = urllib.request.Request('https://api.telegram.org/bot' + os.environ['TELEGRAM_BOT_TOKEN'] + '/sendMessage',
                                      data=body, headers={'Content-Type': 'application/json'})
     with urllib.request.urlopen(request, timeout=10) as response:

@@ -9,3 +9,14 @@ scrape_configs:
     static_configs:
       - targets:
           - renpy.online:443
+  - job_name: renpy-msk-host
+    scheme: https
+    metrics_path: /internal/host-metrics
+    static_configs:
+      - targets:
+          - renpy.online:443
+  - job_name: renpy-fin-backup
+    metrics_path: /health.prom
+    static_configs:
+      - targets:
+          - 127.0.0.1:19092

@@ -26,15 +26,15 @@ FIN reaches MSK over the existing VPN: Prometheus resolves `renpy.online` to `10
 4. Keep Prometheus and Grafana on loopback. Reach Grafana through an SSH tunnel unless a separately authenticated HTTPS ingress is configured.
 5. In Prometheus, confirm the `renpy-visual-editor-backend` target is up. In Grafana, open each provisioned dashboard and confirm current HTTP, ProjectGraph and collaboration series.
 
-## Release Evidence
-
 ## Telegram alerts on FIN
 
-Put `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in `telegram-relay.env` next to the monitoring Compose file; keep it outside Git and set mode `0600`. The existing MSK bot cannot reach Telegram directly; the owner authorized copying its credentials to FIN. Never include credentials in commands, logs or release artifacts.
+Put `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in `telegram-relay.env` next to the monitoring Compose file; keep it outside Git and set mode `0600`. The existing MSK bot cannot reach Telegram directly; this deployment uses its credentials on FIN. Never include credentials in commands, logs or release artifacts.
 
-Run `docker compose -p renpy-alerts -f ops/docker-compose.telegram.yml up -d`. The relay uses host networking but binds only `127.0.0.1:9081`, accepts only local webhook requests and limits payloads to 64 KiB. Then run `python3 ops/configure_grafana_alerts.py` from the FIN account whose monitoring configuration is in `~/renpy-observability`. This idempotently configures the contact point, notification policy and backend availability / HTTP failure rules, and sends a real test notification. The command fails if notification delivery fails. Keep the monitoring volume: API-provisioned rules live in Grafana's persistent database.
+Run `docker compose -p renpy-alerts -f ops/docker-compose.telegram.yml up -d`. The relay uses host networking but binds only `127.0.0.1:9081`, accepts only local webhook requests and limits payloads to 64 KiB. Then run `python3 ops/configure_grafana_alerts.py` from the FIN account whose monitoring configuration is in `~/renpy-observability`. This idempotently configures the contact point, notification policy and eight availability, resource and backup rules, and sends a real test notification. Wait for the relay port to listen before running the test. All relay messages use Telegram disable_notification=true. The command fails if notification delivery fails. Keep the monitoring volume: API-provisioned rules live in Grafana's persistent database.
 
 The optional systemd unit uses `/etc/renpy-telegram-relay.env` for hosts with administrator access; FIN currently runs the Docker variant. Do not run both on the same port.
+
+## Release Evidence
 
 The backend now admits at most two concurrent project writes or password operations per worker, returning `503` with `Retry-After: 2` instead of queueing extra work. Request bodies are bounded to 10 MiB before JSON/multipart parsing, with a 30-second read deadline and at most 16 simultaneous body readers. Imports, exports, graph commands and password work run outside the event loop. Use one backend worker: admission and IP counters are process-local.
 
@@ -47,3 +47,15 @@ Before deployment, configure trusted proxy addresses explicitly and verify that 
 Project WebSocket defaults allow 300 incoming messages and 8 MiB per connection per fixed 10-second window; incoming text frames are limited to 16 KiB. Compose exposes `MAX_WS_MESSAGES_PER_WINDOW`, `MAX_WS_BYTES_PER_WINDOW`, and `WS_RATE_WINDOW_SECONDS`. These budgets apply after authentication and do not replace service-wide connection admission or ingress/transport limits. Anonymous preview uses a committed artifact; run `python backend/scripts/build_demo_preview.py --check` before deployment.
 
 For each deployment, record the Git commit, image IDs, database-backup checksum, Compose status, `/healthz` result, Prometheus target health, dashboard timestamps and one delivered test alert. Test restore into a temporary volume before calling the public beta recoverable.
+
+## Regular backups and host health
+
+The selected RPO is six hours. MSK runs `renpy-backup.timer` every four hours; FIN pulls every fifteen minutes, leaving time for transfer and retries. SQLite's backup API creates a consistent copy, validates integrity, uses mode 0600 and keeps latest/previous copies. Backups contain private user data: directories must be 0700 and must never be served by nginx or committed.
+
+Install `release_host.py` as `/usr/local/lib/renpy-release-host.py`, the four backup/metrics units in `/etc/systemd/system/`, create `/var/lib/renpy-monitor` with mode 0755, reload systemd and enable the timers. Run one backup and metrics collection before enabling FIN alert rules. The database path defaults to the deployed Docker volume; override `--database` if that changes. Host metrics are emitted atomically each minute and served only through the FIN-allowlisted `/internal/host-metrics` endpoint.
+
+On FIN create a dedicated Ed25519 key at `~/.ssh/renpy-backup`, mode 0600. Authorize its public key on MSK with `from="10.20.30.1",restrict,command="sudo -n /usr/bin/python3 /usr/local/lib/renpy-release-host.py export"`. This account needs permission for that exact sudo command. Pin the MSK host's verified Ed25519 public host key in `~/.ssh/renpy-backup-known-hosts` for `10.20.30.2`; do not disable host verification. Do not reuse this restricted key for deployment.
+
+Run `python3 ~/renpy-observability/ops/pull_backup.py` and schedule that command every fifteen minutes in the FIN user's existing crontab. It serializes concurrent runs, validates the downloaded SQLite database before replacing any known good copy, keeps latest/previous in `~/renpy-backups/automatic`, and writes a successful-transfer timestamp to `~/renpy-observability/backup-metrics/health.prom`. This separate metrics directory contains no backups or credentials. The Compose backup-metrics server binds only 127.0.0.1:19092.
+
+Alerts cover backend availability, 5xx ratio, disk below 10% free, available memory below 10%, load per CPU above 1.5, MSK backup older than six hours, FIN transfer older than one hour, and stale host collection. Missing data is alerting for infrastructure/backup rules. Test restoration into a separate volume using the production DatabaseService; never restore over the live database as a test. Check VPN failures and off-host transfer alerts during operations.

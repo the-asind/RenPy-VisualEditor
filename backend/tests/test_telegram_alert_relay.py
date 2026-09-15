@@ -5,9 +5,10 @@ import threading
 import urllib.request
 import urllib.error
 import json
+from contextlib import contextmanager
 
 
-def test_private_alert_relay_rejects_other_peers_and_bounds_payload():
+def test_private_alert_relay_rejects_other_peers_and_bounds_payload(capsys):
     path = Path(__file__).resolve().parents[2] / 'ops/telegram_alert_relay.py'
     spec = importlib.util.spec_from_file_location('relay', path)
     module = importlib.util.module_from_spec(spec)
@@ -33,6 +34,25 @@ def test_private_alert_relay_rejects_other_peers_and_bounds_payload():
             'annotations': {'summary': 'No scrape'}}]}).encode()) == 200
         assert 'RenPy down' in sent[0]
         assert 'firing' in sent[0]
+        assert 'Alert delivered: firing' in capsys.readouterr().out
     finally:
         server.shutdown()
         server.server_close()
+
+
+def test_telegram_delivery_is_silent(monkeypatch):
+    path = Path(__file__).resolve().parents[2] / 'ops/telegram_alert_relay.py'
+    spec = importlib.util.spec_from_file_location('relay', path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    monkeypatch.setenv('TELEGRAM_CHAT_ID', 'test-chat')
+    monkeypatch.setenv('TELEGRAM_BOT_TOKEN', 'test-token')
+    from io import BytesIO
+    captured = []
+    @contextmanager
+    def receive(request, timeout):
+        captured.append(json.loads(request.data))
+        yield BytesIO(b'{"ok":true}')
+    monkeypatch.setattr(module.urllib.request, 'urlopen', receive)
+    module.telegram('Test without notification')
+    assert captured[0]['disable_notification'] is True

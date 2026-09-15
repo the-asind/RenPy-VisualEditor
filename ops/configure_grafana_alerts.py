@@ -39,6 +39,12 @@ for uid, title, expr, comparison, threshold, duration, no_data in [
     ('renpy-http-errors', 'RenPy elevated HTTP failures',
      'sum(rate(rve_http_requests_total{status_class="5xx"}[5m])) / clamp_min(sum(rate(rve_http_requests_total[5m])), 0.01)',
      'gt', 0.05, '5m', 'OK'),
+    ('renpy-disk-low', 'RenPy MSK disk space low', 'rve_host_disk_available_ratio{job="renpy-msk-host"}', 'lt', 0.1, '5m', 'Alerting'),
+    ('renpy-memory-low', 'RenPy MSK memory low', 'rve_host_memory_available_ratio{job="renpy-msk-host"}', 'lt', 0.1, '5m', 'Alerting'),
+    ('renpy-load-high', 'RenPy MSK CPU load high', 'rve_host_load_per_cpu{job="renpy-msk-host"}', 'gt', 1.5, '10m', 'Alerting'),
+    ('renpy-backup-old', 'RenPy MSK backup older than RPO', 'time() - rve_backup_last_success_timestamp_seconds{job="renpy-msk-host"}', 'gt', 21600, '5m', 'Alerting'),
+    ('renpy-offhost-backup-old', 'RenPy FIN backup transfer stale', 'time() - rve_backup_offhost_last_success_timestamp_seconds{job="renpy-fin-backup"}', 'gt', 3600, '5m', 'Alerting'),
+    ('renpy-host-metrics-old', 'RenPy MSK host collector stale', 'time() - rve_host_metrics_timestamp_seconds{job="renpy-msk-host"}', 'gt', 180, '2m', 'Alerting'),
 ]:
     rule = {'uid': uid, 'title': title, 'folderUID': folder, 'ruleGroup': 'RenPy availability', 'condition': 'B',
         'for': duration, 'noDataState': no_data, 'execErrState': 'Alerting', 'labels': {'service': 'renpy'},
@@ -56,11 +62,10 @@ for uid, title, expr, comparison, threshold, duration, no_data in [
         api('/api/v1/provisioning/alert-rules', 'POST', rule)
 dashboards = api('/api/search?type=dash-db')
 assert len([d for d in dashboards if d['title'].startswith('RenPy')]) == 3
-print('Three dashboards and two availability/error rules configured')
+print('Three dashboards and eight release alert rules configured')
 result = api('/api/alertmanager/grafana/config/api/v1/receivers/test', 'POST', {'receivers': [{
     'name': 'RenPy Telegram', 'grafana_managed_receiver_configs': [{
         'uid': contact['uid'], 'name': 'RenPy Telegram', 'type': 'webhook', 'settings': contact['settings']}]}]})
 print('Grafana test notification result: ' + json.dumps(result))
 
 assert all(c['status'] == 'ok' for r in result['receivers'] for c in r['grafana_managed_receiver_configs']), 'Telegram delivery failed'
-

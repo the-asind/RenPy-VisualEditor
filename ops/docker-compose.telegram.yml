@@ -1,4 +1,23 @@
 services:
+  backup-metrics:
+    image: python:3.12.12-alpine
+    restart: unless-stopped
+    network_mode: host
+    user: "65534:65534"
+    volumes:
+      - ../backup-metrics:/metrics:ro
+    command: ["python", "-m", "http.server", "19092", "--bind", "127.0.0.1", "--directory", "/metrics"]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 32m
+    cpus: 0.25
+    pids_limit: 16
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
   telegram-relay:
     image: python:3.12.12-alpine
     restart: unless-stopped
