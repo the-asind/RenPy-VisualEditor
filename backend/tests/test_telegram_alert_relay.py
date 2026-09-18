@@ -14,7 +14,7 @@ def test_private_alert_relay_rejects_other_peers_and_bounds_payload(capsys):
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     sent = []
-    handler = module.make_handler('10.20.30.1', sent.append)
+    handler = module.make_handler('192.0.2.1', sent.append)
     server = ThreadingHTTPServer(('127.0.0.1', 0), handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -30,9 +30,10 @@ def test_private_alert_relay_rejects_other_peers_and_bounds_payload(capsys):
         server.RequestHandlerClass = module.make_handler('127.0.0.1', sent.append)
         assert post(b'x' * 65537) == 413
         assert post(b'[]') == 400
-        assert post(json.dumps({'status': 'firing', 'alerts': [{'labels': {'alertname': 'RenPy down'},
+        assert post(json.dumps({'status': 'firing', 'alerts': [{'labels': {'alertname': 'Plotmio down'},
             'annotations': {'summary': 'No scrape'}}]}).encode()) == 200
-        assert 'RenPy down' in sent[0]
+        assert 'Plotmio observability: firing' in sent[0]
+        assert 'Plotmio down' in sent[0]
         assert 'firing' in sent[0]
         assert 'Alert delivered: firing' in capsys.readouterr().out
     finally:

@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for helping make RenPy Visual Editor useful to visual-novel authors. Start with an issue for changes that alter the project graph, parser semantics, collaboration protocol or export behavior so the intended result can be agreed before a large implementation.
+Thanks for helping make Plotmio useful to visual-novel authors. Start with an issue for changes that alter the project graph, parser semantics, collaboration protocol or export behavior so the intended result can be agreed before a large implementation.
 
 ## Architecture Rules
 

@@ -1,4 +1,4 @@
-"""Zabbix external check for the RenPy Visual Editor auth path.
+"""Zabbix external check for the Plotmio auth path.
 
 Prints ``1`` for success and ``0`` for failure so Zabbix can store the result
 as a numeric item. Credentials are passed by Zabbix macros and are never

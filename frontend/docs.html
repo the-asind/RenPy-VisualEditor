@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Quick start guide for importing, exploring, editing and exporting a Ren’Py project with Plotmio." />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="canonical" href="https://plotmio.com/docs" />
+    <title>Quick start with Plotmio — Ren’Py project canvas</title>
+    <link rel="stylesheet" href="/src/marketing.css" />
+  </head>
+  <body class="marketing-docs-body">
+    <header class="marketing-nav"><a class="marketing-brand" href="/" aria-label="Plotmio home"><img src="/logo.svg" alt="Plotmio" width="208" height="60" /></a><nav aria-label="Primary navigation"><a href="/#how-it-works">How it works</a><a href="/docs">Quick start</a><a href="https://github.com/the-asind/RenPy-VisualEditor">GitHub</a><a class="marketing-nav-cta" href="/login">Log in</a></nav></header>
+    <main class="marketing-docs marketing-container">
+      <p class="marketing-eyebrow">Quick start</p>
+      <h1>Quick start with Plotmio</h1>
+      <p class="marketing-lead">Bring an existing Ren’Py project onto one canvas, make a focused change, and review the normalized export.</p>
+      <h2 id="project">1. Choose a project</h2>
+      <p>Make a backup first. In a Chromium browser, choose the Ren’Py project root that contains the <code>game</code> directory. Plotmio scans the <code>.rpy</code> files and shows the asset names it can use for local previews.</p>
+      <h2 id="explore">2. Explore the canvas</h2>
+      <p>File frames contain labels. Label frames contain a visible start node and scenario nodes. Search and Problems help you focus a particular label or unresolved reference. <code>jump</code> and <code>call</code> relations point to the destination label start node.</p>
+      <h2 id="edit">3. Edit and collaborate</h2>
+      <p>Select a scenario node to open its editor. Open the same project in another authenticated browser session to collaborate. Wait for the saved and connected indicator before closing the last tab.</p>
+      <h2 id="export">4. Review and export</h2>
+      <p>Export produces normalized <code>.rpy</code> files. Blocking diagnostics stop unsafe export; warnings remain visible. Editor layout and collaboration metadata are never written into the scripts.</p>
+      <h2 id="files">What Plotmio uploads</h2>
+      <p>Saved projects contain <code>.rpy</code> text and a text catalog of asset names and paths. Images, audio, video and fonts remain on your computer. Writing files back into <code>game</code> is an explicit action; Plotmio does not delete local files automatically.</p>
+      <h2 id="limits">Current beta limits</h2>
+      <ul><li>Local directory access requires Chromium and explicit directory permission.</li><li>Exact original whitespace and formatting are not preserved; export is normalized.</li><li>Dynamic label references and arbitrary Python cannot always be resolved statically.</li><li>Plotmio maps project structure; it does not replace running and testing the game in Ren’Py.</li></ul>
+      <p class="marketing-docs-next"><a class="marketing-button marketing-button-primary" href="/login?intent=import">Open your project</a> <a class="marketing-inline-link" href="https://github.com/the-asind/RenPy-VisualEditor/issues/new?template=bug_report.yml">Report a bug →</a></p>
+    </main>
+    <footer class="marketing-footer"><div class="marketing-container"><span>Plotmio · Apache 2.0</span><div><a href="/">Home</a><a href="https://github.com/the-asind/RenPy-VisualEditor">Source</a></div></div></footer>
+  </body>
+</html>

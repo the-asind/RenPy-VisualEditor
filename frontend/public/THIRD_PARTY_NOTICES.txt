@@ -1,4 +1,4 @@
-Third-party production dependency notices for RenPy Visual Editor.
+Third-party production dependency notices for Plotmio.
 Generated from package-lock.json and installed package license files.
 Dependency licenses apply independently of the project license.
 

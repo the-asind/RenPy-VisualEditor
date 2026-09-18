@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1200" height="630" viewBox="0 0 1200 630">
+  <rect width="1200" height="630" fill="#F7F8FB"/>
+  <rect x="0" y="0" width="360" height="630" fill="#121826"/>
+  <rect x="36" y="38" width="288" height="104" rx="18" fill="#FFFFFF"/>
+  <image x="55" y="53" width="250" height="72" xlink:href="logo.svg"/>
+  <circle cx="71" cy="196" r="5" fill="#8B6AFD"/>
+  <text x="54" y="242" fill="#FFFFFF" font-family="Georgia,serif" font-size="37" font-weight="700">Your story,</text>
+  <text x="54" y="286" fill="#FFFFFF" font-family="Georgia,serif" font-size="37" font-weight="700">seen together.</text>
+  <text x="54" y="343" fill="#C7D0DE" font-family="Arial,sans-serif" font-size="16">A visual canvas for your</text>
+  <text x="54" y="369" fill="#C7D0DE" font-family="Arial,sans-serif" font-size="16">Ren’Py project and .rpy files.</text>
+  <rect x="54" y="424" width="196" height="2" fill="#8B6AFD"/>
+  <text x="54" y="463" fill="#C7D0DE" font-family="Arial,sans-serif" font-size="13">Plotmio · Open source · Public beta</text>
+  <image x="392" y="47" width="780" height="563" xlink:href="plotmio-canvas-preview.svg"/>
+</svg>

@@ -51,7 +51,7 @@ import {
   type LocalRenpyGameDirectorySession,
   type ProjectAssetCatalogPayload,
 } from '../utils/localRenpyDirectory';
-import { useRenpyOnlineDocumentTitle } from '../utils/pageTitle';
+import { usePlotmioDocumentTitle } from '../utils/pageTitle';
 
 const EditorPage = () => {
   const { t } = useTranslation();
@@ -85,7 +85,7 @@ const EditorPage = () => {
   const [participants, setParticipants] = useState<ProjectGraphPresenceUser[]>([]);
   const [remoteCursorsByUserId, setRemoteCursorsByUserId] = useState<Record<string, ProjectGraphRemoteCursor>>({});
 
-  useRenpyOnlineDocumentTitle(projectName);
+  usePlotmioDocumentTitle(projectName);
 
   useEffect(() => {
     if (!projectId) {

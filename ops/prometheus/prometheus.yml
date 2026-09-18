@@ -3,19 +3,19 @@ global:
   evaluation_interval: 15s
 
 scrape_configs:
-  - job_name: renpy-visual-editor-backend
+  - job_name: plotmio-backend
     scheme: https
     metrics_path: /internal/metrics
     static_configs:
       - targets:
-          - renpy.online:443
-  - job_name: renpy-msk-host
+          - plotmio.com:443
+  - job_name: plotmio-application-host
     scheme: https
     metrics_path: /internal/host-metrics
     static_configs:
       - targets:
-          - renpy.online:443
-  - job_name: renpy-fin-backup
+          - plotmio.com:443
+  - job_name: plotmio-offhost-backup
     metrics_path: /health.prom
     static_configs:
       - targets:

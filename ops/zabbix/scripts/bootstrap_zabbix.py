@@ -1,4 +1,4 @@
-"""Bootstrap the local RenPy Visual Editor Zabbix PoC.
+"""Bootstrap the local Plotmio Zabbix PoC.
 
 The script imports the versioned Zabbix template and creates or updates one
 bounded host with environment URL macros. It intentionally does not create
@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 
-TEMPLATE_NAME = "Template App RenPy Visual Editor SaaS"
+TEMPLATE_NAME = "Template App Plotmio SaaS"
 
 
 class ZabbixApiError(RuntimeError):
@@ -217,7 +217,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         default=Path("ops/zabbix/templates/renpy-visual-editor-saas.yaml"),
     )
     parser.add_argument("--host-name", default="renpy-visual-editor-local")
-    parser.add_argument("--host-group", default="RenPy Visual Editor")
+    parser.add_argument("--host-group", default="Plotmio")
     parser.add_argument("--frontend-url", default="http://frontend/")
     parser.add_argument("--backend-url", default="http://backend:9000")
     parser.add_argument("--prometheus-url", default="http://prometheus:9090")

@@ -1,112 +1,19 @@
-.landing-top-left-chrome {
-  position: absolute;
-  z-index: 20;
-  top: 16px;
-  left: 16px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
+.landing-demo-canvas {
+  min-height: 680px;
+  overflow: hidden;
+  border: 1px solid #dce2ec;
+  border-radius: 18px;
+  background: #f7f8fb;
 }
 
-.landing-language-control {
-  position: absolute;
-  z-index: 20;
-  top: 16px;
-  right: 16px;
+.landing-project-graph-canvas {
+  height: 680px;
 }
 
-.landing-language-bubble {
-  display: inline-flex;
-  width: 46px;
-  height: 46px;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid rgba(15, 23, 42, 0.1);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.86);
-  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.1);
-  backdrop-filter: blur(10px);
-  color: #0f172a;
-  cursor: pointer;
-}
-
-.landing-language-bubble svg {
-  width: 18px;
-  height: 18px;
-}
-
-.landing-language-popover {
-  position: absolute;
-  top: 58px;
-  right: 0;
+.landing-demo-loading {
   display: grid;
-  width: 220px;
-  gap: 7px;
-  box-sizing: border-box;
-  border: 1px solid rgba(15, 23, 42, 0.1);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.94);
-  box-shadow: 0 18px 46px rgba(15, 23, 42, 0.14);
-  backdrop-filter: blur(10px);
-  padding: 12px;
-}
-
-.landing-language-option {
-  min-height: 36px;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  border-radius: 8px;
-  background: rgba(248, 250, 252, 0.74);
-  color: #334155;
-  cursor: pointer;
-  font: inherit;
-  font-size: 12px;
-  font-weight: 760;
-}
-
-.landing-hero-bubble {
-  left: 18px;
-  transition: opacity 160ms ease;
-}
-
-@media (min-width: 600px) {
-  .landing-hero-bubble {
-    left: clamp(26px, 14vw, 286px);
-  }
-}
-
-@media (max-width: 520px) {
-  .landing-top-left-chrome {
-    gap: 8px;
-  }
-
-  .landing-demo-brand-bubble img {
-    width: 126px;
-  }
-
-  .landing-demo-login-bubble {
-    min-width: 46px !important;
-    padding-inline: 12px !important;
-  }
-}
-
-@media (max-width: 360px) {
-  .landing-top-left-chrome {
-    max-width: calc(100vw - 78px);
-    flex-wrap: wrap;
-    align-items: flex-start;
-  }
-
-  .landing-demo-brand-bubble img {
-    width: 96px;
-  }
-}
-
-.landing-root:has(.project-graph-canvas__node-editor) .landing-hero-bubble,
-.landing-root:has(.action-editor) .landing-hero-bubble {
-  opacity: 0;
-  pointer-events: none;
-}
-
-.landing-root:has(.action-editor) .landing-demo-stage {
-  z-index: 40 !important;
+  min-height: 680px;
+  place-items: center;
+  color: #526071;
+  font-size: 14px;
 }

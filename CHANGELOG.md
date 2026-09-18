@@ -1,6 +1,6 @@
 # Changelog
 
-User-visible changes to RenPy Visual Editor are recorded here.
+User-visible changes to Plotmio are recorded here.
 
 ## Unreleased — Public Beta Preparation
 

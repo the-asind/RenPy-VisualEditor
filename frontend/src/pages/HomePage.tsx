@@ -1,11 +1,11 @@
 import React from 'react';
+import { Navigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import LandingPage from '../components/landing/LandingPage';
 import MainMenuPage from '../components/mainMenu/MainMenuPage';
 
 const HomePage: React.FC = () => {
   const { isAuthenticated } = useAuth();
-  return isAuthenticated ? <MainMenuPage /> : <LandingPage />;
+  return isAuthenticated ? <MainMenuPage /> : <Navigate to="/login" replace />;
 };
 
 export default HomePage;

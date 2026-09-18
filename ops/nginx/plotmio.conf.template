@@ -1,27 +1,26 @@
-# Install this file inside nginx's http context (for Debian/Ubuntu:
-# /etc/nginx/sites-available/renpy, symlinked from sites-enabled).
-map $http_upgrade $renpy_connection_upgrade {
+# Render with ops/render_nginx_config.py. Never install this unresolved template.
+map $http_upgrade $plotmio_connection_upgrade {
     default upgrade;
     '' close;
 }
 
-limit_req_zone $binary_remote_addr zone=renpy_register:10m rate=2r/m;
-limit_req_zone $binary_remote_addr zone=renpy_login:10m rate=10r/m;
-map $request_method $renpy_create_key {
+limit_req_zone $binary_remote_addr zone=plotmio_register:10m rate=2r/m;
+limit_req_zone $binary_remote_addr zone=plotmio_login:10m rate=10r/m;
+map $request_method $plotmio_create_key {
     default '';
     POST $binary_remote_addr;
 }
-limit_req_zone $renpy_create_key zone=renpy_project_create:10m rate=10r/m;
-limit_req_zone $binary_remote_addr zone=renpy_api:10m rate=20r/s;
-limit_conn_zone $binary_remote_addr zone=renpy_connections:10m;
+limit_req_zone $plotmio_create_key zone=plotmio_project_create:10m rate=10r/m;
+limit_req_zone $binary_remote_addr zone=plotmio_api:10m rate=20r/s;
+limit_conn_zone $binary_remote_addr zone=plotmio_connections:10m;
 
 server {
     listen 443 ssl http2;
     listen [::]:443 ssl http2;
-    server_name renpy.online www.renpy.online;
+    server_name __APPLICATION_HOST__;
 
-    ssl_certificate /etc/letsencrypt/live/renpy.online/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/renpy.online/privkey.pem;
+    ssl_certificate /etc/letsencrypt/live/__APPLICATION_HOST__/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/__APPLICATION_HOST__/privkey.pem;
     include /etc/letsencrypt/options-ssl-nginx.conf;
     ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
 
@@ -29,7 +28,7 @@ server {
     client_body_timeout 20s;
     limit_req_status 429;
     limit_conn_status 429;
-    limit_conn renpy_connections 20;
+    limit_conn plotmio_connections 20;
 
     proxy_http_version 1.1;
     proxy_set_header Host $host;
@@ -39,30 +38,30 @@ server {
     proxy_set_header X-Forwarded-Host $host;
 
     location = /api/auth/register {
-        limit_req zone=renpy_register burst=3 nodelay;
+        limit_req zone=plotmio_register burst=3 nodelay;
         proxy_pass http://127.0.0.1:9000;
     }
 
     location = /api/auth/token {
-        limit_req zone=renpy_login burst=10 nodelay;
+        limit_req zone=plotmio_login burst=10 nodelay;
         proxy_pass http://127.0.0.1:9000;
     }
 
     location = /api/projects/ {
-        limit_req zone=renpy_project_create burst=5 nodelay;
+        limit_req zone=plotmio_project_create burst=5 nodelay;
         proxy_pass http://127.0.0.1:9000;
     }
 
     location = /api/projects/demo/clockwork-library {
-        limit_req zone=renpy_project_create burst=3 nodelay;
+        limit_req zone=plotmio_project_create burst=3 nodelay;
         proxy_pass http://127.0.0.1:9000;
     }
 
     location ^~ /api/ws/ {
-        limit_conn renpy_connections 10;
+        limit_conn plotmio_connections 10;
         proxy_pass http://127.0.0.1:9000;
         proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection $renpy_connection_upgrade;
+        proxy_set_header Connection $plotmio_connection_upgrade;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $remote_addr;
@@ -74,7 +73,7 @@ server {
     }
 
     location /api/ {
-        limit_req zone=renpy_api burst=40 nodelay;
+        limit_req zone=plotmio_api burst=40 nodelay;
         proxy_pass http://127.0.0.1:9000;
         proxy_read_timeout 300s;
         proxy_send_timeout 300s;
@@ -85,22 +84,21 @@ server {
     }
 
     location = /internal/host-metrics {
-        allow 144.31.82.129;
-        allow 10.20.30.1;
+        allow __OBSERVABILITY_SOURCE_IP__;
+        allow __OBSERVABILITY_VPN_IP__;
         deny all;
         default_type text/plain;
         alias /var/lib/renpy-monitor/host.prom;
     }
 
     location ^~ /demo-assets/ {
-        limit_req zone=renpy_api burst=40 nodelay;
+        limit_req zone=plotmio_api burst=40 nodelay;
         proxy_pass http://127.0.0.1:9000;
     }
 
-    # Prometheus runs on the FIN VPS. No other public client may read metrics.
     location = /internal/metrics {
-        allow 144.31.82.129;
-        allow 10.20.30.1;
+        allow __OBSERVABILITY_SOURCE_IP__;
+        allow __OBSERVABILITY_VPN_IP__;
         deny all;
         proxy_pass http://127.0.0.1:9000/metrics;
     }
@@ -112,15 +110,26 @@ server {
 }
 
 server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name www.__APPLICATION_HOST__;
+    ssl_certificate /etc/letsencrypt/live/__APPLICATION_HOST__/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/__APPLICATION_HOST__/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+    return 301 https://__APPLICATION_HOST__$request_uri;
+}
+
+server {
     listen 80;
     listen [::]:80;
-    server_name renpy.online www.renpy.online;
+    server_name __APPLICATION_HOST__ www.__APPLICATION_HOST__;
 
     location /.well-known/acme-challenge/ {
         root /var/www/html;
     }
 
     location / {
-        return 301 https://renpy.online$request_uri;
+        return 301 https://__APPLICATION_HOST__$request_uri;
     }
 }

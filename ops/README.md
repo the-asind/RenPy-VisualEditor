@@ -1,61 +1,73 @@
 # Production Operations
 
-The public application runs on the MSK VPS behind the host nginx. Prometheus and Grafana run as a standalone Compose project on the FIN VPS.
+Plotmio uses two roles: an **application host** running the frontend, API and host nginx, and an **observability host** running Prometheus, Grafana, alert delivery and off-host backup copies. These roles may run on any suitable machines. Keep deployment-specific hostnames, account names, public addresses and VPN addresses in private environment or inventory files.
 
-## MSK Application Host
+## Application host
 
-Set `FORWARDED_ALLOW_IPS` to the actual backend Docker-network gateway through which host nginx connects (MSK existing `renpy-visualeditor_default`: `172.18.0.1`). The default trusts only loopback. nginx overwrites incoming forwarded IP headers; Uvicorn must trust only that known proxy gateway. Verify real client addresses in backend access logs after deployment.
+Set `FORWARDED_ALLOW_IPS` to the exact Docker-network gateway through which host nginx reaches the backend. The default trusts only loopback. nginx overwrites incoming forwarded-address headers; Uvicorn must trust only that known proxy gateway.
 
-1. Back up the `renpy_editor_db` Docker volume and verify the archive before changing containers.
-2. Copy `example.env` to `.env`, set the public `VITE_API_URL`/`VITE_WS_URL`, generate a unique `JWT_SECRET_KEY`, and list only the public site origins in `CORS_ALLOW_ORIGINS`.
-3. Run `docker compose config --quiet`, then `docker compose build` and the release tests before replacing the running containers.
-4. Install `ops/nginx/renpy.online.conf` as the host's RenPy site, run `sudo nginx -t`, and reload nginx only after the test succeeds.
-5. Start with `docker compose up -d` and verify `/healthz`, registration/login, demo preview, project create/import/edit/export and WebSocket collaboration.
+1. Back up the SQLite Docker volume with `release_host.py backup`, verify integrity, and confirm a recent off-host copy.
+2. Copy `example.env` to a private `.env`. Set the Plotmio API/WebSocket URLs, generate a unique `JWT_SECRET_KEY`, and list only required HTTPS origins in `CORS_ALLOW_ORIGINS`.
+3. Run `docker compose config --quiet`, the release tests and the image build before replacing running containers.
+4. Render the nginx configuration with explicit deployment values:
 
-The Compose ports bind to `127.0.0.1`; nginx is the only public application ingress. The nginx metrics location accepts the FIN VPS address and denies other clients.
+   ```sh
+   python3 ops/render_nginx_config.py \
+     --application-host plotmio.com \
+     --observability-source-ip "$OBSERVABILITY_SOURCE_IP" \
+     --observability-vpn-ip "$OBSERVABILITY_VPN_IP" \
+     --output /tmp/plotmio.conf
+   ```
 
-## FIN Observability Host
+   The renderer validates all values and refuses unresolved placeholders. Inspect the result, install it as a private host configuration, run `nginx -t`, then reload nginx.
+5. Keep Compose ports on `127.0.0.1`; nginx is the only public ingress. Verify that public requests cannot read either internal metrics endpoint.
+6. Verify `/healthz`, account login, demo preview, project import/edit/export and WebSocket collaboration.
 
-The monitoring containers use Linux host networking to reach the host's existing VPN; each server explicitly binds to `127.0.0.1`. Grafana uses the host-loopback Prometheus datasource. Verify bindings with `ss -lnt` after start; no Docker port publication is used for monitoring.
+Use Certbot's nginx or webroot authenticator only after the DNS A/AAAA records resolve to the application host. Keep old-domain TLS while permanent redirects are in service.
 
-FIN reaches MSK over the existing VPN: Prometheus resolves `renpy.online` to `10.20.30.2` via Compose `extra_hosts`, preserving the HTTPS hostname and certificate verification. Set `MSK_METRICS_IP` to override that address. nginx permits the FIN VPN address `10.20.30.1` as well as its public address. Public FIN→MSK TCP/443 was unreachable during setup; VPN HTTPS was reachable.
+## Observability host
 
-1. Copy the repository's `docker-compose.observability.yml` and `ops/` directory.
-2. Set a unique `GRAFANA_ADMIN_PASSWORD` in `.env`.
-3. Run `docker compose -f docker-compose.observability.yml config --quiet` and then `docker compose -f docker-compose.observability.yml up -d`.
-4. Keep Prometheus and Grafana on loopback. Reach Grafana through an SSH tunnel unless a separately authenticated HTTPS ingress is configured.
-5. In Prometheus, confirm the `renpy-visual-editor-backend` target is up. In Grafana, open each provisioned dashboard and confirm current HTTP, ProjectGraph and collaboration series.
+The monitoring containers use host networking so they can reach a private tunnel while binding Prometheus and Grafana only to loopback. Set these private environment values:
 
-## Telegram alerts on FIN
+- `APPLICATION_METRICS_IP`: private route to the application host used by Compose `extra_hosts`.
+- `GRAFANA_ADMIN_PASSWORD`: unique Grafana administrator password.
+- `BACKUP_SSH_TARGET`: restricted SSH target in `user@host` form for `pull_backup.py`.
 
-Put `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in `telegram-relay.env` next to the monitoring Compose file; keep it outside Git and set mode `0600`. The existing MSK bot cannot reach Telegram directly; this deployment uses its credentials on FIN. Never include credentials in commands, logs or release artifacts.
+Run:
 
-Run `docker compose -p renpy-alerts -f ops/docker-compose.telegram.yml up -d`. The relay uses host networking but binds only `127.0.0.1:9081`, accepts only local webhook requests and limits payloads to 64 KiB. Then run `python3 ops/configure_grafana_alerts.py` from the FIN account whose monitoring configuration is in `~/renpy-observability`. This idempotently configures the contact point, notification policy and eight availability, resource and backup rules, and sends a real test notification. Wait for the relay port to listen before running the test. All relay messages use Telegram disable_notification=true. The command fails if notification delivery fails. Keep the monitoring volume: API-provisioned rules live in Grafana's persistent database.
+```sh
+docker compose -f docker-compose.observability.yml config --quiet
+docker compose -f docker-compose.observability.yml up -d
+```
 
-The optional systemd unit uses `/etc/renpy-telegram-relay.env` for hosts with administrator access; FIN currently runs the Docker variant. Do not run both on the same port.
+Confirm all three Prometheus jobs are up: `plotmio-backend`, `plotmio-application-host`, and `plotmio-offhost-backup`. TLS hostname verification must remain enabled.
 
-## Release Evidence
+## Telegram alerts
 
-The backend now admits at most two concurrent project writes or password operations per worker, returning `503` with `Retry-After: 2` instead of queueing extra work. Request bodies are bounded to 10 MiB before JSON/multipart parsing, with a 30-second read deadline and at most 16 simultaneous body readers. Imports, exports, graph commands and password work run outside the event loop. Use one backend worker: admission and IP counters are process-local.
+Put `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in a mode-0600 `telegram-relay.env` outside Git. Start the loopback-only relay with:
 
-Persisted graph snapshots, catalogs and legacy script text share a 32 MiB owner budget, including catalog writes by collaborators. Each snapshot is limited to 8 MiB and each catalog to 1 MiB. Import replaces graph/catalog atomically; rejected writes preserve existing data and revisions. This is a logical payload quota, not a cap on SQLite file size, backups, logs or legacy version history. Existing owners above the budget can shrink data or delete projects.
+```sh
+docker compose -p renpy-alerts -f ops/docker-compose.telegram.yml up -d
+python3 ops/configure_grafana_alerts.py
+```
 
-WebSocket admission includes unauthenticated connections: 200 total and 20 per source IP per worker, in addition to authenticated user/project limits. Uvicorn bounds frames to 1 MiB and its incoming queue to four frames. Membership is rechecked before processing messages and delivering broadcasts; idle revoked sessions close within 15 seconds. Slow recipients have a two-second send deadline and do not block delivery to other peers.
+The stable `renpy-*` alert UIDs and Compose project name are retained to update the existing Grafana objects rather than duplicate them. User-visible alert names use Plotmio. All relay messages set `disable_notification=true`.
 
-Before deployment, configure trusted proxy addresses explicitly and verify that the application sees distinct real client IPs through nginx and Docker. Do not trust arbitrary forwarded headers. These changes have local automated coverage; they still require real ingress/load testing, container CPU/memory/PID/log limits and disk monitoring on the VPS.
+## Backups and host health
 
-Project WebSocket defaults allow 300 incoming messages and 8 MiB per connection per fixed 10-second window; incoming text frames are limited to 16 KiB. Compose exposes `MAX_WS_MESSAGES_PER_WINDOW`, `MAX_WS_BYTES_PER_WINDOW`, and `WS_RATE_WINDOW_SECONDS`. These budgets apply after authentication and do not replace service-wide connection admission or ingress/transport limits. Anonymous preview uses a committed artifact; run `python backend/scripts/build_demo_preview.py --check` before deployment.
+The selected recovery-point objective is six hours. The application host runs `renpy-backup.timer` every four hours and `renpy-host-metrics.timer` each minute. Unit names remain stable for deployment continuity.
 
-For each deployment, record the Git commit, image IDs, database-backup checksum, Compose status, `/healthz` result, Prometheus target health, dashboard timestamps and one delivered test alert. Test restore into a temporary volume before calling the public beta recoverable.
+Install `release_host.py` outside the checkout, create the private backup directory, enable the timers, and run one backup before enabling alerts. The restricted backup key must:
 
-## Regular backups and host health
+- be accepted only from the observability host's private address;
+- force `release_host.py export`;
+- disable port, agent and X11 forwarding;
+- use a pinned host key with `StrictHostKeyChecking=yes`.
 
-The selected RPO is six hours. MSK runs `renpy-backup.timer` every four hours; FIN pulls every fifteen minutes, leaving time for transfer and retries. SQLite's backup API creates a consistent copy, validates integrity, uses mode 0600 and keeps latest/previous copies. Backups contain private user data: directories must be 0700 and must never be served by nginx or committed.
+Run `pull_backup.py` with `BACKUP_SSH_TARGET` set in its private cron environment. It validates SQLite before replacing a known-good copy, retains latest/previous, and writes only a success timestamp to the loopback metrics bridge.
 
-Install `release_host.py` as `/usr/local/lib/renpy-release-host.py`, the four backup/metrics units in `/etc/systemd/system/`, create `/var/lib/renpy-monitor` with mode 0755, reload systemd and enable the timers. Run one backup and metrics collection before enabling FIN alert rules. The database path defaults to the deployed Docker volume; override `--database` if that changes. Host metrics are emitted atomically each minute and served only through the FIN-allowlisted `/internal/host-metrics` endpoint.
+Test restores in an isolated volume with the production DatabaseService. Never overwrite the live database as a restore test.
 
-On FIN create a dedicated Ed25519 key at `~/.ssh/renpy-backup`, mode 0600. Authorize its public key on MSK with `from="10.20.30.1",restrict,command="sudo -n /usr/bin/python3 /usr/local/lib/renpy-release-host.py export"`. This account needs permission for that exact sudo command. Pin the MSK host's verified Ed25519 public host key in `~/.ssh/renpy-backup-known-hosts` for `10.20.30.2`; do not disable host verification. Do not reuse this restricted key for deployment.
+## Release evidence
 
-Run `python3 ~/renpy-observability/ops/pull_backup.py` and schedule that command every fifteen minutes in the FIN user's existing crontab. It serializes concurrent runs, validates the downloaded SQLite database before replacing any known good copy, keeps latest/previous in `~/renpy-backups/automatic`, and writes a successful-transfer timestamp to `~/renpy-observability/backup-metrics/health.prom`. This separate metrics directory contains no backups or credentials. The Compose backup-metrics server binds only 127.0.0.1:19092.
-
-Alerts cover backend availability, 5xx ratio, disk below 10% free, available memory below 10%, load per CPU above 1.5, MSK backup older than six hours, FIN transfer older than one hour, and stale host collection. Missing data is alerting for infrastructure/backup rules. Test restoration into a separate volume using the production DatabaseService; never restore over the live database as a test. Check VPN failures and off-host transfer alerts during operations.
+For each deployment record privately: Git commit, image IDs, database-backup checksum, Compose status, `/healthz`, Prometheus target health, dashboard timestamps, one delivered silent alert, TLS renewal status and the smoke-test results. Do not commit rendered infrastructure configuration, credentials, personal host aliases or server addresses.

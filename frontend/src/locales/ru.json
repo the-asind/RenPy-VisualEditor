@@ -1,5 +1,5 @@
 {
-  "app.title": "Визуальный Редактор Ren'Py",
+  "app.title": "Plotmio",
   "menu.settings": "Настройки",
   "menu.logout": "Выйти",
   "language.english": "English",
@@ -169,7 +169,7 @@
   "branchConditionDialog.preview": "Предпросмотр",
   "branchConditionDialog.conditionRequired": "Укажите условие.",
   "branchConditionDialog.notesHelper": "Заметки вставляются как комментарии внутри ветки.",
-  "landing.hero.tag": "Ren'Py Visual Editor",
+  "landing.hero.tag": "Plotmio",
   "landing.hero.title": "Вся история на одном холсте.",
   "landing.hero.subtitle": "Пишите ветвящиеся истории без битвы со скриптами",
   "landing.hero.description": "Загрузите проект Ren'Py. Разложите каждый файл, лейбл, выбор и переход. Пишите вместе в одном живом пространстве истории.",
@@ -190,7 +190,7 @@
   "landing.storyTags.fullProject": "Один холст проекта для каждого .rpy файла.",
   "landing.legal": "Независимый некоммерческий эксперимент редактора для проектов Ren'Py. Не связан с Ren'Py и не одобрен Ren'Py.",
   "landing.login": "Войти",
-  "landing.demoAria": "Живое демо холста RenPy Visual Editor",
+  "landing.demoAria": "Живое демо холста Plotmio",
   "landing.demoLoading": "Загрузка демо Clockwork Library...",
   "landing.demoUnavailable": "Демо временно недоступно.",
   "common.add": "Добавить",
@@ -275,7 +275,7 @@
   "mainMenu.errors.action": "Действие не выполнено. Проверьте права или попробуйте ещё раз.",
   "projects.script_plural": "{{count}} scripts",
   "editor.noProjectSelected": "No project selected. Please select a project first.",
-  "landing.hero.videoTitle": "Ren'Py Visual Editor demo",
+  "landing.hero.videoTitle": "Демо Plotmio",
   "landing.cards.confidence.title": "Operational confidence",
   "landing.cards.confidence.text": "FastAPI backend, auth, project storage, uploads/downloads, and SQLite persistence ready for teams."
 }

@@ -1,6 +1,6 @@
 # Zabbix Local PoC
 
-This directory contains the optional Zabbix integration for RenPy Visual Editor SaaS.
+This directory contains the optional Zabbix integration for Plotmio.
 
 Zabbix is an operational monitoring layer for availability, host/container health, synthetic checks, incident routing, and runbooks. Prometheus remains the application metrics source, and Grafana remains the dashboard layer for `rve_*` metrics.
 
@@ -52,7 +52,7 @@ python ops/zabbix/scripts/bootstrap_zabbix.py `
   --password zabbix
 ```
 
-The bootstrap script imports the template, creates the `RenPy Visual Editor` host group when missing, and creates or updates `renpy-visual-editor-local` with bounded URL macros.
+The bootstrap script imports the template, creates the `Plotmio` host group when missing, and creates or updates `renpy-visual-editor-local` with bounded URL macros.
 
 Manual import:
 
@@ -60,7 +60,7 @@ Manual import:
 2. Go to `Data collection` -> `Templates`.
 3. Import `ops/zabbix/templates/renpy-visual-editor-saas.yaml`.
 4. Create a host such as `renpy-visual-editor-local`.
-5. Link `Template App RenPy Visual Editor SaaS`.
+5. Link `Template App Plotmio SaaS`.
 6. Override macros if the default internal Docker URLs do not match your environment.
 
 Default template macros:

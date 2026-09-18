@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="520" viewBox="0 0 720 520" fill="none">
+  <rect width="720" height="520" rx="18" fill="#F7F8FB"/>
+  <rect x="18" y="18" width="684" height="42" rx="10" fill="#FFFFFF" stroke="#DCE2EC"/>
+  <circle cx="40" cy="39" r="7" fill="#8B6AFD"/><path d="M40 30V48M31 39H49" stroke="#FFF" stroke-width="2" stroke-linecap="round"/>
+  <text x="60" y="44" fill="#121826" font-family="Arial,sans-serif" font-size="13" font-weight="700">CLOCKWORK LIBRARY</text>
+  <text x="590" y="44" fill="#647286" font-family="Arial,sans-serif" font-size="11">7 files · 8 labels</text>
+  <rect x="24" y="80" width="218" height="414" rx="12" fill="#FFFFFF" stroke="#C7D0DE"/>
+  <rect x="264" y="80" width="218" height="414" rx="12" fill="#FFFFFF" stroke="#C7D0DE"/>
+  <rect x="504" y="80" width="192" height="414" rx="12" fill="#FFFFFF" stroke="#C7D0DE"/>
+  <rect x="24" y="80" width="218" height="40" rx="12" fill="#121826"/><rect x="24" y="108" width="218" height="12" fill="#121826"/>
+  <rect x="264" y="80" width="218" height="40" rx="12" fill="#121826"/><rect x="264" y="108" width="218" height="12" fill="#121826"/>
+  <rect x="504" y="80" width="192" height="40" rx="12" fill="#121826"/><rect x="504" y="108" width="192" height="12" fill="#121826"/>
+  <text x="42" y="105" fill="#FFFFFF" font-family="Arial,sans-serif" font-size="12" font-weight="700">script.rpy</text>
+  <text x="282" y="105" fill="#FFFFFF" font-family="Arial,sans-serif" font-size="12" font-weight="700">library.rpy</text>
+  <text x="522" y="105" fill="#FFFFFF" font-family="Arial,sans-serif" font-size="12" font-weight="700">endings.rpy</text>
+  <rect x="42" y="140" width="182" height="112" rx="10" fill="#F3F0FF" stroke="#BDAEFF"/><text x="58" y="163" fill="#6740CF" font-family="Arial,sans-serif" font-size="11" font-weight="700">label start</text><text x="58" y="190" fill="#121826" font-family="Arial,sans-serif" font-size="12">RenPy Mouse wakes</text><text x="58" y="211" fill="#647286" font-family="Arial,sans-serif" font-size="11">scene library night</text><text x="58" y="232" fill="#647286" font-family="Arial,sans-serif" font-size="11">dialogue · action</text>
+  <rect x="42" y="284" width="182" height="88" rx="10" fill="#FFFFFF" stroke="#D8DFEA"/><text x="58" y="309" fill="#121826" font-family="Arial,sans-serif" font-size="12" font-weight="700">call library_hall</text><text x="58" y="333" fill="#647286" font-family="Arial,sans-serif" font-size="11">relation edge →</text>
+  <rect x="282" y="140" width="182" height="112" rx="10" fill="#F3F0FF" stroke="#BDAEFF"/><text x="298" y="163" fill="#6740CF" font-family="Arial,sans-serif" font-size="11" font-weight="700">library_hall</text><text x="298" y="190" fill="#121826" font-family="Arial,sans-serif" font-size="12">What should the</text><text x="298" y="211" fill="#121826" font-family="Arial,sans-serif" font-size="12">scene remember?</text><text x="298" y="232" fill="#647286" font-family="Arial,sans-serif" font-size="11">menu · 3 choices</text>
+  <rect x="282" y="284" width="182" height="88" rx="10" fill="#FFFFFF" stroke="#D8DFEA"/><text x="298" y="309" fill="#121826" font-family="Arial,sans-serif" font-size="12" font-weight="700">The reading lamp</text><text x="298" y="333" fill="#647286" font-family="Arial,sans-serif" font-size="11">scene_tone = warm</text>
+  <rect x="522" y="140" width="156" height="112" rx="10" fill="#F3F0FF" stroke="#BDAEFF"/><text x="538" y="163" fill="#6740CF" font-family="Arial,sans-serif" font-size="11" font-weight="700">ending_bright</text><text x="538" y="190" fill="#121826" font-family="Arial,sans-serif" font-size="12">the page glows</text><text x="538" y="211" fill="#647286" font-family="Arial,sans-serif" font-size="11">normalized export</text>
+  <path d="M224 328C250 328 251 196 282 196M464 328C488 328 492 196 522 196" stroke="#8B6AFD" stroke-width="3" stroke-linecap="round" stroke-dasharray="7 8"/>
+  <circle cx="253" cy="328" r="5" fill="#8B6AFD"/><circle cx="493" cy="328" r="5" fill="#8B6AFD"/>
+</svg>

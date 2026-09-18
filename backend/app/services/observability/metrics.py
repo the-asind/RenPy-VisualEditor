@@ -7,14 +7,14 @@ registry = CollectorRegistry()
 
 http_requests_total = Counter(
     f"{METRICS_PREFIX}_http_requests_total",
-    "Total HTTP requests handled by the RenPy Visual Editor backend.",
+    "Total HTTP requests handled by the Plotmio backend.",
     ["method", "route", "status_class"],
     registry=registry,
 )
 
 http_request_duration_seconds = Histogram(
     f"{METRICS_PREFIX}_http_request_duration_seconds",
-    "HTTP request duration in seconds for the RenPy Visual Editor backend.",
+    "HTTP request duration in seconds for the Plotmio backend.",
     ["method", "route", "status_class"],
     buckets=(0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60),
     registry=registry,
@@ -22,7 +22,7 @@ http_request_duration_seconds = Histogram(
 
 http_request_in_progress = Gauge(
     f"{METRICS_PREFIX}_http_request_in_progress",
-    "HTTP requests currently in progress in the RenPy Visual Editor backend.",
+    "HTTP requests currently in progress in the Plotmio backend.",
     ["method"],
     registry=registry,
 )

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import brandLogoUrl from '../../assets/logo.svg';
 import { useAuth } from '../../contexts/AuthContext';
@@ -15,6 +15,10 @@ const AuthWindow: React.FC<AuthWindowProps> = ({ mode }) => {
   const { t } = useTranslation();
   const { login, register, isAuthenticated } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const continuePath = new URLSearchParams(location.search).get('intent') === 'import'
+    ? '/projects?intent=import'
+    : '/projects';
 
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
@@ -26,9 +30,9 @@ const AuthWindow: React.FC<AuthWindowProps> = ({ mode }) => {
 
   useEffect(() => {
     if (isAuthenticated) {
-      navigate('/', { replace: true });
+      navigate(continuePath, { replace: true });
     }
-  }, [isAuthenticated, navigate]);
+  }, [continuePath, isAuthenticated, navigate]);
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -52,7 +56,7 @@ const AuthWindow: React.FC<AuthWindowProps> = ({ mode }) => {
           setError(result.error || t('auth.errors.register'));
           return;
         }
-        navigate('/', { replace: true });
+        navigate(continuePath, { replace: true });
         return;
       }
 
@@ -61,7 +65,7 @@ const AuthWindow: React.FC<AuthWindowProps> = ({ mode }) => {
         setError(t('auth.errors.login'));
         return;
       }
-      navigate('/', { replace: true });
+      navigate(continuePath, { replace: true });
     } finally {
       setIsSubmitting(false);
     }
@@ -74,7 +78,7 @@ const AuthWindow: React.FC<AuthWindowProps> = ({ mode }) => {
   return (
     <main className="auth-page">
       <div className="auth-brand-bubble">
-        <img className="auth-brand-logo" src={brandLogoUrl} alt="renpy.online" />
+        <img className="auth-brand-logo" src={brandLogoUrl} alt="Plotmio" />
       </div>
       <section className="auth-window" aria-label={isRegister ? t('auth.register.title') : t('auth.login.title')}>
         <h1 className="auth-title">{isRegister ? t('auth.register.title') : t('auth.login.title')}</h1>
@@ -123,7 +127,7 @@ const AuthWindow: React.FC<AuthWindowProps> = ({ mode }) => {
           <button
             className="auth-secondary"
             type="button"
-            onClick={() => navigate(isRegister ? '/login' : '/register')}
+            onClick={() => navigate(isRegister ? `/login${location.search}` : `/register${location.search}`)}
           >
             {isRegister ? t('auth.loginInstead') : t('auth.createAccount')}
           </button>

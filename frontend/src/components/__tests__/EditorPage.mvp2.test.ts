@@ -30,7 +30,7 @@ describe('EditorPage MVP 2.0 isolation', () => {
     expect(source).toContain('projectService');
     expect(source).toContain('.getProject(projectId)');
     expect(source).toContain('projectName={projectName}');
-    expect(source).toContain('useRenpyOnlineDocumentTitle(projectName)');
+    expect(source).toContain('usePlotmioDocumentTitle(projectName)');
     expect(source).toContain('loadProjectGraphCrdtDocument');
     expect(source).toContain('importProjectGraphFiles');
     expect(source).toContain('exportProjectGraphFiles');

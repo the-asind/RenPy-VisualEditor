@@ -2,7 +2,8 @@ import React from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import EditorPage from '../components/EditorPage';
-import { HomePage, LoginPage, RegisterPage } from '../pages';
+import { LoginPage, RegisterPage } from '../pages';
+import MainMenuPage from '../components/mainMenu/MainMenuPage';
 
 // Authentication guard component
 const RequireAuth: React.FC<{ children: JSX.Element }> = ({ children }) => {
@@ -15,7 +16,7 @@ const AppRoutes = () => {
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
-      <Route path="/" element={<HomePage />} />
+      <Route path="/" element={<Navigate to="/projects" replace />} />
       <Route path="/editor" element={
         <RequireAuth>
           <EditorPage />
@@ -25,7 +26,7 @@ const AppRoutes = () => {
         path="/projects"
         element={
           <RequireAuth>
-            <Navigate to="/" replace />
+            <MainMenuPage />
           </RequireAuth>
         }
       />

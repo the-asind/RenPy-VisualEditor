@@ -84,7 +84,7 @@ def test_bootstrap_imports_template_and_creates_host_with_macros():
         client=client,
         template_path=TEMPLATE_FILE,
         host_name="renpy-visual-editor-local",
-        host_group_name="RenPy Visual Editor",
+        host_group_name="Plotmio",
         frontend_url="http://frontend/",
         backend_url="http://backend:9000",
         prometheus_url="http://prometheus:9090",

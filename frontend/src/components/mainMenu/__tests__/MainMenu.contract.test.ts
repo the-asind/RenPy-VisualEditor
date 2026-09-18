@@ -27,7 +27,8 @@ describe('MainMenu replacement contract', () => {
   it('replaces the authenticated home dashboard with the new pre-canvas main menu', () => {
     expect(homePageSource).toContain("import MainMenuPage from '../components/mainMenu/MainMenuPage'");
     expect(homePageSource).toContain('<MainMenuPage />');
-    expect(homePageSource).toContain('<LandingPage />');
+    expect(homePageSource).toContain('<Navigate to="/login" replace />');
+    expect(homePageSource).not.toContain('LandingPage');
     expect(homePageSource).not.toContain('ProjectManageDialog');
     expect(homePageSource).not.toContain('Grid');
     expect(homePageSource).not.toContain('CardContent');
@@ -59,7 +60,7 @@ describe('MainMenu replacement contract', () => {
 
     expect(mainMenuSource).toContain("import brandLogoUrl from '../../assets/logo.svg'");
     expect(mainMenuSource).toContain('className="main-menu-brand-logo"');
-    expect(mainMenuSource).not.toContain('main-menu-brand-bubble">renpy.online');
+    expect(mainMenuSource).toContain('alt="Plotmio"');
 
     expect(cssSource).toContain('background: #f7f8fb');
     expect(cssSource).toContain('background-size: 36px 36px');

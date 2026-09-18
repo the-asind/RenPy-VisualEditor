@@ -45,7 +45,7 @@ def test_zabbix_template_defines_bounded_macros_and_availability_items():
     template = ZABBIX_TEMPLATE.read_text(encoding="utf-8")
 
     assert "version: '7.4'" in template
-    assert "Template App RenPy Visual Editor SaaS" in template
+    assert "Template App Plotmio SaaS" in template
     assert "{$RVE_FRONTEND_URL}" in template
     assert "{$RVE_BACKEND_URL}" in template
     assert "{$RVE_PROMETHEUS_URL}" in template
@@ -102,7 +102,7 @@ def test_zabbix_operator_docs_exist_and_reference_safe_run_commands():
 
     assert "docker compose" in readme
     assert "docker-compose.zabbix.yml" in readme
-    assert "Template App RenPy Visual Editor SaaS" in readme
+    assert "Template App Plotmio SaaS" in readme
     assert "admin / zabbix" in readme
     assert "Do not commit production credentials" in readme
 

@@ -1,6 +1,6 @@
-# RenPy Visual Editor
+# Plotmio
 
-RenPy Visual Editor turns a Ren'Py project into one collaborative visual canvas. Files and labels remain visible as frames, narrative statements become editable nodes, and `jump`/`call` relations connect the flow across files.
+Plotmio turns a Ren'Py project into one collaborative visual canvas. Files and labels remain visible as frames, narrative statements become editable nodes, and `jump`/`call` relations connect the flow across files.
 
 The project is preparing for a public beta. The core MVP 2 workflow works locally; production hosting, abuse limits and public feedback links are being completed before the wider announcement.
 

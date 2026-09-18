@@ -63,10 +63,10 @@ def test_observability_compose_declares_prometheus_and_grafana():
 def test_prometheus_scrapes_allowlisted_backend_metrics_bridge():
     config = PROMETHEUS_CONFIG.read_text(encoding="utf-8")
 
-    assert "job_name: renpy-visual-editor-backend" in config
+    assert "job_name: plotmio-backend" in config
     assert "scheme: https" in config
     assert "metrics_path: /internal/metrics" in config
-    assert "renpy.online:443" in config
+    assert "plotmio.com:443" in config
 
 
 def test_grafana_provisions_prometheus_datasource_and_dashboards():
@@ -84,7 +84,7 @@ def test_grafana_dashboards_are_json_and_reference_implemented_metrics():
 
     for dashboard_file in DASHBOARD_FILES:
         dashboard = json.loads(dashboard_file.read_text(encoding="utf-8"))
-        assert dashboard["title"].startswith("RenPy Visual Editor")
+        assert dashboard["title"].startswith("Plotmio")
         assert dashboard.get("panels")
 
         dashboard_text = json.dumps(dashboard)

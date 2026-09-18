@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const lock = JSON.parse(fs.readFileSync(path.join(root, 'package-lock.json'), 'utf8'));
-const sections = ['Third-party production dependency notices for RenPy Visual Editor.\nGenerated from package-lock.json and installed package license files.\nDependency licenses apply independently of the project license.'];
+const sections = ['Third-party production dependency notices for Plotmio.\nGenerated from package-lock.json and installed package license files.\nDependency licenses apply independently of the project license.'];
 const seen = new Set();
 const missing = [];
 const upstreamFiles = {

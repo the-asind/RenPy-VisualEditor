@@ -24,8 +24,8 @@ from .services.admission import ResourceAdmissionMiddleware
 
 # Initialize FastAPI app
 app = FastAPI(
-    title="RenPy Visual Editor",
-    description="API for the RenPy Visual Editor, a visual editor for RenPy scripts with collaborative features",
+    title="Plotmio",
+    description="API for Plotmio, a collaborative visual editor for Ren'Py projects",
     version="1.0.0"
 )
 
@@ -75,7 +75,7 @@ if demo_assets_dir.exists():
 # Root endpoint
 @app.get("/")
 async def root():
-    return {"message": "Welcome to RenPy Visual Editor API"}
+    return {"message": "Welcome to the Plotmio API"}
 
 # Health check endpoint
 @app.get("/health")

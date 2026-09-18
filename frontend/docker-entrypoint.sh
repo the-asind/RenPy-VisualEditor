@@ -2,8 +2,8 @@
 set -e
 
 # Default to env var or fallback
-: "${VITE_API_URL:=https://renpy.asind.online/api}"
-: "${VITE_WS_URL:=wss://renpy.asind.online}"
+: "${VITE_API_URL:=https://plotmio.com/api}"
+: "${VITE_WS_URL:=wss://plotmio.com}"
 
 # Create env.js for runtime configuration
 cat <<EOT > /usr/share/nginx/html/env.js

@@ -1,9 +1,9 @@
 apiVersion: 1
 
 providers:
-  - name: RenPy Visual Editor
+  - name: Plotmio
     orgId: 1
-    folder: RenPy Visual Editor
+    folder: Plotmio
     type: file
     disableDeletion: false
     updateIntervalSeconds: 30

@@ -14,7 +14,7 @@ def digest(path):
         return hashlib.file_digest(stream, 'sha256').hexdigest()
 
 
-def pull(directory, metric, key, hosts):
+def pull(directory, metric, key, hosts, ssh_target):
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
     os.chmod(directory, 0o700)
@@ -24,7 +24,7 @@ def pull(directory, metric, key, hosts):
         with os.fdopen(fd, 'wb') as stream:
             subprocess.run(['ssh', '-T', '-i', str(key), '-o', 'IdentitiesOnly=yes', '-o', 'BatchMode=yes',
                 '-o', 'StrictHostKeyChecking=yes', '-o', 'UserKnownHostsFile=' + str(hosts),
-                '-o', 'ConnectTimeout=15', 'asind@10.20.30.2'], stdout=stream, check=True, timeout=600)
+                '-o', 'ConnectTimeout=15', ssh_target], stdout=stream, check=True, timeout=600)
             stream.flush()
             os.fsync(stream.fileno())
         with closing(sqlite3.connect(temporary.resolve().as_uri() + '?mode=ro', uri=True)) as database:
@@ -51,10 +51,13 @@ def pull(directory, metric, key, hosts):
 if __name__ == '__main__':
     import fcntl
     base = Path.home() / 'renpy-observability'
+    ssh_target = os.environ.get('BACKUP_SSH_TARGET', '').strip()
+    if not ssh_target:
+        raise SystemExit('BACKUP_SSH_TARGET is required')
     with (base / 'backup-pull.lock').open('w') as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             raise SystemExit(0)
         pull(Path.home() / 'renpy-backups/automatic', base / 'backup-metrics/health.prom',
-             Path.home() / '.ssh/renpy-backup', Path.home() / '.ssh/renpy-backup-known-hosts')
+             Path.home() / '.ssh/renpy-backup', Path.home() / '.ssh/renpy-backup-known-hosts', ssh_target)

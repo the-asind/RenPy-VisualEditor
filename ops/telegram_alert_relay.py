@@ -20,7 +20,7 @@ def make_handler(allowed_ip, deliver):
                 payload = json.loads(self.rfile.read(length))
                 if not isinstance(payload, dict) or not isinstance(payload.get('alerts'), list):
                     raise ValueError()
-                lines = ['RenPy observability: ' + str(payload.get('status', 'unknown'))]
+                lines = ['Plotmio observability: ' + str(payload.get('status', 'unknown'))]
                 for alert in payload['alerts'][:20]:
                     lines.append(str(alert.get('labels', {}).get('alertname', 'Alert')))
                     lines.append(str(alert.get('annotations', {}).get('summary', '')))

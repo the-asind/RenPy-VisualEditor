@@ -2,13 +2,132 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>renpy.online</title>
+    <meta name="description" content="Explore your Ren’Py project on one canvas. Follow labels and choices, edit together, and export .rpy files. Try Plotmio’s interactive demo." />
+    <meta name="theme-color" content="#f7f8fb" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="canonical" href="https://plotmio.com/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Plotmio" />
+    <meta property="og:title" content="Plotmio — Visual Editor for Ren’Py Projects" />
+    <meta property="og:description" content="Bring your .rpy files onto one canvas. Follow labels, choices and connections, edit with your team, and export back to Ren’Py." />
+    <meta property="og:url" content="https://plotmio.com/" />
+    <meta property="og:image" content="https://plotmio.com/plotmio-social-preview.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Plotmio — Visual Editor for Ren’Py Projects" />
+    <meta name="twitter:description" content="Bring your .rpy files onto one canvas and see the connections in your Ren’Py project." />
+    <meta name="twitter:image" content="https://plotmio.com/plotmio-social-preview.png" />
+    <title>Plotmio — Visual Editor for Ren’Py Projects</title>
+    <link rel="stylesheet" href="/src/marketing.css" />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Plotmio",
+        "applicationCategory": "DeveloperApplication",
+        "operatingSystem": "Web",
+        "url": "https://plotmio.com/",
+        "description": "A visual editor for Ren’Py projects that maps .rpy files, labels, choices and connections on one canvas.",
+        "license": "https://www.apache.org/licenses/LICENSE-2.0"
+      }
+    </script>
   </head>
   <body>
-    <div id="root"></div>
-    <script src="/env.js"></script>
-    <script type="module" src="/src/main.tsx"></script>
+    <header class="marketing-nav">
+      <a class="marketing-brand" href="/" aria-label="Plotmio home">
+        <img src="/logo.svg" alt="Plotmio" width="208" height="60" />
+      </a>
+      <nav aria-label="Primary navigation">
+        <a href="#how-it-works">How it works</a>
+        <a href="/docs">Quick start</a>
+        <a href="https://github.com/the-asind/RenPy-VisualEditor">GitHub</a>
+        <a class="marketing-nav-cta" href="/login">Log in</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="marketing-hero marketing-container" aria-labelledby="hero-title">
+        <div class="marketing-hero-copy">
+          <p class="marketing-eyebrow">Visual editor for Ren’Py</p>
+          <h1 id="hero-title">Plotmio understands your Ren’Py project.</h1>
+          <p class="marketing-lead">Bring your <code>.rpy</code> files onto one canvas. Follow labels, choices and connections, edit with your team, and export back to Ren’Py.</p>
+          <div class="marketing-actions">
+            <a class="marketing-button marketing-button-primary" href="#demo">Explore the demo</a>
+            <a class="marketing-button marketing-button-secondary" href="/login?intent=import">Open your project</a>
+          </div>
+          <p class="marketing-note">No account needed for the demo. Use Chrome or Edge to open a local project.</p>
+          <p class="marketing-trust"><a href="https://github.com/the-asind/RenPy-VisualEditor">Open source</a><span>·</span><span>Apache 2.0</span><span>·</span><span>Public beta</span></p>
+        </div>
+        <div class="marketing-hero-art">
+          <img src="/plotmio-canvas-preview.png" alt="Preview of a Ren’Py project graph with file frames, labels, choices and connections." width="720" height="520" />
+        </div>
+      </section>
+
+      <section id="demo" class="marketing-section marketing-demo-section" aria-labelledby="demo-title">
+        <div class="marketing-container">
+          <div class="marketing-section-heading">
+            <p class="marketing-eyebrow">Try it on a real project</p>
+            <h2 id="demo-title">See the story behind the files.</h2>
+            <p>Select a scene, edit a line, then follow a connection. The demo uses the same ProjectGraph canvas as an imported project.</p>
+          </div>
+          <div class="marketing-demo-card">
+            <div class="marketing-demo-intro">
+              <strong>Clockwork Library</strong>
+              <span>Demo edits stay in this page and reset when you reload.</span>
+              <button id="demo-start" class="marketing-button marketing-button-primary" type="button">Start interactive demo</button>
+            </div>
+            <div id="demo-root" class="marketing-demo-root" hidden aria-live="polite"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="marketing-section" aria-labelledby="understands-title">
+        <div class="marketing-container">
+          <div class="marketing-section-heading">
+            <p class="marketing-eyebrow">From files to the whole story</p>
+            <h2 id="understands-title">A clearer view of your existing project.</h2>
+          </div>
+          <div class="marketing-feature-grid">
+            <article><span class="marketing-feature-number">01</span><h3>See across files</h3><p>File and label frames keep the structure of your project visible on one canvas.</p></article>
+            <article><span class="marketing-feature-number">02</span><h3>Follow the branches</h3><p>Choices, jumps and calls become connections you can trace across the story.</p></article>
+            <article><span class="marketing-feature-number">03</span><h3>Bring changes back</h3><p>Review a normalized <code>.rpy</code> export. Editor layout and collaboration data stay out of the files.</p></article>
+          </div>
+        </div>
+      </section>
+
+      <section id="how-it-works" class="marketing-section marketing-muted-section" aria-labelledby="how-title">
+        <div class="marketing-container">
+          <div class="marketing-section-heading"><p class="marketing-eyebrow">How it works</p><h2 id="how-title">Start with the project you already have.</h2></div>
+          <div class="marketing-steps">
+            <article><span>1</span><h3>Choose your project</h3><p>Select the Ren’Py project root that contains <code>game</code>. Plotmio reads the <code>.rpy</code> text and an asset-name catalog.</p></article>
+            <article><span>2</span><h3>Explore and edit</h3><p>Navigate labels and branches on the canvas, then work with collaborators in the same project.</p></article>
+            <article><span>3</span><h3>Review and export</h3><p>Export normalized scripts and write them back only after reviewing the changed files. Start with a copy of your project.</p></article>
+          </div>
+        </div>
+      </section>
+
+      <section class="marketing-section" aria-labelledby="files-title">
+        <div class="marketing-container marketing-files-panel">
+          <div><p class="marketing-eyebrow">Your files, explained</p><h2 id="files-title">Keep the important boundaries visible.</h2></div>
+          <div><p>To save a project, Plotmio uploads <code>.rpy</code> text and a catalog of asset names and paths. Images, audio and video stay on your computer. Export uses normalized formatting, so it is not a byte-for-byte round trip.</p><a class="marketing-inline-link" href="/docs#files">Read the quick start →</a></div>
+        </div>
+      </section>
+
+      <section class="marketing-section marketing-faq-section" aria-labelledby="faq-title">
+        <div class="marketing-container marketing-faq"><div class="marketing-section-heading"><p class="marketing-eyebrow">Questions before you start</p><h2 id="faq-title">A few honest answers.</h2></div><div>
+          <details open><summary>Can I open an existing Ren’Py project?</summary><p>Yes. Choose its root folder and Plotmio imports the <code>.rpy</code> files inside <code>game</code>.</p></details>
+          <details><summary>Do I need an account?</summary><p>No account is needed for the interactive demo. An account is needed to save projects and collaborate.</p></details>
+          <details><summary>Does Plotmio preserve my exact formatting?</summary><p>Export is normalized. Review the generated files before writing them into your project.</p></details>
+          <details><summary>Does it run the Ren’Py game?</summary><p>Plotmio maps and edits project structure; run and test the game in Ren’Py. Dynamic references and arbitrary Python may remain unresolved.</p></details>
+          <details><summary>Which browser should I use?</summary><p>Local folder access currently requires Chromium, such as Chrome or Edge, and your explicit permission.</p></details>
+        </div></div>
+      </section>
+
+      <section class="marketing-final-cta" aria-labelledby="final-title"><div class="marketing-container"><h2 id="final-title">See your story from a different angle.</h2><p>Open a project you already know and find the connections you could not see in a file list.</p><a class="marketing-button marketing-button-primary" href="/login?intent=import">Open your project</a></div></section>
+    </main>
+
+    <footer class="marketing-footer"><div class="marketing-container"><span>An independent open-source tool for Ren’Py creators.</span><div><a href="/docs">Quick start</a><a href="https://github.com/the-asind/RenPy-VisualEditor/issues/new?template=bug_report.yml">Report a bug</a><a href="https://github.com/the-asind/RenPy-VisualEditor">Source</a><span>Apache 2.0</span></div></div></footer>
+    <script defer src="/env.js"></script>
+    <script type="module" src="/src/landing.tsx"></script>
   </body>
 </html>

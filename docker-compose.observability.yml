@@ -3,7 +3,7 @@ services:
     image: prom/prometheus:v2.55.1
     network_mode: host
     extra_hosts:
-      - 'renpy.online:${MSK_METRICS_IP:-10.20.30.2}'
+      - 'plotmio.com:${APPLICATION_METRICS_IP:?APPLICATION_METRICS_IP is required}'
     restart: unless-stopped
     mem_limit: 512m
     cpus: 0.75

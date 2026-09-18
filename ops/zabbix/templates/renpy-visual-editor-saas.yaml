@@ -2,13 +2,13 @@ zabbix_export:
   version: '7.4'
   template_groups:
     - uuid: 1f1c93b0e95f4e66875918cf3dcb9e15
-      name: RenPy Visual Editor
+      name: Plotmio
   templates:
     - uuid: 13aa56c8a33b4e87a221b5c6216bf546
-      template: Template App RenPy Visual Editor SaaS
-      name: Template App RenPy Visual Editor SaaS
+      template: Template App Plotmio SaaS
+      name: Template App Plotmio SaaS
       groups:
-        - name: RenPy Visual Editor
+        - name: Plotmio
       tags:
         - tag: service
           value: renpy-visual-editor
@@ -305,77 +305,77 @@ zabbix_export:
               status_codes: '200'
       triggers:
         - uuid: b9bd77b08fed4d7fafabdfd8bd27b5bc
-          expression: 'last(/Template App RenPy Visual Editor SaaS/web.test.fail[Backend health])<>0'
+          expression: 'last(/Template App Plotmio SaaS/web.test.fail[Backend health])<>0'
           name: Backend health is unavailable
           priority: HIGH
           tags:
             - tag: component
               value: backend
         - uuid: bb3b221df24240eeb8e91165dc85e5a8
-          expression: 'last(/Template App RenPy Visual Editor SaaS/web.test.fail[Frontend availability])<>0'
+          expression: 'last(/Template App Plotmio SaaS/web.test.fail[Frontend availability])<>0'
           name: Frontend is unavailable
           priority: HIGH
           tags:
             - tag: component
               value: frontend
         - uuid: a3766b3932a44935974b39be9cd8de9b
-          expression: 'last(/Template App RenPy Visual Editor SaaS/web.test.fail[Prometheus readiness])<>0'
+          expression: 'last(/Template App Plotmio SaaS/web.test.fail[Prometheus readiness])<>0'
           name: Prometheus is unavailable
           priority: WARNING
           tags:
             - tag: component
               value: prometheus
         - uuid: 9421fd72840248e595ddfac208771e09
-          expression: 'last(/Template App RenPy Visual Editor SaaS/web.test.fail[Grafana health])<>0'
+          expression: 'last(/Template App Plotmio SaaS/web.test.fail[Grafana health])<>0'
           name: Grafana is unavailable
           priority: WARNING
           tags:
             - tag: component
               value: grafana
         - uuid: f9f44decc6054c73930515a59e83b75a
-          expression: 'last(/Template App RenPy Visual Editor SaaS/rve.prometheus.backend.target.health,#2)<>"up"'
+          expression: 'last(/Template App Plotmio SaaS/rve.prometheus.backend.target.health,#2)<>"up"'
           name: Prometheus backend scrape target is not up
           priority: HIGH
           tags:
             - tag: component
               value: prometheus
         - uuid: 8f553822a6e449ba96b2efac5ece783e
-          expression: 'last(/Template App RenPy Visual Editor SaaS/rve.prometheus.backend.5xx.rate)>0'
+          expression: 'last(/Template App Plotmio SaaS/rve.prometheus.backend.5xx.rate)>0'
           name: Backend 5xx rate is above zero
           priority: AVERAGE
           tags:
             - tag: component
               value: backend
         - uuid: 6040e7c2bbd54b85a754bcf4a188ca87
-          expression: 'last(/Template App RenPy Visual Editor SaaS/rve.prometheus.snapshot.save.failure.rate)>0'
+          expression: 'last(/Template App Plotmio SaaS/rve.prometheus.snapshot.save.failure.rate)>0'
           name: Snapshot save failures are above zero
           priority: HIGH
           tags:
             - tag: component
               value: storage
         - uuid: 993f36a7dc5e4ae7a876c78e2a0fe22e
-          expression: 'last(/Template App RenPy Visual Editor SaaS/rve.prometheus.loro.bridge.failure.rate)>0'
+          expression: 'last(/Template App Plotmio SaaS/rve.prometheus.loro.bridge.failure.rate)>0'
           name: Loro bridge failures are above zero
           priority: AVERAGE
           tags:
             - tag: component
               value: backend
         - uuid: 470694964f9943389a7445c225f8534
-          expression: 'last(/Template App RenPy Visual Editor SaaS/rve.prometheus.import.failure.rate)>0'
+          expression: 'last(/Template App Plotmio SaaS/rve.prometheus.import.failure.rate)>0'
           name: ProjectGraph import failures are above zero
           priority: AVERAGE
           tags:
             - tag: component
               value: backend
         - uuid: 01368f5ebf994b6f999677ca5b540794
-          expression: 'last(/Template App RenPy Visual Editor SaaS/rve.prometheus.export.failure.rate)>0'
+          expression: 'last(/Template App Plotmio SaaS/rve.prometheus.export.failure.rate)>0'
           name: ProjectGraph export failures are above zero
           priority: AVERAGE
           tags:
             - tag: component
               value: backend
         - uuid: e602f34657eb456a97366b9cf5c9cd5c
-          expression: 'last(/Template App RenPy Visual Editor SaaS/auth_synthetic_check.py["{$RVE_BACKEND_URL}","{$RVE_SYNTH_USERNAME}","{$RVE_SYNTH_PASSWORD}"])=0'
+          expression: 'last(/Template App Plotmio SaaS/auth_synthetic_check.py["{$RVE_BACKEND_URL}","{$RVE_SYNTH_USERNAME}","{$RVE_SYNTH_PASSWORD}"])=0'
           name: Auth synthetic check failed
           priority: HIGH
           status: DISABLED
@@ -383,7 +383,7 @@ zabbix_export:
             - tag: component
               value: synthetic
         - uuid: fb7cdbef3de04b8aa38ebf5795fdca62
-          expression: 'last(/Template App RenPy Visual Editor SaaS/projectgraph_synthetic_check.py["{$RVE_BACKEND_URL}","{$RVE_SYNTH_USERNAME}","{$RVE_SYNTH_PASSWORD}"])=0'
+          expression: 'last(/Template App Plotmio SaaS/projectgraph_synthetic_check.py["{$RVE_BACKEND_URL}","{$RVE_SYNTH_USERNAME}","{$RVE_SYNTH_PASSWORD}"])=0'
           name: ProjectGraph synthetic check failed
           priority: HIGH
           status: DISABLED

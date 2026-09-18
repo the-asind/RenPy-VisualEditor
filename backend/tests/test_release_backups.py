@@ -21,18 +21,19 @@ def test_offhost_pull_validates_before_replacing_and_reports_success(tmp_path, m
         connection.execute('create table mouse(name text)')
     def receive(args, stdout, **kwargs):
         assert 'StrictHostKeyChecking=yes' in args
+        assert 'backup@example.internal' in args
         stdout.write(source.read_bytes())
     monkeypatch.setattr(pull.subprocess, 'run', receive)
     backups = tmp_path / 'remote'
     metric = tmp_path / 'health.prom'
-    pull.pull(backups, metric, tmp_path / 'key', tmp_path / 'hosts')
+    pull.pull(backups, metric, tmp_path / 'key', tmp_path / 'hosts', 'backup@example.internal')
     assert (backups / 'latest.sqlite').read_bytes() == source.read_bytes()
     assert 'rve_backup_offhost_last_success_timestamp_seconds 0\n' not in metric.read_text()
     original = (backups / 'latest.sqlite').read_bytes()
     source.write_bytes(b'broken transfer')
     import pytest
     with pytest.raises(sqlite3.DatabaseError):
-        pull.pull(backups, metric, tmp_path / 'key', tmp_path / 'hosts')
+        pull.pull(backups, metric, tmp_path / 'key', tmp_path / 'hosts', 'backup@example.internal')
     assert (backups / 'latest.sqlite').read_bytes() == original
 
 
@@ -69,9 +70,9 @@ def test_host_metrics_report_missing_and_current_backup(tmp_path):
 
 def test_host_metrics_ingress_and_scrape_are_restricted():
     root = Path(__file__).resolve().parents[2]
-    nginx = (root / 'ops/nginx/renpy.online.conf').read_text()
+    nginx = (root / 'ops/nginx/plotmio.conf.template').read_text()
     section = nginx.split('location = /internal/host-metrics {')[1].split('}')[0]
-    assert 'allow 10.20.30.1;' in section
+    assert 'allow __OBSERVABILITY_VPN_IP__;' in section
     assert 'deny all;' in section
     assert 'alias /var/lib/renpy-monitor/host.prom;' in section
     assert 'metrics_path: /internal/host-metrics' in (root / 'ops/prometheus/prometheus.yml').read_text()

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="416" height="120" viewBox="0 0 416 120" fill="none" role="img" aria-labelledby="plotmio-title">
+  <title id="plotmio-title">Plotmio</title>
+  <g stroke="#121826" stroke-width="12" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M16 108V58C16 43 26 34 39 34C53 34 62 45 62 60C62 75 53 86 39 86C26 86 16 76 16 62"/><path d="M86 12V84"/><path d="M160 60C160 75 150 86 136 86C122 86 112 75 112 60C112 45 122 34 136 34C150 34 160 45 160 60Z"/><path d="M187 17V68C187 80 193 86 205 86M174 36H205"/><path d="M330 38V84"/><path d="M402 60C402 75 392 86 378 86C364 86 354 75 354 60C354 45 364 34 378 34C392 34 402 45 402 60Z"/>
+  </g>
+  <circle cx="330" cy="14" r="6" fill="#121826"/><g stroke="#8B6AFD" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"><path d="M236 84V51C236 29 268 29 268 51V70M268 51C268 29 300 29 300 51V84"/></g><circle cx="268" cy="85" r="5" fill="#8B6AFD"/>
+</svg>

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
 import CheckRoundedIcon from '@mui/icons-material/CheckRounded';
@@ -123,6 +123,7 @@ const errorDetail = (error: unknown): string | null => {
 
 const MainMenuPage: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { t, i18n } = useTranslation();
   const { user, logout, updateAccount, deleteAccount } = useAuth();
   const { projects, loading, error, refreshProjects, createProject } = useProjects();
@@ -152,6 +153,13 @@ const MainMenuPage: React.FC = () => {
   const [createdProjectId, setCreatedProjectId] = useState<string | number | null>(null);
   const [wizardError, setWizardError] = useState('');
   const [wizardBusy, setWizardBusy] = useState(false);
+
+  useEffect(() => {
+    if (new URLSearchParams(location.search).get('intent') !== 'import') return;
+    setWizardOpen(true);
+    setWizardStep(1);
+    navigate('/projects', { replace: true });
+  }, [location.search, navigate]);
 
   useEffect(() => {
     setAccountDraft({ username: user?.username || '', email: user?.email || '' });
@@ -643,7 +651,7 @@ const MainMenuPage: React.FC = () => {
       <div className="main-menu-chrome">
         <div className="main-menu-chrome-side">
           <div className="main-menu-chrome-bubble main-menu-brand-bubble">
-            <img className="main-menu-brand-logo" src={brandLogoUrl} alt="renpy.online" />
+            <img className="main-menu-brand-logo" src={brandLogoUrl} alt="Plotmio" />
           </div>
         </div>
         <div className="main-menu-chrome-side main-menu-user-chrome">
