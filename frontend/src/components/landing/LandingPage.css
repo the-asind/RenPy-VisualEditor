@@ -26,6 +26,6 @@
 
 @media (max-width: 600px) {
   .demo-chapter-nav { width: calc(100% - 24px); }
-  .demo-chapter-nav nav { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .demo-chapter-nav nav { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .demo-chapter-nav button, .demo-chapter-nav a { white-space: normal; text-align: center; padding: 10px 4px; min-height: 44px; font-size: 11px; }
 }

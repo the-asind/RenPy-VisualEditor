@@ -7,11 +7,12 @@ describe('demo chapter placement', () => {
     const nodes = [{ id: 'file', position: { x: 400, y: 100 }, width: 1200, height: 3000 }];
     const before = JSON.stringify(nodes);
     const chapters = buildDemoChapters(nodes);
-    expect(chapters).toHaveLength(3);
+    expect(chapters).toHaveLength(4);
+    expect(chapters.map(chapter => chapter.id)).toEqual(['intro', 'branches', 'collaboration', 'files']);
     for (const chapter of chapters) {
       expect(chapter.x + chapter.width < 400 || chapter.y + 580 < 100).toBe(true);
     }
-    expect(new Set(chapters.map(c => `${c.x},${c.y}`)).size).toBe(3);
+    expect(new Set(chapters.map(c => `${c.x},${c.y}`)).size).toBe(4);
     expect(JSON.stringify(nodes)).toBe(before);
   });
   it('supports empty previews', () => {

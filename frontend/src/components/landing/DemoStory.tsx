@@ -7,7 +7,7 @@ export function DemoStory({ nodes, flow }: { nodes: Node[]; flow: ReactFlowInsta
   const { t } = useTranslation();
   const chapters = useMemo(() => {
     const source = buildDemoChapters(nodes);
-    const labels = [t('story.idea'), t('story.connections'), t('story.files')];
+    const labels = [t('story.idea'), t('story.connections'), t('story.collaboration'), t('story.files')];
     const titles = t('story.titles').split('|');
     const eyebrows = t('story.eyebrows').split('|');
     const descriptions = t('story.descriptions').split('|');
@@ -30,7 +30,8 @@ export function DemoStory({ nodes, flow }: { nodes: Node[]; flow: ReactFlowInsta
     const width = host?.clientWidth ?? 1200;
     const height = host?.clientHeight ?? 800;
     const zoom = Math.max(0.25, Math.min(1, width < 600 ? 1 : (width - 48) / 620, (height - 180) / 540));
-    void flow.setViewport({ x: 32 - chapter.x * zoom, y: 100 - chapter.y * zoom, zoom }, {
+    const readingTop = width < 600 ? 165 : 100;
+    void flow.setViewport({ x: 32 - chapter.x * zoom, y: readingTop - chapter.y * zoom, zoom }, {
       duration: animate && !window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 650 : 0,
     });
     setActive(chapter.id);
@@ -41,7 +42,8 @@ export function DemoStory({ nodes, flow }: { nodes: Node[]; flow: ReactFlowInsta
     go(0, false);
   }, [flow, go]);
   useOnViewportChange({ onEnd: viewport => {
-    const visible = chapters.find(c => Math.abs(c.x * viewport.zoom + viewport.x - 32) < 40 && Math.abs(c.y * viewport.zoom + viewport.y - 100) < 40);
+    const readingTop = (document.querySelector('.landing-demo-canvas')?.clientWidth ?? 1200) < 600 ? 165 : 100;
+    const visible = chapters.find(c => Math.abs(c.x * viewport.zoom + viewport.x - 32) < 40 && Math.abs(c.y * viewport.zoom + viewport.y - readingTop) < 40);
     setActive(visible?.id ?? '');
   } });
   return <>
@@ -60,7 +62,7 @@ export function DemoStory({ nodes, flow }: { nodes: Node[]; flow: ReactFlowInsta
         <p className="demo-story-description">{c.text}</p>
         <p className="demo-story-hint">{c.hint}</p>
         <div className="demo-story-actions nodrag nopan">
-          {i < 2 ? <button type="button" onClick={() => go(i + 1)}> {i === 0 ? t('story.follow') : t('story.filesAction')} →</button> : <a href="/login?intent=import">{t('story.openProject')} →</a>}
+          {i < chapters.length - 1 ? <button type="button" onClick={() => go(i + 1)}>{i === 0 ? t('story.follow') : i === 1 ? t('story.collaborationAction') : t('story.filesAction')} →</button> : <a href="/login?intent=import">{t('story.openProject')} →</a>}
           <button type="button" onClick={() => {
             if (flow) void flow.setCenter(c.scene.x, c.scene.y, { zoom: 0.85, duration: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 650 });
             setActive('');
