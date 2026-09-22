@@ -46,38 +46,14 @@
     </header>
 
     <main>
-      <section class="marketing-hero marketing-container" aria-labelledby="hero-title">
-        <div class="marketing-hero-copy">
+      <section id="demo" class="marketing-canvas-stage" aria-label="Explore Plotmio on a live canvas">
+        <div id="demo-root" class="marketing-demo-root"></div>
+        <div id="demo-fallback" class="marketing-canvas-fallback">
           <p class="marketing-eyebrow">Visual editor for Ren’Py</p>
           <h1 id="hero-title">Plotmio understands your Ren’Py project.</h1>
-          <p class="marketing-lead">Bring your <code>.rpy</code> files onto one canvas. Follow labels, choices and connections, edit with your team, and export back to Ren’Py.</p>
-          <div class="marketing-actions">
-            <a class="marketing-button marketing-button-primary" href="#demo">Explore the demo</a>
-            <a class="marketing-button marketing-button-secondary" href="/login?intent=import">Open your project</a>
-          </div>
-          <p class="marketing-note">No account needed for the demo. Use Chrome or Edge to open a local project.</p>
-          <p class="marketing-trust"><a href="https://github.com/the-asind/RenPy-VisualEditor">Open source</a><span>·</span><span>Apache 2.0</span><span>·</span><span>Public beta</span></p>
-        </div>
-        <div class="marketing-hero-art">
-          <img src="/plotmio-canvas-preview.png" alt="Preview of a Ren’Py project graph with file frames, labels, choices and connections." width="720" height="520" />
-        </div>
-      </section>
-
-      <section id="demo" class="marketing-section marketing-demo-section" aria-labelledby="demo-title">
-        <div class="marketing-container">
-          <div class="marketing-section-heading">
-            <p class="marketing-eyebrow">Try it on a real project</p>
-            <h2 id="demo-title">See the story behind the files.</h2>
-            <p>Select a scene, edit a line, then follow a connection. The demo uses the same ProjectGraph canvas as an imported project.</p>
-          </div>
-          <div class="marketing-demo-card">
-            <div class="marketing-demo-intro">
-              <strong>Clockwork Library</strong>
-              <span>Demo edits stay in this page and reset when you reload.</span>
-              <button id="demo-start" class="marketing-button marketing-button-primary" type="button">Start interactive demo</button>
-            </div>
-            <div id="demo-root" class="marketing-demo-root" hidden aria-live="polite"></div>
-          </div>
+          <p>Bring your <code>.rpy</code> files onto one canvas.</p>
+          <button id="demo-start" class="marketing-button marketing-button-primary" type="button">Explore the demo</button>
+          <a href="#how-it-works">Read how it works ↓</a>
         </div>
       </section>
 

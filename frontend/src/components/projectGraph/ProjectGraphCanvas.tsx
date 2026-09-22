@@ -1234,6 +1234,7 @@ export interface ProjectGraphCanvasProps {
   graph: ProjectGraphSnapshot;
   className?: string;
   initialFocusNodeId?: string | null;
+  canvasStory?: (nodes: Node[], flow: ReactFlowInstance | null) => React.ReactNode;
   presentationMode?: 'default' | 'landing';
   projectName?: string | null;
   participants?: ProjectGraphPresenceUser[];
@@ -1430,6 +1431,7 @@ const ProjectGraphCanvasInner = ({
   graph,
   className,
   initialFocusNodeId = null,
+  canvasStory,
   presentationMode = 'default',
   projectName,
   participants = [],
@@ -2400,7 +2402,7 @@ const ProjectGraphCanvasInner = ({
   }, [closeCanvasPopovers, isFramesOpen, isInviteOpen, isProblemsOpen, isSearchOpen]);
 
   useEffect(() => {
-    if (!reactFlowInstance || projection.nodes.length === 0) {
+    if (canvasStory || !reactFlowInstance || projection.nodes.length === 0) {
       return;
     }
 
@@ -2462,6 +2464,7 @@ const ProjectGraphCanvasInner = ({
     graph.nodes.length,
     graph.project_id,
     initialFocusNodeId,
+    canvasStory,
     isLandingPresentation,
     projection.nodes,
     reactFlowInstance,
@@ -3211,6 +3214,7 @@ const ProjectGraphCanvasInner = ({
         onPaneClick={handlePaneClick}
         onPaneContextMenu={handlePaneContextMenu}
       >
+        {canvasStory?.(projection.nodes, reactFlowInstance)}
         {(!showDevPerformancePanel || devRenderToggles.background) ? <Background gap={32} size={1} /> : null}
         {!isLandingPresentation ? (
           <ViewportPortal>

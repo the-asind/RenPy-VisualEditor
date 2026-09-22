@@ -7,10 +7,11 @@ const authWindowSource = readFileSync(new URL('../../auth/AuthWindow.tsx', impor
 const homePageSource = readFileSync(new URL('../../../pages/HomePage.tsx', import.meta.url), 'utf-8');
 
 describe('Plotmio landing demo contract', () => {
-  it('loads the interactive demo only after the explicit CTA', () => {
+  it('loads the local preview automatically and preserves a retry CTA', () => {
     expect(entrySource).toContain("getElementById('demo-start')");
     expect(entrySource).toContain("import('./components/landing/LandingPage')");
     expect(entrySource).toContain('data-demo-started');
+    expect(entrySource).toContain('void start()');
     expect(entrySource).toContain("getElementById('demo-root')");
   });
 

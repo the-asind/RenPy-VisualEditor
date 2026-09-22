@@ -18,6 +18,7 @@ import type { ProjectGraphSnapshot } from '../../utils/projectGraphProjection';
 import type { ActionEditorNextActionRequest } from '../actionEditor/ActionEditorSidebar';
 import { ProjectGraphCanvas } from '../projectGraph/ProjectGraphCanvas';
 import './LandingPage.css';
+import { DemoStory } from './DemoStory';
 
 const firstScenarioNodeId = (graph: ProjectGraphSnapshot | null): string | null => {
   const label = graph?.labels.find((item) => item.qualified_name === 'library_hall');
@@ -32,10 +33,12 @@ const LandingPage: React.FC = () => {
   const [preview, setPreview] = useState<ClockworkLibraryDemoPreviewResponse | null>(null);
   const [graph, setGraph] = useState<ProjectGraphSnapshot | null>(null);
   const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   const docRef = useRef<ProjectGraphCrdtDoc | null>(null);
 
   useEffect(() => {
     let mounted = true;
+    setFailed(false);
     loadClockworkLibraryDemoPreview()
       .then((result) => {
         if (!mounted) return;
@@ -46,7 +49,7 @@ const LandingPage: React.FC = () => {
       })
       .catch(() => mounted && setFailed(true));
     return () => { mounted = false; };
-  }, []);
+  }, [attempt]);
 
   const focusNodeId = useMemo(() => firstScenarioNodeId(graph), [graph]);
   const updateGraph = () => {
@@ -80,6 +83,7 @@ const LandingPage: React.FC = () => {
     <Box className="landing-demo-canvas" aria-label={t('landing.demoAria')}>
       {preview && graph ? (
         <ProjectGraphCanvas
+          canvasStory={(nodes, flow) => <DemoStory nodes={nodes} flow={flow} />}
           allowLandingInspector
           allowLandingActionEditor
           assetCatalog={preview.asset_catalog}
@@ -94,7 +98,7 @@ const LandingPage: React.FC = () => {
           projectName="CLOCKWORK LIBRARY"
         />
       ) : (
-        <Box className="landing-demo-loading"><Typography>{failed ? t('landing.demoUnavailable') : t('landing.demoLoading')}</Typography></Box>
+        <Box className="landing-demo-loading"><Typography>{failed ? t('landing.demoUnavailable') : t('landing.demoLoading')}</Typography>{failed && <><button type="button" onClick={() => setAttempt(value => value + 1)}>Try again</button><a href="#how-it-works">Read how Plotmio works ↓</a></>}</Box>
       )}
     </Box>
   );

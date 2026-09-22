@@ -111,3 +111,12 @@ h1, h2, h3, p { margin-top: 0; }
   .marketing-demo-root { min-height: 500px; }
   .landing-demo-canvas, .landing-project-graph-canvas, .landing-demo-loading { min-height: 500px; height: 500px; }
 }
+
+/* The public canvas is a full first viewport, not a nested demo card. */
+.marketing-canvas-stage { position: relative; height: calc(100svh - 84px); min-height: 520px; width: 100%; }
+.marketing-canvas-stage .marketing-demo-root { height: 100%; min-height: 0; border: 0; border-radius: 0; overflow: hidden; }
+.marketing-canvas-fallback { position: absolute; inset: 10% auto auto 7%; max-width: 620px; padding: 24px; }
+.marketing-canvas-fallback[hidden] { display: none; }
+.marketing-canvas-fallback h1 { font: 400 clamp(44px, 6vw, 76px)/1.04 Georgia, serif; letter-spacing: -2px; }
+.marketing-canvas-fallback a { display: inline-block; margin: 20px; }
+@media (max-width: 600px) { .marketing-canvas-stage { height: calc(100svh - 76px); } }

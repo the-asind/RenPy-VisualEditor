@@ -2,32 +2,31 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import './i18n';
 import './marketing.css';
-import { ThemeProviderWrapper } from './contexts/ThemeContext';
+import { ThemeProvider } from '@mui/material/styles';
+import lightTheme from './themes/light';
 
 const button = document.getElementById('demo-start');
 const demoRoot = document.getElementById('demo-root');
-
 if (button instanceof HTMLButtonElement && demoRoot) {
-  button.addEventListener('click', async () => {
+  let loading = false;
+  const start = async () => {
+    if (loading) return;
+    loading = true;
     button.disabled = true;
-    button.textContent = 'Loading demo…';
-    demoRoot.hidden = false;
-    demoRoot.setAttribute('data-demo-started', 'true');
-    demoRoot.scrollIntoView({ behavior: 'smooth', block: 'start' });
-
+    button.textContent = 'Loading the canvas…';
     try {
       const { default: LandingDemo } = await import('./components/landing/LandingPage');
       ReactDOM.createRoot(demoRoot).render(
-        <React.StrictMode>
-          <ThemeProviderWrapper>
-            <LandingDemo />
-          </ThemeProviderWrapper>
-        </React.StrictMode>,
+        <React.StrictMode><ThemeProvider theme={lightTheme}><LandingDemo /></ThemeProvider></React.StrictMode>,
       );
+      demoRoot.setAttribute('data-demo-started', 'true');
+      document.getElementById('demo-fallback')?.setAttribute('hidden', '');
     } catch {
+      loading = false;
       button.disabled = false;
       button.textContent = 'Try the demo again';
-      demoRoot.textContent = 'The interactive demo could not load. Please try again.';
     }
-  });
+  };
+  button.addEventListener('click', start);
+  void start();
 }

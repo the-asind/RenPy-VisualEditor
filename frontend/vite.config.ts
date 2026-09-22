@@ -54,6 +54,9 @@ export default defineConfig({
     port: 3000, // Match docker-compose port mapping
     host: true, // Needed for Docker container mapping
     strictPort: true,
+    proxy: {
+      '/api': { target: 'http://127.0.0.1:9000', changeOrigin: true },
+    },
     watch: {
       usePolling: true, // Use polling for file changes in Docker
     },
