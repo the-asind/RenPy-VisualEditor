@@ -3,22 +3,29 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="Explore your Ren’Py project on one canvas. Follow labels and choices, edit together, and export .rpy files. Try Plotmio’s interactive demo." />
+    <meta name="description" content="Map Ren’Py labels, choices and jumps across your .rpy files. Explore an interactive project canvas, edit scenes, and review your export with Plotmio." />
     <meta name="theme-color" content="#f7f8fb" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="canonical" href="https://plotmio.com/" />
+        <link rel="alternate" hreflang="en" href="https://plotmio.com/" />
+    <link rel="alternate" hreflang="ru" href="https://plotmio.com/ru/" />
+    <link rel="alternate" hreflang="de" href="https://plotmio.com/de/" />
+    <link rel="alternate" hreflang="ja" href="https://plotmio.com/ja/" />
+    <link rel="alternate" hreflang="zh-Hans" href="https://plotmio.com/zh/" />
+    <link rel="alternate" hreflang="x-default" href="https://plotmio.com/" />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Plotmio" />
-    <meta property="og:title" content="Plotmio — Visual Editor for Ren’Py Projects" />
-    <meta property="og:description" content="Bring your .rpy files onto one canvas. Follow labels, choices and connections, edit with your team, and export back to Ren’Py." />
+    <meta property="og:title" content="Plotmio | Visual Editor for Ren’Py Projects" />
+    <meta property="og:description" content="Bring an existing Ren’Py project onto one canvas. Follow labels, choices and connections, edit together, and export normalized .rpy files." />
     <meta property="og:url" content="https://plotmio.com/" />
+    <meta property="og:locale" content="en_US" />
     <meta property="og:image" content="https://plotmio.com/plotmio-social-preview.png" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Plotmio — Visual Editor for Ren’Py Projects" />
-    <meta name="twitter:description" content="Bring your .rpy files onto one canvas and see the connections in your Ren’Py project." />
+    <meta name="twitter:title" content="Plotmio | Visual Editor for Ren’Py Projects" />
+    <meta name="twitter:description" content="See how labels, choices and jumps connect across your Ren’Py project. Explore Plotmio’s interactive canvas demo." />
     <meta name="twitter:image" content="https://plotmio.com/plotmio-social-preview.png" />
-    <title>Plotmio — Visual Editor for Ren’Py Projects</title>
-    <link rel="stylesheet" href="/src/marketing.css" />
+    <title>Plotmio | Visual Editor for Ren’Py Projects</title>
+    <link rel="stylesheet" href="/marketing.css" />
     <script type="application/ld+json">
       {
         "@context": "https://schema.org",
@@ -26,13 +33,26 @@
         "name": "Plotmio",
         "applicationCategory": "DeveloperApplication",
         "operatingSystem": "Web",
+        "inLanguage": "en",
         "url": "https://plotmio.com/",
-        "description": "A visual editor for Ren’Py projects that maps .rpy files, labels, choices and connections on one canvas.",
+        "description": "Plotmio is a visual editor for existing Ren’Py projects. It maps .rpy files, labels, choices and connections on one canvas.",
         "license": "https://www.apache.org/licenses/LICENSE-2.0"
       }
     </script>
   </head>
   <body>
+    <script>
+      (() => {
+        if (window.location.pathname !== '/') return;
+        let saved = null;
+        try { saved = window.localStorage.getItem('plotmio-language-choice'); } catch { /* Storage can be disabled by browser policy. */ }
+        const browserLanguages = navigator.languages?.length ? navigator.languages : [navigator.language];
+        const supported = ['en', 'ru', 'de', 'ja', 'zh'];
+        const browserPreference = browserLanguages.map((language) => language.split('-')[0]).find((language) => supported.includes(language)) || 'en';
+        const preferred = saved && supported.includes(saved) ? saved : browserPreference;
+        if (preferred !== 'en') window.location.replace(`/${preferred}/`);
+      })();
+    </script>
     <header class="marketing-nav">
       <a class="marketing-brand" href="/" aria-label="Plotmio home">
         <img src="/logo.svg" alt="Plotmio" width="208" height="60" />
@@ -42,18 +62,26 @@
         <a href="/docs">Quick start</a>
         <a href="https://github.com/the-asind/RenPy-VisualEditor">GitHub</a>
         <a class="marketing-nav-cta" href="/login">Log in</a>
+        <label class="marketing-language-label" for="landing-language">Language</label>
+        <select id="landing-language" class="marketing-language-select" aria-label="Language">
+          <option value="/" selected>English</option>
+          <option value="/ru/">Русский</option>
+          <option value="/de/">Deutsch</option>
+          <option value="/ja/">日本語</option>
+          <option value="/zh/">简体中文</option>
+        </select>
       </nav>
     </header>
 
     <main>
-      <section id="demo" class="marketing-canvas-stage" aria-label="Explore Plotmio on a live canvas">
+      <section id="demo" class="marketing-canvas-stage" aria-label="Explore Plotmio on an interactive project canvas">
         <div id="demo-root" class="marketing-demo-root"></div>
         <div id="demo-fallback" class="marketing-canvas-fallback">
           <p class="marketing-eyebrow">Visual editor for Ren’Py</p>
           <h1 id="hero-title">Plotmio understands your Ren’Py project.</h1>
-          <p>Bring your <code>.rpy</code> files onto one canvas.</p>
+          <p>Bring your <code>.rpy</code> files onto one canvas. Follow labels, choices and connections, edit with your team, and review your export.</p>
           <button id="demo-start" class="marketing-button marketing-button-primary" type="button">Explore the demo</button>
-          <a href="#how-it-works">Read how it works ↓</a>
+          <a href="#how-it-works">How it works ↓</a>
         </div>
       </section>
 
@@ -75,7 +103,7 @@
         <div class="marketing-container">
           <div class="marketing-section-heading"><p class="marketing-eyebrow">How it works</p><h2 id="how-title">Start with the project you already have.</h2></div>
           <div class="marketing-steps">
-            <article><span>1</span><h3>Choose your project</h3><p>Select the Ren’Py project root that contains <code>game</code>. Plotmio reads the <code>.rpy</code> text and an asset-name catalog.</p></article>
+            <article><span>1</span><h3>Choose your project</h3><p>Select the Ren’Py project root that contains <code>game</code>. Plotmio reads <code>.rpy</code> text and an asset-name catalog.</p></article>
             <article><span>2</span><h3>Explore and edit</h3><p>Navigate labels and branches on the canvas, then work with collaborators in the same project.</p></article>
             <article><span>3</span><h3>Review and export</h3><p>Export normalized scripts and write them back only after reviewing the changed files. Start with a copy of your project.</p></article>
           </div>
@@ -90,19 +118,20 @@
       </section>
 
       <section class="marketing-section marketing-faq-section" aria-labelledby="faq-title">
-        <div class="marketing-container marketing-faq"><div class="marketing-section-heading"><p class="marketing-eyebrow">Questions before you start</p><h2 id="faq-title">A few honest answers.</h2></div><div>
-          <details open><summary>Can I open an existing Ren’Py project?</summary><p>Yes. Choose its root folder and Plotmio imports the <code>.rpy</code> files inside <code>game</code>.</p></details>
-          <details><summary>Do I need an account?</summary><p>No account is needed for the interactive demo. An account is needed to save projects and collaborate.</p></details>
-          <details><summary>Does Plotmio preserve my exact formatting?</summary><p>Export is normalized. Review the generated files before writing them into your project.</p></details>
-          <details><summary>Does it run the Ren’Py game?</summary><p>Plotmio maps and edits project structure; run and test the game in Ren’Py. Dynamic references and arbitrary Python may remain unresolved.</p></details>
-          <details><summary>Which browser should I use?</summary><p>Local folder access currently requires Chromium, such as Chrome or Edge, and your explicit permission.</p></details>
+        <div class="marketing-container marketing-faq"><div class="marketing-section-heading"><p class="marketing-eyebrow">Questions before you start</p><h2 id="faq-title">Straight answers about Plotmio.</h2></div><div>
+          <details open><summary>Can I open an existing Ren’Py project?</summary><p>Yes. Choose the project root and Plotmio imports the <code>.rpy</code> files inside <code>game</code>.</p></details>
+          <details><summary>Do I need an account to try Plotmio?</summary><p>No account is needed for the interactive demo. Sign in to save your own project or collaborate.</p></details>
+          <details><summary>Does Plotmio preserve my exact .rpy formatting?</summary><p>Export uses normalized formatting. Review generated files before writing them into your project.</p></details>
+          <details><summary>Does Plotmio run my Ren’Py game?</summary><p>Plotmio maps and edits project structure; run and test the game in Ren’Py. Dynamic references and arbitrary Python may remain unresolved.</p></details>
+          <details><summary>Which browser do I need to import a local project?</summary><p>Local folder access currently requires a Chromium browser, such as Chrome or Edge, and your explicit permission.</p></details>
         </div></div>
       </section>
 
-      <section class="marketing-final-cta" aria-labelledby="final-title"><div class="marketing-container"><h2 id="final-title">See your story from a different angle.</h2><p>Open a project you already know and find the connections you could not see in a file list.</p><a class="marketing-button marketing-button-primary" href="/login?intent=import">Open your project</a></div></section>
+      <section class="marketing-final-cta" aria-labelledby="final-title"><div class="marketing-container"><h2 id="final-title">See your story from a different angle.</h2><p>Open a project you already know and find connections that are hard to see in a file list.</p><a class="marketing-button marketing-button-primary" href="/login?intent=import">Open your project</a></div></section>
     </main>
 
     <footer class="marketing-footer"><div class="marketing-container"><span>An independent open-source tool for Ren’Py creators.</span><div><a href="/docs">Quick start</a><a href="https://github.com/the-asind/RenPy-VisualEditor/issues/new?template=bug_report.yml">Report a bug</a><a href="https://github.com/the-asind/RenPy-VisualEditor">Source</a><span>Apache 2.0</span></div></div></footer>
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","@id":"https://plotmio.com/#faq","mainEntity":[{"@type":"Question","name":"Can I open an existing Ren’Py project?","acceptedAnswer":{"@type":"Answer","text":"Yes. Choose the project root and Plotmio imports the .rpy files inside game."}},{"@type":"Question","name":"Do I need an account to try Plotmio?","acceptedAnswer":{"@type":"Answer","text":"No account is needed for the interactive demo. Sign in to save your own project or collaborate."}},{"@type":"Question","name":"Does Plotmio preserve my exact .rpy formatting?","acceptedAnswer":{"@type":"Answer","text":"Export uses normalized formatting. Review generated files before writing them into your project."}},{"@type":"Question","name":"Does Plotmio run my Ren’Py game?","acceptedAnswer":{"@type":"Answer","text":"Plotmio maps and edits project structure; run and test the game in Ren’Py. Dynamic references and arbitrary Python may remain unresolved."}},{"@type":"Question","name":"Which browser do I need to import a local project?","acceptedAnswer":{"@type":"Answer","text":"Local folder access currently requires a Chromium browser, such as Chrome or Edge, and your explicit permission."}}]}</script>
     <script defer src="/env.js"></script>
     <script type="module" src="/src/landing.tsx"></script>
   </body>

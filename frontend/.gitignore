@@ -11,6 +11,11 @@ node_modules
 dist
 dist-ssr
 *.local
+/public/ru/
+/public/de/
+/public/ja/
+/public/zh/
+/public/marketing.css
 
 # Editor directories and files
 .vscode/*

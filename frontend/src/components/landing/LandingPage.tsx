@@ -98,7 +98,7 @@ const LandingPage: React.FC = () => {
           projectName="CLOCKWORK LIBRARY"
         />
       ) : (
-        <Box className="landing-demo-loading"><Typography>{failed ? t('landing.demoUnavailable') : t('landing.demoLoading')}</Typography>{failed && <><button type="button" onClick={() => setAttempt(value => value + 1)}>Try again</button><a href="#how-it-works">Read how Plotmio works ↓</a></>}</Box>
+        <Box className="landing-demo-loading"><Typography>{failed ? t('landing.demoUnavailable') : t('landing.demoLoading')}</Typography>{failed && <><button type="button" onClick={() => setAttempt(value => value + 1)}>{t('story.retry')}</button><a href="#how-it-works">{t('story.overview')} ↓</a></>}</Box>
       )}
     </Box>
   );

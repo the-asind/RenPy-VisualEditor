@@ -1,9 +1,26 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Panel, ViewportPortal, useOnViewportChange, type Node, type ReactFlowInstance } from '@xyflow/react';
+import { useTranslation } from 'react-i18next';
 import { buildDemoChapters } from './demoChapters';
 
 export function DemoStory({ nodes, flow }: { nodes: Node[]; flow: ReactFlowInstance | null }) {
-  const chapters = useMemo(() => buildDemoChapters(nodes), [nodes]);
+  const { t } = useTranslation();
+  const chapters = useMemo(() => {
+    const source = buildDemoChapters(nodes);
+    const labels = [t('story.idea'), t('story.connections'), t('story.files')];
+    const titles = t('story.titles').split('|');
+    const eyebrows = t('story.eyebrows').split('|');
+    const descriptions = t('story.descriptions').split('|');
+    const hints = t('story.hints').split('|');
+    return source.map((chapter, index) => ({
+      ...chapter,
+      label: labels[index],
+      title: titles[index] ?? chapter.title,
+      eyebrow: eyebrows[index] ?? chapter.eyebrow,
+      text: descriptions[index] ?? chapter.text,
+      hint: hints[index] ?? chapter.hint,
+    }));
+  }, [nodes, t]);
   const [active, setActive] = useState('intro');
   const started = useRef(false);
   const go = useCallback((index: number, animate = true) => {
@@ -29,9 +46,9 @@ export function DemoStory({ nodes, flow }: { nodes: Node[]; flow: ReactFlowInsta
   } });
   return <>
     <Panel position="top-center" className="demo-chapter-nav">
-      <nav aria-label="Explore the demo">
+      <nav aria-label={t('story.navLabel')}>
         {chapters.map((c, i) => <button key={c.id} type="button" aria-pressed={active === c.id} onClick={() => go(i)}>{c.label}</button>)}
-        <a href="#how-it-works">Overview ↓</a>
+        <a href="#how-it-works">{t('story.overview')} ↓</a>
       </nav>
     </Panel>
     <ViewportPortal>
@@ -43,11 +60,11 @@ export function DemoStory({ nodes, flow }: { nodes: Node[]; flow: ReactFlowInsta
         <p className="demo-story-description">{c.text}</p>
         <p className="demo-story-hint">{c.hint}</p>
         <div className="demo-story-actions nodrag nopan">
-          {i < 2 ? <button type="button" onClick={() => go(i + 1)}> {i === 0 ? 'Follow the story' : 'What about my files?'} →</button> : <a href="/login?intent=import">Open your project →</a>}
+          {i < 2 ? <button type="button" onClick={() => go(i + 1)}> {i === 0 ? t('story.follow') : t('story.filesAction')} →</button> : <a href="/login?intent=import">{t('story.openProject')} →</a>}
           <button type="button" onClick={() => {
             if (flow) void flow.setCenter(c.scene.x, c.scene.y, { zoom: 0.85, duration: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 650 });
             setActive('');
-          }}>Explore the scenes</button>
+          }}>{t('story.exploreScenes')}</button>
         </div>
       </article>)}
     </ViewportPortal>

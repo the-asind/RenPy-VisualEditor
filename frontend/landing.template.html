@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="{{htmlLang}}">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="{{metaDescription}}" />
+    <meta name="theme-color" content="#f7f8fb" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="canonical" href="{{pageUrl}}" />
+    {{{alternateLinks}}}
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Plotmio" />
+    <meta property="og:title" content="{{metaTitle}}" />
+    <meta property="og:description" content="{{metaOgDescription}}" />
+    <meta property="og:url" content="{{pageUrl}}" />
+    <meta property="og:locale" content="{{ogLocale}}" />
+    <meta property="og:image" content="https://plotmio.com/plotmio-social-preview.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="{{metaTitle}}" />
+    <meta name="twitter:description" content="{{metaTwitterDescription}}" />
+    <meta name="twitter:image" content="https://plotmio.com/plotmio-social-preview.png" />
+    <title>{{metaTitle}}</title>
+    <link rel="stylesheet" href="/marketing.css" />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Plotmio",
+        "applicationCategory": "DeveloperApplication",
+        "operatingSystem": "Web",
+        "inLanguage": "{{htmlLang}}",
+        "url": "{{pageUrl}}",
+        "description": "{{schemaDescription}}",
+        "license": "https://www.apache.org/licenses/LICENSE-2.0"
+      }
+    </script>
+  </head>
+  <body>
+    <script>
+      (() => {
+        if (window.location.pathname !== '/') return;
+        let saved = null;
+        try { saved = window.localStorage.getItem('plotmio-language-choice'); } catch { /* Storage can be disabled by browser policy. */ }
+        const browserLanguages = navigator.languages?.length ? navigator.languages : [navigator.language];
+        const supported = ['en', 'ru', 'de', 'ja', 'zh'];
+        const browserPreference = browserLanguages.map((language) => language.split('-')[0]).find((language) => supported.includes(language)) || 'en';
+        const preferred = saved && supported.includes(saved) ? saved : browserPreference;
+        if (preferred !== 'en') window.location.replace(`/${preferred}/`);
+      })();
+    </script>
+    <header class="marketing-nav">
+      <a class="marketing-brand" href="{{homeHref}}" aria-label="{{homeLabel}}">
+        <img src="/logo.svg" alt="Plotmio" width="208" height="60" />
+      </a>
+      <nav aria-label="{{navLabel}}">
+        <a href="#how-it-works">{{navHow}}</a>
+        <a href="/docs">{{navDocs}}</a>
+        <a href="https://github.com/the-asind/RenPy-VisualEditor">GitHub</a>
+        <a class="marketing-nav-cta" href="/login">{{navLogin}}</a>
+        <label class="marketing-language-label" for="landing-language">{{languageLabel}}</label>
+        <select id="landing-language" class="marketing-language-select" aria-label="{{languageLabel}}">
+          {{{languageOptions}}}
+        </select>
+      </nav>
+    </header>
+
+    <main>
+      <section id="demo" class="marketing-canvas-stage" aria-label="{{stageLabel}}">
+        <div id="demo-root" class="marketing-demo-root"></div>
+        <div id="demo-fallback" class="marketing-canvas-fallback">
+          <p class="marketing-eyebrow">{{heroEyebrow}}</p>
+          <h1 id="hero-title">{{heroTitle}}</h1>
+          <p>{{{heroLead}}}</p>
+          <button id="demo-start" class="marketing-button marketing-button-primary" type="button">{{demoCta}}</button>
+          <a href="#how-it-works">{{navHow}} ↓</a>
+        </div>
+      </section>
+
+      <section class="marketing-section" aria-labelledby="understands-title">
+        <div class="marketing-container">
+          <div class="marketing-section-heading">
+            <p class="marketing-eyebrow">{{featureEyebrow}}</p>
+            <h2 id="understands-title">{{featureTitle}}</h2>
+          </div>
+          <div class="marketing-feature-grid">
+            <article><span class="marketing-feature-number">01</span><h3>{{feature1Title}}</h3><p>{{feature1Body}}</p></article>
+            <article><span class="marketing-feature-number">02</span><h3>{{feature2Title}}</h3><p>{{feature2Body}}</p></article>
+            <article><span class="marketing-feature-number">03</span><h3>{{feature3Title}}</h3><p>{{{feature3Body}}}</p></article>
+          </div>
+        </div>
+      </section>
+
+      <section id="how-it-works" class="marketing-section marketing-muted-section" aria-labelledby="how-title">
+        <div class="marketing-container">
+          <div class="marketing-section-heading"><p class="marketing-eyebrow">{{howEyebrow}}</p><h2 id="how-title">{{howTitle}}</h2></div>
+          <div class="marketing-steps">
+            <article><span>1</span><h3>{{step1Title}}</h3><p>{{{step1Body}}}</p></article>
+            <article><span>2</span><h3>{{step2Title}}</h3><p>{{step2Body}}</p></article>
+            <article><span>3</span><h3>{{step3Title}}</h3><p>{{step3Body}}</p></article>
+          </div>
+        </div>
+      </section>
+
+      <section class="marketing-section" aria-labelledby="files-title">
+        <div class="marketing-container marketing-files-panel">
+          <div><p class="marketing-eyebrow">{{filesEyebrow}}</p><h2 id="files-title">{{filesTitle}}</h2></div>
+          <div><p>{{{filesBody}}}</p><a class="marketing-inline-link" href="/docs#files">{{docsLink}} →</a></div>
+        </div>
+      </section>
+
+      <section class="marketing-section marketing-faq-section" aria-labelledby="faq-title">
+        <div class="marketing-container marketing-faq"><div class="marketing-section-heading"><p class="marketing-eyebrow">{{faqEyebrow}}</p><h2 id="faq-title">{{faqTitle}}</h2></div><div>
+          <details open><summary>{{faq1Question}}</summary><p>{{{faq1Answer}}}</p></details>
+          <details><summary>{{faq2Question}}</summary><p>{{faq2Answer}}</p></details>
+          <details><summary>{{faq3Question}}</summary><p>{{faq3Answer}}</p></details>
+          <details><summary>{{faq4Question}}</summary><p>{{faq4Answer}}</p></details>
+          <details><summary>{{faq5Question}}</summary><p>{{faq5Answer}}</p></details>
+        </div></div>
+      </section>
+
+      <section class="marketing-final-cta" aria-labelledby="final-title"><div class="marketing-container"><h2 id="final-title">{{finalTitle}}</h2><p>{{finalBody}}</p><a class="marketing-button marketing-button-primary" href="/login?intent=import">{{openProject}}</a></div></section>
+    </main>
+
+    <footer class="marketing-footer"><div class="marketing-container"><span>{{footerTagline}}</span><div><a href="/docs">{{navDocs}}</a><a href="https://github.com/the-asind/RenPy-VisualEditor/issues/new?template=bug_report.yml">{{reportBug}}</a><a href="https://github.com/the-asind/RenPy-VisualEditor">{{sourceLink}}</a><span>Apache 2.0</span></div></div></footer>
+    <script type="application/ld+json">{{{faqSchema}}}</script>
+    <script defer src="/env.js"></script>
+    <script type="module" src="/src/landing.tsx"></script>
+  </body>
+</html>

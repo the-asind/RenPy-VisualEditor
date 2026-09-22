@@ -5,8 +5,8 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "node scripts/build-third-party-notices.mjs && vite build",
+    "dev": "node scripts/build-landing-locales.mjs && vite",
+    "build": "node scripts/build-landing-locales.mjs && node scripts/build-third-party-notices.mjs && vite build",
     "check:mvp-bundle": "node scripts/check-mvp-bundle.mjs",
     "lint": "eslint . --ext js,jsx --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview",
