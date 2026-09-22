@@ -3,7 +3,7 @@ uvicorn[standard]
 python-multipart
 pydantic>=2.0.0
 aiofiles>=23.1.0
-cachetools>=5.3.0
+cachetools>=7.2.0
 passlib>=1.7.4
 bcrypt<4.0.0
 passlib[bcrypt]
