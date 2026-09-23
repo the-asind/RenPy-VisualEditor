@@ -9,6 +9,8 @@ const basementId = preview.graph.files.find((file: { path: string }) => file.pat
 const libraryId = preview.graph.files.find((file: { path: string }) => file.path === 'library.rpy').id;
 const audioId = preview.graph.files.find((file: { path: string }) => file.path === 'audio.rpy').id;
 
+test.use({ locale: 'en-US' });
+
 test.beforeEach(async ({ page }) => {
   await page.route('**/api/projects/demo/clockwork-library/preview', route => route.fulfill({ json: preview }));
 });
