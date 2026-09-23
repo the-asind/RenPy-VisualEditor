@@ -109,6 +109,8 @@ export function DemoStory({ nodes, flow }: { nodes: Node[]; flow: ReactFlowInsta
   };
 
   const team = chapters[2];
+  const teamCursorFocus = canvasWidth >= 600 && canvasHeight < 760
+    ? { x: team.focus.x, y: team.focus.y - 120 } : team.focus;
   const source = chapters[3].source;
   return <>
     <Panel position="top-center" className="demo-chapter-nav">
@@ -136,7 +138,7 @@ export function DemoStory({ nodes, flow }: { nodes: Node[]; flow: ReactFlowInsta
           </div>
         </article>;
       })}
-      {active === 'collaboration' && presenceRun > 0 && team.targetNodeId ? <div key={presenceRun} className="demo-presence" aria-hidden="true" style={{ transform: `translate(${team.focus.x}px, ${team.focus.y}px)` }}>
+      {active === 'collaboration' && presenceRun > 0 && team.targetNodeId ? <div key={presenceRun} className="demo-presence" aria-hidden="true" style={{ transform: `translate(${teamCursorFocus.x}px, ${teamCursorFocus.y}px)` }}>
         <span className="demo-presence-cursor demo-presence-cursor--author" style={{ '--remote-cursor-color': '#7350ba' } as React.CSSProperties}>
           <span className="project-graph-canvas__remote-cursor-pointer"><CursorPointer /></span>
           <span className="project-graph-canvas__remote-cursor-label">the-asind · {t('story.editing')}</span>

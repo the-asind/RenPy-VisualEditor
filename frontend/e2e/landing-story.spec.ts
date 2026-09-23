@@ -4,6 +4,9 @@ import { expect, test } from '@playwright/test';
 const preview = JSON.parse(readFileSync(new URL('../../backend/app/demo_assets/clockwork-library/v1/preview.json', import.meta.url), 'utf8'));
 const menuId = preview.graph.nodes.find((node: { type: string; file_id: string }) =>
   node.type === 'menu' && node.file_id === preview.graph.files.find((file: { path: string }) => file.path === 'library.rpy').id).id;
+const charactersId = preview.graph.files.find((file: { path: string }) => file.path === 'characters.rpy').id;
+const basementId = preview.graph.files.find((file: { path: string }) => file.path === 'basement.rpy').id;
+const libraryId = preview.graph.files.find((file: { path: string }) => file.path === 'library.rpy').id;
 
 test.beforeEach(async ({ page }) => {
   await page.route('**/api/projects/demo/clockwork-library/preview', route => route.fulfill({ json: preview }));
@@ -81,4 +84,34 @@ test('connections claim and its menu fit a short desktop viewport together', asy
   }).toBe(true);
   await expect(page.locator(`.react-flow__node[data-id="${menuId}"]`)).toBeInViewport();
   await page.screenshot({ path: testInfo.outputPath('short-desktop-connections.png') });
+});
+
+test('team cursors remain visible on a short desktop viewport', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto(process.env.LANDING_TEST_BASE_URL ?? '/');
+  await page.getByRole('navigation', { name: 'Explore the demo' }).getByRole('button', { name: 'Collaborate' }).click();
+  await expect(page.getByRole('article', { name: 'Collaborate' })).toBeInViewport();
+  const author = page.locator('.demo-presence-cursor--author');
+  const peer = page.locator('.demo-presence-cursor--peer');
+  await expect(author).toContainText('the-asind');
+  await expect(peer).toContainText('Mira');
+  await expect.poll(async () => {
+    const authorBox = await author.boundingBox();
+    const peerBox = await peer.boundingBox();
+    return authorBox !== null && peerBox !== null && authorBox.x >= 0 && peerBox.x >= 0 &&
+      authorBox.y >= 150 && authorBox.y + authorBox.height <= 720 &&
+      peerBox.y >= 150 && peerBox.y + peerBox.height <= 720;
+  }).toBe(true);
+  await expect.poll(async () => {
+    const copy = await page.getByRole('article', { name: 'Collaborate' }).boundingBox();
+    const codeFrame = await page.locator(`.react-flow__node[data-id="${charactersId}"]`).boundingBox();
+    const sceneFrame = await page.locator(`.react-flow__node[data-id="${basementId}"]`).boundingBox();
+    const previousFrame = await page.locator(`.react-flow__node[data-id="${libraryId}"]`).boundingBox();
+    return copy !== null && codeFrame !== null && sceneFrame !== null && previousFrame !== null &&
+      sceneFrame.x >= copy.x + copy.width && sceneFrame.x < 1280 &&
+      previousFrame.y >= copy.y + copy.height &&
+      (codeFrame.x >= copy.x + copy.width || codeFrame.x + codeFrame.width <= copy.x);
+  }).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath('short-desktop-collaborate.png') });
 });
