@@ -46,7 +46,7 @@ it('keeps demo copy out of the actual Loro project after projection', () => {
 it('anchors each chapter action to the content that proves its claim', () => {
   const frames = ['script.rpy', 'library.rpy', 'basement.rpy', 'rooftop.rpy', 'characters.rpy', 'audio.rpy'].map((path, index) => ({
     id: `file-${index}`, type: 'projectFrame', position: { x: index * 1360, y: 0 }, width: 1200, height: 1000,
-    data: { path, sourceContent: path === 'audio.rpy' ? 'define audio.page_turn = "page-turn.wav"' : '' },
+    data: { path },
   }));
   const scenarios = [
     { id: 'first-scene', type: 'scenarioNode', parentId: 'file-0', position: { x: 160, y: 180 }, width: 320, height: 180, data: { scenarioType: 'action', original: { file_id: 'file-0' } } },
@@ -55,7 +55,6 @@ it('anchors each chapter action to the content that proves its claim', () => {
   ];
   const chapters = buildDemoChapters([...frames, ...scenarios] as Node[]);
   expect(chapters.map(chapter => chapter.targetNodeId)).toEqual(['first-scene', 'real-menu', 'team-scene', 'file-5']);
-  expect(chapters[3].source).toEqual({ path: 'audio.rpy', content: 'define audio.page_turn = "page-turn.wav"' });
   expect(chapters[1].focus.x).toBe(1360 + 260 + 160);
   expect(chapters[2].focus.x).toBe(2720 + 240 + 160);
 });

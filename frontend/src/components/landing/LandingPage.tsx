@@ -10,6 +10,7 @@ import {
   createProjectGraphCrdtDoc,
   insertProjectGraphNextScenario,
   projectGraphFromCrdtDoc,
+  updateSourceFileContent,
   updateScenarioNodeContent,
   updateScenarioNodeMetadata,
   type ProjectGraphCrdtDoc,
@@ -65,6 +66,11 @@ const LandingPage: React.FC = () => {
     updateScenarioNodeMetadata(docRef.current, nodeId, patch);
     updateGraph();
   };
+  const onSourceFileContentChange = (fileId: string, content: string) => {
+    if (!docRef.current) return;
+    updateSourceFileContent(docRef.current, fileId, content);
+    updateGraph();
+  };
   const onNextAction = (sourceNodeId: string, request: ActionEditorNextActionRequest) => {
     if (!docRef.current) return null;
     const result = insertProjectGraphNextScenario(docRef.current, {
@@ -86,6 +92,7 @@ const LandingPage: React.FC = () => {
           canvasStory={(nodes, flow) => <DemoStory nodes={nodes} flow={flow} />}
           allowLandingInspector
           allowLandingActionEditor
+          allowLandingSourceEditor
           assetCatalog={preview.asset_catalog}
           className="landing-project-graph-canvas"
           graph={graph}
@@ -94,6 +101,7 @@ const LandingPage: React.FC = () => {
           onActionEditorNextAction={onNextAction}
           onScenarioContentChange={onContentChange}
           onScenarioMetadataChange={onMetadataChange}
+          onSourceFileContentChange={onSourceFileContentChange}
           presentationMode="landing"
           projectName="CLOCKWORK LIBRARY"
         />

@@ -1230,6 +1230,7 @@ export const projectGraphEdgeTypes: EdgeTypes = {
 export interface ProjectGraphCanvasProps {
   allowLandingInspector?: boolean;
   allowLandingActionEditor?: boolean;
+  allowLandingSourceEditor?: boolean;
   assetCatalog?: ProjectAssetCatalogPayload | null;
   graph: ProjectGraphSnapshot;
   className?: string;
@@ -1427,6 +1428,7 @@ const getParticipantInitials = (participant: Pick<ProjectGraphPresenceUser, 'id'
 const ProjectGraphCanvasInner = ({
   allowLandingInspector = false,
   allowLandingActionEditor = false,
+  allowLandingSourceEditor = false,
   assetCatalog,
   graph,
   className,
@@ -2896,7 +2898,7 @@ const ProjectGraphCanvasInner = ({
         />
       ) : null}
 
-      {!isLandingPresentation && isSourceFileEditorOpen && selectedCodeOnlyFile && selectedSourceFileEditorNode ? (
+      {(!isLandingPresentation || allowLandingSourceEditor) && isSourceFileEditorOpen && selectedCodeOnlyFile && selectedSourceFileEditorNode ? (
         <ActionEditorOverlay
           assetCatalog={assetCatalog}
           filePath={selectedCodeOnlyFile.path}
@@ -3196,7 +3198,7 @@ const ProjectGraphCanvasInner = ({
         edges={spatialDisplayedEdges}
         elementsSelectable
         maxZoom={PROJECT_GRAPH_MAX_ZOOM}
-        minZoom={PROJECT_GRAPH_MIN_ZOOM}
+        minZoom={isLandingPresentation ? 0.02 : PROJECT_GRAPH_MIN_ZOOM}
         nodes={interactiveNodes}
         nodesConnectable={false}
         nodesDraggable={false}

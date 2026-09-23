@@ -74,12 +74,9 @@
   "story.inspectFirstScene": "See the first scene",
   "story.inspectChoice": "Inspect the choice",
   "story.replayCollaboration": "Replay the team demo",
-  "story.inspectSource": "View the .rpy source",
-  "story.simulatedPresence": "Demo cursors · no one is online here",
+  "story.lookAround": "Look around",
   "story.editing": "editing",
   "story.viewing": "viewing",
-  "story.sourceTitle": "Real Ren’Py source",
-  "story.closeSource": "Close source",
   "story.navLabel": "Explore the demo",
   "story.overview": "Overview"
 }

@@ -74,12 +74,9 @@
   "story.inspectFirstScene": "Посмотреть первую сцену",
   "story.inspectChoice": "Рассмотреть развилку",
   "story.replayCollaboration": "Повторить демо команды",
-  "story.inspectSource": "Посмотреть исходник .rpy",
-  "story.simulatedPresence": "Курсоры для примера · сейчас здесь нет других людей",
+  "story.lookAround": "Осмотреть весь холст",
   "story.editing": "редактирует",
   "story.viewing": "смотрит",
-  "story.sourceTitle": "Настоящий исходник Ren’Py",
-  "story.closeSource": "Закрыть исходник",
   "story.navLabel": "Исследовать демо",
   "story.overview": "Обзор"
 }

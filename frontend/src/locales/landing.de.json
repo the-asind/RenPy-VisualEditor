@@ -74,12 +74,9 @@
   "story.inspectFirstScene": "Erste Szene ansehen",
   "story.inspectChoice": "Auswahl ansehen",
   "story.replayCollaboration": "Team-Demo wiederholen",
-  "story.inspectSource": ".rpy-Quelltext ansehen",
-  "story.simulatedPresence": "Demo-Cursor · hier ist gerade niemand online",
+  "story.lookAround": "Gesamten Canvas ansehen",
   "story.editing": "bearbeitet",
   "story.viewing": "sieht zu",
-  "story.sourceTitle": "Echter Ren’Py-Quelltext",
-  "story.closeSource": "Quelltext schließen",
   "story.navLabel": "Demo erkunden",
   "story.overview": "Überblick"
 }

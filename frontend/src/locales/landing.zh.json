@@ -74,12 +74,9 @@
   "story.inspectFirstScene": "查看第一个场景",
   "story.inspectChoice": "查看分支选项",
   "story.replayCollaboration": "重播协作演示",
-  "story.inspectSource": "查看 .rpy 源码",
-  "story.simulatedPresence": "演示光标 · 此处没有其他在线用户",
+  "story.lookAround": "查看整个画布",
   "story.editing": "正在编辑",
   "story.viewing": "正在查看",
-  "story.sourceTitle": "真实 Ren’Py 源码",
-  "story.closeSource": "关闭源码",
   "story.navLabel": "探索演示",
   "story.overview": "概览"
 }
