@@ -69,3 +69,16 @@ test('narrow chapter navigation keeps text readable and above its evidence', asy
     await page.screenshot({ path: testInfo.outputPath(`mobile-${label.toLowerCase().replace(' ', '-')}.png`) });
   }
 });
+
+test('connections claim and its menu fit a short desktop viewport together', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.goto(process.env.LANDING_TEST_BASE_URL ?? '/');
+  await page.getByRole('navigation', { name: 'Explore the demo' }).getByRole('button', { name: 'Connections' }).click();
+  const connections = page.getByRole('article', { name: 'Connections' });
+  await expect.poll(async () => {
+    const box = await connections.boundingBox();
+    return box !== null && box.x >= 20 && box.x + box.width <= 1280 && box.y >= 150 && box.y + box.height <= 720;
+  }).toBe(true);
+  await expect(page.locator(`.react-flow__node[data-id="${menuId}"]`)).toBeInViewport();
+  await page.screenshot({ path: testInfo.outputPath('short-desktop-connections.png') });
+});

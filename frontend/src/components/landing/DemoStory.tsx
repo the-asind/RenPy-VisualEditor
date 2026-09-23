@@ -29,15 +29,20 @@ export function DemoStory({ nodes, flow }: { nodes: Node[]; flow: ReactFlowInsta
   const [presenceRun, setPresenceRun] = useState(0);
   const [sourceOpen, setSourceOpen] = useState(false);
   const [canvasWidth, setCanvasWidth] = useState(() => typeof window === 'undefined' ? 1200 : window.innerWidth);
+  const [canvasHeight, setCanvasHeight] = useState(() => typeof window === 'undefined' ? 800 : window.innerHeight);
   const sourceCloseRef = useRef<HTMLButtonElement>(null);
   const started = useRef(false);
 
   useEffect(() => {
     const host = document.querySelector('.landing-demo-canvas');
     if (!host) return;
-    const observer = new ResizeObserver(() => setCanvasWidth(host.clientWidth));
+    const observer = new ResizeObserver(() => {
+      setCanvasWidth(host.clientWidth);
+      setCanvasHeight(host.clientHeight);
+    });
     observer.observe(host);
     setCanvasWidth(host.clientWidth);
+    setCanvasHeight(host.clientHeight);
     return () => observer.disconnect();
   }, []);
 
@@ -114,7 +119,7 @@ export function DemoStory({ nodes, flow }: { nodes: Node[]; flow: ReactFlowInsta
     </Panel>
     <ViewportPortal>
       {chapters.map((chapter, index) => {
-        const copy = chapterCopyPosition(chapter, canvasWidth);
+        const copy = chapterCopyPosition(chapter, canvasWidth, canvasHeight);
         const actionLabel = chapter.id === 'intro' ? t('story.inspectFirstScene') : chapter.id === 'branches'
           ? t('story.inspectChoice') : chapter.id === 'collaboration' ? t('story.replayCollaboration') : t('story.inspectSource');
         return <article key={chapter.id} className="demo-story-copy" aria-label={chapter.label} onFocusCapture={event => {

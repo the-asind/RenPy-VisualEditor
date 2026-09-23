@@ -66,20 +66,26 @@ export function buildDemoChapters(nodes: DemoNode[]): DemoChapter[] {
   ].map(chapter => ({ ...chapter, width: 580 })) as DemoChapter[];
 }
 
-export function chapterCopyPosition(chapter: DemoChapter, width: number) {
-  return width < 600 || (width < 1100 && chapter.id === 'branches')
-    ? { x: chapter.mobileX, y: chapter.mobileY } : { x: chapter.x, y: chapter.y };
+export function chapterCopyPosition(chapter: DemoChapter, width: number, height: number) {
+  if (width < 600) return { x: chapter.mobileX, y: chapter.mobileY };
+  if (chapter.id === 'branches' && height < 760) {
+    // On a short desktop viewport, place the claim beside the menu and move script.rpy out of its lane.
+    return { x: chapter.x + 560, y: chapter.y - 650 };
+  }
+  if (width < 1100 && chapter.id === 'branches') return { x: chapter.mobileX, y: chapter.mobileY };
+  return { x: chapter.x, y: chapter.y };
 }
 
 export function viewportForDemoChapter(chapter: DemoChapter, width: number, height: number): Viewport {
   const mobile = width < 600;
-  const copy = chapterCopyPosition(chapter, width);
+  const copy = chapterCopyPosition(chapter, width, height);
   const zoom = mobile
     ? Math.max(0.35, Math.min(1, (width - 48) / chapter.width, (height - 230) / 850))
     : Math.max(0.58, Math.min(1, (width - 56) / (chapter.id === 'files' ? 2800 : 1900),
       (height - 130) / (chapter.id === 'intro' ? 850 : chapter.id === 'files' ? 1400 : 1300)));
   const screenX = mobile ? 24 : chapter.id === 'collaboration'
     ? width - chapter.width * zoom - 110 : chapter.id === 'files' ? width * 0.33 : 32;
-  const screenY = mobile ? 165 : chapter.id === 'intro' ? 210 : chapter.id === 'branches' && width >= 1100 ? 530 : 115;
+  const screenY = mobile ? 165 : chapter.id === 'intro' ? 210 :
+    chapter.id === 'branches' && width >= 1100 && height >= 760 ? 530 : 115;
   return { x: screenX - copy.x * zoom, y: screenY - copy.y * zoom, zoom };
 }
