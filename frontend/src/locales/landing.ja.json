@@ -71,6 +71,15 @@
   "story.filesAction": "ファイルはどう扱われますか？",
   "story.openProject": "プロジェクトを開く",
   "story.exploreScenes": "シーンを探索",
+  "story.inspectFirstScene": "最初のシーンを見る",
+  "story.inspectChoice": "選択肢を見る",
+  "story.replayCollaboration": "共同作業デモを再生",
+  "story.inspectSource": ".rpy のソースを見る",
+  "story.simulatedPresence": "デモ用カーソル · 実際の参加者ではありません",
+  "story.editing": "編集中",
+  "story.viewing": "閲覧中",
+  "story.sourceTitle": "実際の Ren’Py ソース",
+  "story.closeSource": "ソースを閉じる",
   "story.navLabel": "デモを探索",
   "story.overview": "概要"
 }

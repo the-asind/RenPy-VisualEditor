@@ -71,6 +71,15 @@
   "story.filesAction": "Was ist mit meinen Dateien?",
   "story.openProject": "Eigenes Projekt öffnen",
   "story.exploreScenes": "Szenen erkunden",
+  "story.inspectFirstScene": "Erste Szene ansehen",
+  "story.inspectChoice": "Auswahl ansehen",
+  "story.replayCollaboration": "Team-Demo wiederholen",
+  "story.inspectSource": ".rpy-Quelltext ansehen",
+  "story.simulatedPresence": "Demo-Cursor · hier ist gerade niemand online",
+  "story.editing": "bearbeitet",
+  "story.viewing": "sieht zu",
+  "story.sourceTitle": "Echter Ren’Py-Quelltext",
+  "story.closeSource": "Quelltext schließen",
   "story.navLabel": "Demo erkunden",
   "story.overview": "Überblick"
 }
